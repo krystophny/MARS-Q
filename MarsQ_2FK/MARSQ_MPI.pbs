@@ -1,0 +1,11 @@
+#!/bin/tcsh
+#PBS -l nodes=200,mem=100000mb
+#PBS -M email@address
+#PBS -m bae
+#PBS -j oe
+#PBS -V
+
+cd $PBS_O_WORKDIR
+
+rm log_mars
+mpiexec -n 200 marsf.x > log_mars

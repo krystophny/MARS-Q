@@ -1,0 +1,572 @@
+function [Br,Bz,Bphi] = MacGetBphysC(R,Z,dRds1,dZds1,dRdchi1,dZdchi1,jacobian1,B1,B2,B3)
+%% Get B-field components in Cylindrical coordinates
+
+global Mac Acad
+global SDIR FEEDI KFEED RIPPLE_MAX
+global flux_mars
+
+R0 = R;  Z0 = Z; 
+
+% compute Br,Bz,Bphi at half-integer grid, then shift to integer grid
+dRds=dRds1; dRds(1:end-1,:)=(dRds1(1:end-1,:)+dRds1(2:end,:))/2;
+dZds=dZds1; dZds(1:end-1,:)=(dZds1(1:end-1,:)+dZds1(2:end,:))/2;
+dRdchi=dRdchi1; dRdchi(1:end-1,:)=(dRdchi1(1:end-1,:)+dRdchi1(2:end,:))/2;
+dZdchi=dZdchi1; dZdchi(1:end-1,:)=(dZdchi1(1:end-1,:)+dZdchi1(2:end,:))/2;
+jacobian=jacobian1; jacobian(1:end-1,:)=(jacobian1(1:end-1,:)+jacobian1(2:end,:))/2;
+R2=R; R2(1:end-1,:)=(R(1:end-1,:)+R(2:end,:))/2;
+B11=B1; B11(1:end-1,:)=(B1(1:end-1,:)+B1(2:end,:))/2;
+
+N  = size(B1,1);
+Br = (B11.*dRds(1:N,:) + B2.*dRdchi(1:N,:))./jacobian(1:N,:); Br(1,:) = Br(2,:);
+Bz = (B11.*dZds(1:N,:) + B2.*dZdchi(1:N,:))./jacobian(1:N,:); Bz(1,:) = Bz(2,:);
+Bphi = B3.*R2(1:N,:)./jacobian(1:N,:);                Bphi(1,:) = Bphi(2,:);
+
+Br(2:N,:)=Br(1:N-1,:);
+Bz(2:N,:)=Bz(1:N-1,:);
+Bphi(2:N,:)=Bphi(1:N-1,:);
+
+NN   = Mac.Ns1-1;
+G12 = dRds(1:NN,:).*dRdchi(1:NN,:) + dZds(1:NN,:).*dZdchi(1:NN,:);
+G22 = dRdchi(1:NN,:).^2 + dZdchi(1:NN,:).^2;
+DPSIEQ = (Mac.DPSIEQ(1:end-1)+Mac.DPSIEQ(2:end))/2*ones(1,size(B11,2));
+TEQ    = (Mac.TEQ(1:end-1)+Mac.TEQ(2:end))/2*ones(1,size(B11,2));
+BEQchi = DPSIEQ./jacobian(1:NN,:);
+BEQ    = sqrt(BEQchi.^2.*G22 + TEQ.^2./R(1:NN,:).^2);
+Bpar   = (G12(1:NN,:).*B11(1:NN,:)+G22(1:NN,:).*B2(1:NN,:)).*DPSIEQ./jacobian(1:NN,:).^2;
+Bpar   = (Bpar + TEQ./jacobian(1:NN,:).*B3(1:NN,:))./BEQ;
+
+%save (BR,BZ) date along  Mac.rw-surface
+[smin,II] = min(abs(Mac.s-Mac.rw(1)));;
+res = [R(II,:)*Mac.R0EXP; Z(II,:)*Mac.R0EXP; real(Br(II,:)); imag(Br(II,:)); real(Bz(II,:)); imag(Bz(II,:))];
+res = res';
+save b_ccoil.dat res -ascii -double
+
+% plot (BR,BZ) along Mac.rw-surface
+% along geometrical angle theta
+if Mac.plot_BWR > 0
+   [smin,II] = min(abs(Mac.s-Mac.rw(1)));
+   Rw = R(II,:);
+   Zw = Z(II,:);
+   Tw = atan2(Zw-Z(1,1),Rw-R(1,1))*180/pi;
+   [Tw,JJ]=sort(Tw);
+
+   hf=figure(10*Mac.plot_BWR+0);
+   plot(Rw*Mac.R0EXP,Zw*Mac.R0EXP,'b--x','LineWidth',1), hold on
+   xlabel('R [m]','FontSize',16,'FontWeight','Bold')
+   ylabel('Z [m]','FontSize',16,'FontWeight','Bold')
+   axis equal
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+
+   hf=figure(10*Mac.plot_BWR + 1);
+   B0 = 1.0;
+
+   hs=subplot(2,2,1);
+   plot(Tw,real(Br(II,JJ))*B0,'r--','LineWidth',2), hold on,
+   ylabel('Re(\delta{B}_R) [Gauss]','FontSize',16,'FontWeight','Bold')
+   set(hs,'FontSize',14,'FontWeight','Bold')
+
+   hs=subplot(2,2,2);
+   plot(Tw,imag(Br(II,JJ))*B0,'r--','LineWidth',2), hold on,
+   ylabel('Im(\delta{B}_R) [Gauss]','FontSize',16,'FontWeight','Bold')
+   set(hs,'FontSize',14,'FontWeight','Bold')
+
+   hs=subplot(2,2,3);
+   plot(Tw,real(Bz(II,JJ))*B0,'r--','LineWidth',2), hold on,
+   xlabel('geometric \theta [degree]','FontSize',16,'FontWeight','Bold')
+   ylabel('Re(\delta{B}_Z) [Gauss]','FontSize',16,'FontWeight','Bold')
+   set(hs,'FontSize',14,'FontWeight','Bold')
+
+   hs=subplot(2,2,4);
+   plot(Tw,imag(Bz(II,JJ))*B0,'r--','LineWidth',2), hold on,
+   xlabel('geometric \theta [degree]','FontSize',16,'FontWeight','Bold')
+   ylabel('Im(\delta{B}_Z) [Gauss]','FontSize',16,'FontWeight','Bold')
+   set(hs,'FontSize',14,'FontWeight','Bold')
+
+   hf=figure(10*Mac.plot_BWR+2);
+
+   Bc = Bz;
+
+   plot(Tw,abs(Bc(II,JJ))*B0,'b-','LineWidth',3), hold on,
+   ylabel('|{\delta}B_z| [Gauss]','FontSize',16,'FontWeight','Bold')
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',14,'FontWeight','Bold')
+   a=axis; plot([0 0],[a(3) a(4)],'k-')
+end
+
+% plot |B|
+if Mac.plot_B > 0
+   AmpB = sqrt(abs(Br).^2 + abs(Bz).^2 + abs(Bphi).^2);
+   II = 6;
+   for k=1:II-1
+       AmpB(k,:) = AmpB(II,:);
+   end
+   
+   % plot |B| along poloidal angle at plasma surface
+   hf=figure(10*Mac.plot_B + 2);
+   plot(Mac.chi*180/pi,AmpB(Mac.Ns1,:),'b-','LineWidth',2), hold on,
+   xlabel('poloidal angle [degree]','FontSize',18,'FontWeight','Bold')
+   ylabel('|\delta{B}| [Gauss/kAt]','FontSize',18,'FontWeight','Bold')
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+
+   % plot |B| in the R-Z plane, inside the plasma only  
+   AmpB(Mac.Ns1,:)   =  AmpB(Mac.Ns1-2,:);
+   AmpB(Mac.Ns1-1,:) =  AmpB(Mac.Ns1-2,:);
+   for I=1:3
+       AmpB(I,:) = AmpB(4,:);
+   end
+   II = 1:Mac.Ns1+0;
+   AmpBmax = max(max(AmpB(II,:)))
+   CN = Mac.B0EXP*1e+4/100;
+   %CN = AmpBmax;
+   %CN = 1;
+   hf=figure(10*Mac.plot_B + 3);
+   pcolor(R(II,:)*Mac.R0EXP,Z(II,:)*Mac.R0EXP,AmpB(II,:)/CN), hold on, shading interp
+   axis equal
+   xlabel('R [m]','FontSize',18,'FontWeight','Bold')
+   ylabel('Z [m]','FontSize',18,'FontWeight','Bold')
+   %title('|\delta{B}| [Gauss]','FontSize',14)
+   %title('|\delta{B}| [a.u.]','FontSize',14)
+   title('|\delta{B}/B_0| (%)','FontSize',14)
+   colorbar,  colormap(jet)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16)
+   RIPPLE_MAX = max(max(AmpB(II,:)/CN))
+
+   %surface averaged AmpB
+   hf=figure(10*Mac.plot_B + 4);
+   CN = 1000;
+   plot(Mac.s(II),mean(AmpB(II,:),2)/CN,'k-','LineWidth',3), hold on, 
+   xlabel('\psi_p^{1/2}','FontSize',18,'FontWeight','Bold')
+   ylabel('<|{\delta}B|> [kGauss]','FontSize',18,'FontWeight','Bold')
+   %ylabel('<|{\delta}B/B_0|>','FontSize',18,'FontWeight','Bold')
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+
+   %AmpB along outboard mid-plane
+   hf=figure(10*Mac.plot_B + 5);
+   JJ=round(Mac.Nchi/2)+1;
+   plot(Mac.s(II),AmpB(II,JJ)/CN,'b-','LineWidth',3), hold on, 
+   xlabel('\psi_p^{1/2}','FontSize',18,'FontWeight','Bold')
+   %ylabel('|{\delta}B|(midplane) [Gauss]','FontSize',18,'FontWeight','Bold')
+   ylabel('|{\delta}B/B_0|(midplane)','FontSize',18,'FontWeight','Bold')
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+
+   if 1==1
+      %surface average for CQL3D
+      tmp = [Mac.s(II) mean(AmpB(II,:),2)];
+      save CQL3D_data1.txt tmp -ascii
+   end
+end 
+
+if Mac.RZmap
+% generate data for RZ-mapping
+disp('starting mapping ...')
+NR = 65;  NZ = 65;
+Rnew = linspace(Mac.R0EXP-1,Mac.R0EXP+3.0,NR)/Mac.R0EXP;
+Znew = linspace(-1.6,1.6,NZ)/Mac.R0EXP;
+
+data = [Mac.s(:); Mac.chi(:)];
+save RZdataPC data -ascii 
+
+data = [R0(:) Z0(:) real(Br(:)) imag(Br(:)) real(Bz(:)) imag(Bz(:)) real(Bphi(:)) imag(Bphi(:))];
+save RZdataOLD data -ascii
+
+data = [Rnew(:); Znew(:)];
+save RZdataRZ data -ascii
+
+%load ../SHOTAnalCirc/sensor.data
+%Rs2 = sensor(:,1);
+%Zs2 = sensor(:,2);
+%data = [Rs2 Zs2]/Mac.R0EXP;
+%save RZdataRZ2 data -ascii
+
+R00 = 1.7;
+Zs2 = linspace(-1.5,1.5,11)';
+Rs2 = R00*ones(size(Zs2));
+data = [Rs2 Zs2]/Mac.R0EXP;
+save RZdataRZ2 data -ascii
+RR = R(Mac.Ns1,:)*Mac.R0EXP; ZZ = Z(Mac.Ns1,:)*Mac.R0EXP;
+II = find( (RR(1:end-1)-R00).*(RR(2:end)-R00)<0 );
+I1=II(1); I2 = II(2);
+Z01 = ZZ(I1) + (ZZ(I1+1)-ZZ(I1))*(R00-RR(I1))/(RR(I1+1)-RR(I1));
+Z02 = ZZ(I2) + (ZZ(I2+1)-ZZ(I2))*(R00-RR(I2))/(RR(I2+1)-RR(I2));
+
+
+Z00 = Z(1,1);
+Rs3 = linspace(1.0,2.5,101)';
+Zs3 = Z00*ones(size(Rs3));
+data = [Rs3 Zs3]/Mac.R0EXP;
+save RZdataRZ3 data -ascii
+RR = R(Mac.Ns1,:)*Mac.R0EXP; ZZ = Z(Mac.Ns1,:)*Mac.R0EXP;
+II = find( (ZZ(1:end-1)-Z00).*(ZZ(2:end)-Z00)<0 );
+I1 = II(1); I2 = II(2);
+R01 = RR(I1) + (RR(I1+1)-RR(I1))*(Z00-ZZ(I1))/(ZZ(I1+1)-ZZ(I1));
+R02 = RR(I2) + (RR(I2+1)-RR(I2))*(Z00-ZZ(I2))/(ZZ(I2+1)-ZZ(I2));
+if R01 > R02, tmp=R02; R02=R01; R01=tmp; end
+
+fid = fopen('RZdataDIM','w');
+fprintf(fid,'%3i  %3i\n',Mac.Ns,Mac.Nchi);
+fprintf(fid,'%3i  %3i\n',NR,NZ);
+fprintf(fid,'%3i\n',length(Rs2));
+fprintf(fid,'%3i\n',length(Rs3));
+fclose(fid);
+
+SRZ = 'PEST';
+!/.automount/funsrv1/root/home/yliu/FindXY/findxy.x
+%eval(['!cp ' SDIR 'RZdataNEW_' SRZ ' RZdataNEW'])
+%eval(['!cp ' SDIR 'RZdataNEW2_' SRZ  ' RZdataNEW2'])
+%eval(['!cp ' SDIR 'RZdataNEW3_' SRZ ' RZdataNEW3'])
+
+load RZdataNEW;
+load RZdataNEW2;
+load RZdataNEW3;
+
+eval(['!cp RZdataNEW ' SDIR 'RZdataNEW_' SRZ])
+eval(['!cp RZdataNEW2 ' SDIR 'RZdataNEW2_' SRZ])
+eval(['!cp RZdataNEW3 ' SDIR 'RZdataNEW3_' SRZ])
+
+%load RZdataNEWvac65x65;
+%load RZdataNEWpsm65x65;
+%RZdataNEW = RZdataNEWvac65x65;
+%RZdataNEW  = RZdataNEWtot - RZdataNEWvac;
+%save tmp RZdataNEW -ascii
+%!mv tmp RZdataNEWpsm129x129
+
+Brnew = RZdataNEW(:,1) + RZdataNEW(:,2)*i;
+Bznew = RZdataNEW(:,3) + RZdataNEW(:,4)*i;
+Bpnew = RZdataNEW(:,5) + RZdataNEW(:,6)*i;
+
+Brnew = reshape(Brnew,NR,NZ);
+Bznew = reshape(Bznew,NR,NZ);
+Bpnew = reshape(Bpnew,NR,NZ);
+
+psi2 = RZdataNEW2(:,1);
+chi2 = RZdataNEW2(:,2);
+Br2 = RZdataNEW2(:,3) + RZdataNEW2(:,4)*i;
+Bz2 = RZdataNEW2(:,5) + RZdataNEW2(:,6)*i;
+Bp2 = RZdataNEW2(:,7) + RZdataNEW2(:,8)*i;
+
+psi3 = RZdataNEW3(:,1);
+chi3 = RZdataNEW3(:,2);
+Br3 = RZdataNEW3(:,3) + RZdataNEW3(:,4)*i;
+Bz3 = RZdataNEW3(:,5) + RZdataNEW3(:,6)*i;
+Bp3 = RZdataNEW3(:,7) + RZdataNEW3(:,8)*i;
+
+
+[R0,Z0] = meshgrid(Rnew,Znew);
+R0 = R0'; Z0 = Z0';
+data = [R0(:)*Mac.R0EXP Z0(:)*Mac.R0EXP real(Brnew(:)) imag(Brnew(:)) real(Bznew(:)) imag(Bznew(:)) -real(Bpnew(:)) -imag(Bpnew(:))];
+save RZdataB data -ascii 
+
+disp('end mapping.') 
+
+if 1==2
+% compute averaged flux through D3D I-coil sensors
+N  = round(length(Rs2)/2);
+RU = Rs2(1:N);      ZU = Zs2(1:N);
+RL = Rs2(N+1:end);  ZL = Zs2(N+1:end);
+
+a  = 22.6/180*pi;
+BUn = Br2(1:N)*cos(a) + Bz2(1:N)*sin(a);
+BLn = Br2(N+1:end)*cos(a) - Bz2(N+1:end)*sin(a);
+
+hh = sqrt(diff(RU).^2+diff(ZU).^2);
+RB = (RU(1:end-1).*BUn(1:end-1) + RU(2:end).*BUn(2:end))/2;
+Rh = (RU(1:end-1)+RU(2:end))/2;
+flux = sum(hh.*RB)/sum(hh.*Rh);
+b = 30.0;
+c = -[17.8-b 61.5; 73.0-b 48.9; 133.0-b 71.1]/180*pi;
+d = [c(:,1)-c(:,2)/2 c(:,1)+c(:,2)/2];
+e = diff(exp(1i*d),1,2)/1i./c(:,2);
+flux_marsU = flux*e;
+
+hh = sqrt(diff(RL).^2+diff(ZL).^2);
+RB = (RL(1:end-1).*BLn(1:end-1) + RL(2:end).*BLn(2:end))/2;
+Rh = (RL(1:end-1)+RL(2:end))/2;
+flux = sum(hh.*RB)/sum(hh.*Rh);
+b = 30.0;
+c = -[18.7-b 59.7; 73.0-b 48.9; 133.0-b 71.1]/180*pi;
+d = [c(:,1)-c(:,2)/2 c(:,1)+c(:,2)/2];
+e = diff(exp(1i*d),1,2)/1i./c(:,2);
+flux_marsL = flux*e;
+
+flux_mars = [flux_marsU; flux_marsL];
+a = reshape(flux_mars,1,6);
+flux_mars = [real(a); imag(a)]
+end
+
+end %Mac.RZmap
+
+% plot real(Br,Bz) at (R,Z) plane
+if Mac.plot_B > 0 & Mac.RZmap
+   figure(10*Mac.plot_B+0)
+
+   %amplitude
+   B = sqrt(abs(Brnew).^2+abs(Bznew).^2+abs(Bpnew).^2);
+   Bmax = max(max(B));
+   B = B/Bmax;
+   pcolor(R0*Mac.R0EXP,Z0*Mac.R0EXP,B), hold on,
+   axis equal
+   %colorbar
+   shading interp
+
+   %vector field of real(Br,Bz)
+   h = 2.0/Mac.Ns1;
+   Brr = real(Brnew); Bzr = real(Bznew);
+   Bt = sqrt(Brr.^2 + Bzr.^2);  
+   %Bt = max(max(Bt));
+   [II,BB]=find(Bt==0.0);  Bt(II,BB) = 1.0;
+
+   R1 = R0 + h*Brr./Bt;
+   Z1 = Z0 + h*Bzr./Bt;
+
+   R2 = R0 + (Z1-Z0)/4; 
+   Z2 = Z0 - (R1-R0)/4; 
+
+   R3 = R0 - (Z1-Z0)/4; 
+   Z3 = Z0 + (R1-R0)/4; 
+
+   R4 = [R1(:) R2(:) R3(:) R1(:)]';
+   Z4 = [Z1(:) Z2(:) Z3(:) Z1(:)]';
+
+   fill(R4*Mac.R0EXP,Z4*Mac.R0EXP,'k-'), hold on,
+   axis equal
+   xlabel('R [m]','FontSize',16)
+   ylabel('Z [m]','FontSize',16)
+end
+
+
+if Mac.plot_BR > 0 & Mac.RZmap
+figure(10*Mac.plot_BR+0)
+%subplot(3,2,1), 
+%                plot(RU,real(BUn),'r-','LineWidth',2), hold on,
+%                %plot(RU,imag(BUn),'b--','LineWidth',2), hold on,
+%                ylabel('Re(B_n^U) [Tesla]','FontSize',14),
+%subplot(3,2,5), 
+%                plot(RL,real(BLn),'r-','LineWidth',2), hold on,
+%                %plot(RU,imag(BUn),'b--','LineWidth',2), hold on,
+%                ylabel('Re(B_n^L) [Tesla]','FontSize',14),
+%                xlabel('R [m]','FontSize',14),
+%subplot(3,2,3), 
+%                plot(RU,imag(BUn),'r-','LineWidth',2), hold on,
+%                %plot(RL,real(BLn),'r--','LineWidth',2), hold on,
+%                ylabel('Im(B_n^U) [Tesla]','FontSize',14),
+
+if Mac.RunEQ
+II = find(1.0>psi3); 
+qq = spline(Mac.s(1:Mac.Ns1),Mac.q,psi3(II));
+qs = ceil(min(qq)):floor(max(qq));
+Rs3n = Rs3(II);
+[Y,II] = min(qq); 
+Rq1 = spline(qq(1:II),Rs3n(1:II),qs);
+Rq2 = spline(qq(II:end),Rs3n(II:end),qs);
+Rq = [Rq1 Rq2];
+else
+Rq = R01;
+end
+
+subplot(3,2,1), 
+                plot(Rs3,real(Br3),'r-','LineWidth',2), hold on,
+                plot(Rs3,imag(Br3),'r--','LineWidth',2), hold on,
+                ylabel('B_r [Tesla]','FontSize',14),
+                axis tight, V = axis; 
+                plot([Rq; Rq],[V(3)*ones(size(Rq)); V(4)*ones(size(Rq))],'k--'), hold on,
+                plot([R01 R02; R01 R02],[V(3) V(3); V(4) V(4)],'k-'), hold on,
+ subplot(3,2,3), 
+                plot(Rs3,real(Bz3),'r-','LineWidth',2), hold on,
+                plot(Rs3,imag(Bz3),'r--','LineWidth',2), hold on,
+                ylabel('B_z [Tesla]','FontSize',14),
+                axis tight, V = axis; 
+                plot([Rq; Rq],[V(3)*ones(size(Rq)); V(4)*ones(size(Rq))],'k--'), hold on,
+                plot([R01 R02; R01 R02],[V(3) V(3); V(4) V(4)],'k-'), hold on,
+ subplot(3,2,5), 
+                plot(Rs3,real(Bp3),'r-','LineWidth',2), hold on,
+                plot(Rs3,imag(Bp3),'r--','LineWidth',2), hold on,
+                ylabel('B_\phi [Tesla]','FontSize',14),
+                xlabel('R [m]','FontSize',14),
+                axis tight, V = axis; 
+                plot([Rq; Rq],[V(3)*ones(size(Rq)); V(4)*ones(size(Rq))],'k--'), hold on,
+                plot([R01 R02; R01 R02],[V(3) V(3); V(4) V(4)],'k-'), hold on,
+ 
+
+%II = find(1.0>psi2); 
+%qq = spline(Mac.s(1:Mac.Ns1),Mac.q,psi2(II));
+%qs = ceil(min(qq)):floor(max(qq));
+%Zs2n = Zs2(II);
+%[Y,II] = min(qq); 
+%Zq1 = spline(qq(1:II),Zs2n(1:II),qs);
+%Zq2 = spline(qq(II:end),Zs2n(II:end),qs);
+%Zq = [Zq1 Zq2];
+
+N = round(length(Zs2)/2);
+
+subplot(3,2,2), 
+                plot(Zs2(1:N),real(Br2(1:N)),'r-','LineWidth',2), hold on,
+                plot(Zs2(1:N),imag(Br2(1:N)),'r--','LineWidth',2), hold on,
+                ylabel('B_r [Tesla]','FontSize',14),
+                axis tight, V = axis; 
+ %               plot([Zq; Zq],[V(3)*ones(size(Zq)); V(4)*ones(size(Zq))],'k--'), hold on,
+ %               plot([Z01 Z02; Z01 Z02],[V(3) V(3); V(4) V(4)],'k-'), hold on,
+subplot(3,2,4), 
+                plot(Zs2(1:N),real(Bz2(1:N)),'r-','LineWidth',2), hold on,
+                plot(Zs2(1:N),imag(Bz2(1:N)),'r--','LineWidth',2), hold on,
+                ylabel('B_z [Tesla]','FontSize',14),
+                axis tight, V = axis; 
+ %               plot([Zq; Zq],[V(3)*ones(size(Zq)); V(4)*ones(size(Zq))],'k--'), hold on,
+ %               plot([Z01 Z02; Z01 Z02],[V(3) V(3); V(4) V(4)],'k-'), hold on,
+subplot(3,2,6), 
+                plot(Zs2(1:N),real(Bp2(1:N)),'r-','LineWidth',2), hold on,
+                plot(Zs2(1:N),imag(Bp2(1:N)),'r--','LineWidth',2), hold on,
+                ylabel('B_\phi [Tesla]','FontSize',14),
+                xlabel('Z [m]','FontSize',14),
+                axis tight, V = axis; 
+ %               plot([Zq; Zq],[V(3)*ones(size(Zq)); V(4)*ones(size(Zq))],'k--'), hold on,
+ %               plot([Z01 Z02; Z01 Z02],[V(3) V(3); V(4) V(4)],'k-'), hold on,
+
+figure(10*Mac.plot_BR+1)
+                plot(Rs3,real(Bz3),'r-','LineWidth',2), hold on,
+                plot(Rs3,imag(Bz3),'b--','LineWidth',2), hold on,
+                xlabel('R [m]','FontSize',14),
+                ylabel('Bz','FontSize',14),
+                axis tight, V = axis; 
+                legend('Re(Bz)','Im(Bz)')
+                plot([R01 R02; R01 R02],[V(3) V(3); V(4) V(4)],'k-'), hold on,
+
+end
+
+% plot Br,Bz,Bphi in (R,Z) plane
+if Mac.plot_B_2D > 0
+   %get (R,Z,Br,Bz,Bphi) on a coarser (s,chi)-mesh
+   snew = linspace(0,1,129);
+   %snew = linspace(0,Mac.rw(1),129);
+   cnew = linspace(-pi,pi,257);
+   [ssn,ccn] = meshgrid(snew,cnew);
+   [sso,cco] = meshgrid(Mac.s,Mac.chi);
+   N1 = length(Mac.s); N2 = length(Mac.chi); 
+   Rnew    = griddata(sso,cco,R(1:N1,1:N2)',ssn,ccn)';
+   Znew    = griddata(sso,cco,Z(1:N1,1:N2)',ssn,ccn)';
+   Brnew   = griddata(sso,cco,Br(1:N1,1:N2)',ssn,ccn)';
+   Bznew   = griddata(sso,cco,Bz(1:N1,1:N2)',ssn,ccn)';
+   Bphinew = griddata(sso,cco,Bphi(1:N1,1:N2)',ssn,ccn)';
+   Btnew   = sqrt(abs(Brnew).^2 + abs(Bznew).^2 + abs(Bphinew).^2);
+   Bnnew   = sqrt(abs(Brnew).^2 + abs(Bznew).^2);
+
+   s2        = Mac.s(1:NN);
+   [ss2,cc2] = meshgrid(s2,Mac.chi);
+   Rnew2     = griddata(ss2,cc2,R(1:NN,1:N2)',ssn,ccn)';
+   Znew2     = griddata(ss2,cc2,Z(1:NN,1:N2)',ssn,ccn)';
+   Bparnew   = griddata(ss2,cc2,Bpar',ssn,ccn)';
+   Bpernew   = sqrt(abs(Btnew.^2-abs(Bparnew).^2));
+
+   hf = figure(Mac.plot_B_2D*10+0);
+   pcolor(Rnew*Mac.R0EXP,Znew*Mac.R0EXP,log10(Btnew)), 
+   %pcolor(Rnew*Mac.R0EXP,Znew*Mac.R0EXP,log10(abs(Bznew))), 
+   res_dB_max = max(max(Btnew))
+   colormap(jet),
+   colorbar, hold on, shading interp
+   %caxis([0 400])
+   axis equal
+   xlabel('R [m]','FontSize',16,'FontWeight','Bold')
+   ylabel('Z [m]','FontSize',16,'FontWeight','Bold')
+   title('log_{10}|{\delta}B| [G]','FontSize',14)
+   %title('|{\delta}B| [G]','FontSize',14)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   %axis([0 1.6 -1.05 1.05])
+   if isstruct(Acad)
+      if isfield(Acad,'axis'), axis(Acad.axis), end
+   end
+
+   if 1==1
+   hf = figure(Mac.plot_B_2D*10+1);
+   pcolor(Rnew*Mac.R0EXP,Znew*Mac.R0EXP,log10(Bpernew)), 
+   colormap(jet),
+   colorbar, hold on, shading interp
+   %caxis([0 400])
+   axis equal
+   xlabel('R [m]','FontSize',16,'FontWeight','Bold')
+   ylabel('Z [m]','FontSize',16,'FontWeight','Bold')
+   title('log_{10}|{\delta}B|_{\perp} [a.u.]','FontSize',14)
+   %title('|{\delta}B|_{\perp} [a.u.]','FontSize',14)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+
+   hf = figure(Mac.plot_B_2D*10+2);
+   pcolor(Rnew*Mac.R0EXP,Znew*Mac.R0EXP,log10(abs(Bparnew))), 
+   %pcolor(Rnew*Mac.R0EXP,Znew*Mac.R0EXP,real(Bparnew)), 
+   colormap(jet),
+   colorbar, hold on, shading interp
+   %caxis([0 400])
+   axis equal
+   xlabel('R [m]','FontSize',16,'FontWeight','Bold')
+   ylabel('Z [m]','FontSize',16,'FontWeight','Bold')
+   title('log_{10}|{\delta}B_{||}| [a.u.]','FontSize',14)
+   %title('{\delta}B_{||} [a.u.]','FontSize',14)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   end
+   
+   %create 3D image based on Btnew
+   if 1==0
+      hf = figure(Mac.plot_B_2D*10+2);
+
+      %cv = linspace(pi*0.55,pi*1.4,51);
+      cv = linspace(0,pi*2,41);
+      Rv = spline(cnew,Rnew(end,:),cv);
+      Zv = spline(cnew,Znew(end,:),cv);
+      aa = linspace(0,2*pi,101);
+      ca = cos(aa);
+      sa = sin(aa);
+      Rn = Mac.R0EXP;
+      Zn = Rn/3;
+      for k=1:length(cv)-1
+          C  = Rv(k)/Rn;
+          Rt = C*Rn*ca;
+          Zt = Zv(k) + C*Zn*sa;
+          plot(Rt,Zt,'k-','LineWidth',0.5), hold on
+      end
+      
+      pcolor(Rnew*Mac.R0EXP,Znew*Mac.R0EXP,Btnew), hold on
+      pcolor(-Rnew*Mac.R0EXP,Znew*Mac.R0EXP,Btnew),
+      colormap(jet),
+      colorbar, hold on, shading interp
+      axis equal
+      axis off
+      axis([-1.5 1.5 -1.3 1.2])
+   end
+
+   hf=figure(10*Mac.plot_B_2D+3);
+   %plot(cnew*180/pi,Btnew(end,:),'r-','LineWidth',3), hold on 
+   plot(cnew*180/pi,abs(Bznew(end,:)),'b-','LineWidth',3), hold on 
+   %plot(cnew*180/pi,imag(Bznew(end,:)),'b:','LineWidth',3), hold on 
+   xlabel('poloidal angle [deg.]','FontSize',18),
+   %ylabel('|{\delta}B|_{edge} [Gauss]','FontSize',18),
+   ylabel('{\delta}B_p|_{edge} [Gauss]','FontSize',18),
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   %a = axis; axis([0 360 a(3) a(4)])
+   res_dBp_pls_surf = [real(Bznew(end,1)) imag(Bznew(end,1)) real(Bznew(end,81))  imag(Bznew(end,81))]
+
+   if 1==0
+   hf = figure(Mac.plot_B_2D*10+1);
+   pcolor(Rnew*Mac.R0EXP,Znew*Mac.R0EXP,real(Brnew)*1e+4*Mac.B0EXP*2), 
+   colorbar, hold on, shading interp
+   axis equal
+   xlabel('R [m]','FontSize',16,'FontWeight','Bold')
+   ylabel('Z [m]','FontSize',14)
+   title('Br [G]','FontSize',14)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',12)
+
+   hf = figure(Mac.plot_B_2D*10+2);
+   pcolor(Rnew*Mac.R0EXP,Znew*Mac.R0EXP,real(Bznew)*1e+4*Mac.B0EXP*2), colorbar, hold on, shading interp
+   axis equal
+   xlabel('R [m]','FontSize',16,'FontWeight','Bold')
+   ylabel('Z [m]','FontSize',14)
+   title('Bz [G]','FontSize',14)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',12)
+
+   hf = figure(Mac.plot_B_2D*10+3);
+   pcolor(Rnew*Mac.R0EXP,Znew*Mac.R0EXP,-real(Bphinew)*1e+4*Mac.B0EXP*2), colorbar, hold on, shading interp
+   axis equal
+   xlabel('R [m]','FontSize',16,'FontWeight','Bold')
+   ylabel('Z [m]','FontSize',14)
+   title('Bphi [G]','FontSize',14)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',12)
+   end
+end
+
+
+

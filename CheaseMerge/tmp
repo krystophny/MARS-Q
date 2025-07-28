@@ -1,0 +1,614 @@
+869d868
+<          PSISHAVE  = 2.0
+1574c1573
+<          IF (NSTTP  .LT. 1 .OR.  NSTTP  .GT. 4) ILIMIT(90) = 1
+---
+>          IF (NSTTP  .LT. 1 .OR.  NSTTP  .GT. 3) ILIMIT(90) = 1
+1801d1799
+<              PSISHAVE  = 2.0
+2472c2470
+< c%OS            IF (ZMACON .GT. 0.3/ASPCT/DFLOAT(NPSI)) THEN
+---
+> c%OS            IF (ZMACON .GT. 0.3/ASPCT/FLOAT(NPSI)) THEN
+2854c2852
+<              X2SRCH(J18) = (1.2 + 3./DFLOAT(10+ILOOP))*ABS(X2SRCH(J18))
+---
+>              X2SRCH(J18) = (1.2 + 3./FLOAT(10+ILOOP))*ABS(X2SRCH(J18))
+3547c3545
+<          SCHECK = SQRT(SSUM(N4NSNT,ZRES,1)) /DFLOAT(N4NSNT)
+---
+>          SCHECK = SQRT(SSUM(N4NSNT,ZRES,1)) / FLOAT(N4NSNT)
+3721c3719
+<          ZDPIPR = 1. /DFLOAT(NISO - 1)
+---
+>          ZDPIPR = 1. / FLOAT(NISO - 1)
+3751c3749
+<          ZDT = 2. * CPI /DFLOAT(NT)
+---
+>          ZDT = 2. * CPI / FLOAT(NT)
+3824c3822
+<          ZDS = 1. /DFLOAT(NS)
+---
+>          ZDS = 1. / FLOAT(NS)
+3976c3974
+<          ZDP = 1. /DFLOAT(NPSI)
+---
+>          ZDP = 1. / FLOAT(NPSI)
+4031c4029
+<          ZDCHI = 2. * CPI /DFLOAT(NCHI)
+---
+>          ZDCHI = 2. * CPI / FLOAT(NCHI)
+4088c4086
+<  501           CSV(J501) = 1. + (REXT - 1.) *DFLOAT(J501-1) /DFLOAT(NV)
+---
+>  501           CSV(J501) = 1. + (REXT - 1.) * FLOAT(J501-1) / FLOAT(NV)
+4092c4090
+<             TMP_HV    = (REXT-1.0)/DFLOAT(NV)
+---
+>             TMP_HV    = (REXT-1.0)/FLOAT(NV)
+4121c4119
+<               TMP_HV    = (REXT-1.0)/DFLOAT(NV-2)
+---
+>               TMP_HV    = (REXT-1.0)/FLOAT(NV-2)
+4123c4121
+<                  CSV(J501) = 1. + DFLOAT(J501-1)*TMP_HV*0.5 
+---
+>                  CSV(J501) = 1. + FLOAT(J501-1)*TMP_HV*0.5 
+4126c4124
+<                  CSV(J501) = CSV(5) + DFLOAT(J501-5)*TMP_HV 
+---
+>                  CSV(J501) = CSV(5) + FLOAT(J501-5)*TMP_HV 
+4130c4128
+<                  CSV(J501) = 1.+(REXT-1.)*DFLOAT(J501-1)/DFLOAT(NV)
+---
+>                  CSV(J501) = 1.+(REXT-1.)*FLOAT(J501-1)/FLOAT(NV)
+4140c4138
+<             TMP_HV    = (REXT-1.0)/DFLOAT(NV)
+---
+>             TMP_HV    = (REXT-1.0)/FLOAT(NV)
+4195c4193
+<               TMP_HV    = (REXT-1.0)/DFLOAT(NV-2)
+---
+>               TMP_HV    = (REXT-1.0)/FLOAT(NV-2)
+4197c4195
+<                  CSV(J501) = 1. + DFLOAT(J501-1)*TMP_HV*0.5 
+---
+>                  CSV(J501) = 1. + FLOAT(J501-1)*TMP_HV*0.5 
+4200c4198
+<                  CSV(J501) = CSV(5) + DFLOAT(J501-5)*TMP_HV 
+---
+>                  CSV(J501) = CSV(5) + FLOAT(J501-5)*TMP_HV 
+4204c4202
+<                  CSV(J501) = 1.+(REXT-1.)*DFLOAT(J501-1)/DFLOAT(NV)
+---
+>                  CSV(J501) = 1.+(REXT-1.)*FLOAT(J501-1)/FLOAT(NV)
+4214c4212
+<             TMP_HV    = (REXT-1.0)/DFLOAT(NV)
+---
+>             TMP_HV    = (REXT-1.0)/FLOAT(NV)
+4370c4368
+<                ZTMP1 = LOG(DFLOAT(J-1)/DFLOAT(NV-1))
+---
+>                ZTMP1 = LOG(FLOAT(J-1)/FLOAT(NV-1))
+4394c4392
+<                ZTMP1 = LOG(DFLOAT(J-1)/DFLOAT(NV-1))
+---
+>                ZTMP1 = LOG(FLOAT(J-1)/FLOAT(NV-1))
+4723c4721
+<          ZDPS = 1. / DFLOAT(NPPR)
+---
+>          ZDPS = 1. / FLOAT(NPPR)
+4778c4776
+<          ZDT = 2. * CPI / DFLOAT(NCHI)
+---
+>          ZDT = 2. * CPI / FLOAT(NCHI)
+4847c4845
+<          ZDT = 2. * CPI / DFLOAT(NTNOVA)
+---
+>          ZDT = 2. * CPI / FLOAT(NTNOVA)
+4902c4900
+<          ZM = 1. / DFLOAT(IM - 1)
+---
+>          ZM = 1. / FLOAT(IM - 1)
+4947c4945
+<          ZDP = 1. / DFLOAT(KN - 1)
+---
+>          ZDP = 1. / FLOAT(KN - 1)
+5120c5118
+<          ZWS = DFLOAT(J10 - 1) / DFLOAT(NPSI)
+---
+>          ZWS = FLOAT(J10 - 1) / FLOAT(NPSI)
+5182c5180
+<          ZDT  = 2.*CPI / DFLOAT(IM - 1)
+---
+>          ZDT  = 2.*CPI / FLOAT(IM - 1)
+5288c5286
+<          ZDP = 2.*CPI / DFLOAT(KN)
+---
+>          ZDP = 2.*CPI / FLOAT(KN)
+5608c5606
+<              QPLACE(I-MMIN+1)=DFLOAT(I)/NTOR
+---
+>              QPLACE(I-MMIN+1)=FLOAT(I)/NTOR
+5753c5751
+<           Q=DFLOAT(M)/NTOR
+---
+>           Q=FLOAT(M)/NTOR
+5765,5766c5763,5764
+<                    F1=(DFLOAT(M)/RQ(J)-NTOR)/SQRT(RDEN(J)*FPS1)
+<                    F2=(DFLOAT(M)/RQ(J+1)-NTOR)/SQRT(RDEN(J+1)*FPS2)
+---
+>                    F1=(FLOAT(M)/RQ(J)-NTOR)/SQRT(RDEN(J)*FPS1)
+>                    F2=(FLOAT(M)/RQ(J+1)-NTOR)/SQRT(RDEN(J+1)*FPS2)
+5929c5927
+<          ZM = 2. * CPI / DFLOAT(IM - 1)
+---
+>          ZM = 2. * CPI / FLOAT(IM - 1)
+5979c5977
+<          ZDP = 2.*CPI / DFLOAT(KN - 1)
+---
+>          ZDP = 2.*CPI / FLOAT(KN - 1)
+6265,6267d6262
+< CYQL2018
+<             IF (NSTTP.EQ.4) SPSIM = -1.0e-1
+< 
+6316c6311
+<                      CALL PRFUNC(1,SPSIM,ZJDB0,0)
+---
+>                      CALL PRFUNC(1,SPSIM,ZJDB0)
+8118c8113
+<          ZERDPS = SQRT(ZERDPS) / DFLOAT(NS1 * NT)
+---
+>          ZERDPS = SQRT(ZERDPS) / FLOAT(NS1 * NT)
+8188,8189c8183,8184
+<          ZERDPT = SQRT(ZERDPT) / DFLOAT(NS1 * NT)
+<          ZERD2P = SQRT(ZERD2P) / DFLOAT(NS1 * NT)
+---
+>          ZERDPT = SQRT(ZERDPT) / FLOAT(NS1 * NT)
+>          ZERD2P = SQRT(ZERD2P) / FLOAT(NS1 * NT)
+8409c8404
+<             IF (NSTTP.LE.2 .OR. NSTTP.EQ.4) THEN
+---
+>             IF (NSTTP.LE.2) THEN
+9156,9157c9151,9152
+<             RM(J35,J36) = DFLOAT(J35 - 1)
+<             RN(J36)     = DFLOAT(J36 - 1)
+---
+>             RM(J35,J36) = FLOAT(J35 - 1)
+>             RN(J36)     = FLOAT(J36 - 1)
+10858,10859c10853,10854
+< CYQL2018
+<          IF (NSTTP.LE.2 .OR. NSTTP.EQ.4) THEN
+---
+> C
+>          IF (NSTTP .LE. 2) THEN
+10981,10984c10976
+< CYQL2018
+<          ELSE IF (NSTTP .EQ. 4) THEN
+<             CID2(K) = 1./CIDQ(K)
+<  
+---
+> C
+11871c11863
+<             IF (NSTTP.LE.2) THEN
+---
+>             IF (NSTTP .LE. 2) THEN
+12337c12329
+<          ZDT  = 2.* CPI / DFLOAT(IBND-1)
+---
+>          ZDT  = 2.* CPI / FLOAT(IBND-1)
+12692c12684
+<          ZARG  = DFLOAT(KM) * CHIISO(IG)
+---
+>          ZARG  = FLOAT(KM) * CHIISO(IG)
+12695c12687
+<          ZARGT  = DFLOAT(KM) * TETPSI(IG,IEDGE)
+---
+>          ZARGT  = FLOAT(KM) * TETPSI(IG,IEDGE)
+12932c12924
+<          ZARG  = DFLOAT(KM) * CHIISO(IG)
+---
+>          ZARG  = FLOAT(KM) * CHIISO(IG)
+12942c12934
+<          ZARGT  = DFLOAT(KM) * TETPSI(IG,IEDGE)
+---
+>          ZARGT  = FLOAT(KM) * TETPSI(IG,IEDGE)
+13086c13078
+<          ZDCHI = 2. * CPI / DFLOAT(INCHI)
+---
+>          ZDCHI = 2. * CPI / FLOAT(INCHI)
+13088c13080
+<            ZCHI(I) = DFLOAT(I-1)*ZDCHI
+---
+>            ZCHI(I) = FLOAT(I-1)*ZDCHI
+13451c13443
+<          ZDCHI = 2. * CPI / DFLOAT(INCHI)
+---
+>          ZDCHI = 2. * CPI / FLOAT(INCHI)
+13453c13445
+<            ZCHI(I) = DFLOAT(I-1)*ZDCHI
+---
+>            ZCHI(I) = FLOAT(I-1)*ZDCHI
+13832c13824
+<          ZDCHI = 2. * CPI / DFLOAT(INCHI)
+---
+>          ZDCHI = 2. * CPI / FLOAT(INCHI)
+13834c13826
+<            ZCHI(I) = DFLOAT(I-1)*ZDCHI
+---
+>            ZCHI(I) = FLOAT(I-1)*ZDCHI
+14121c14113
+<          ZDCHI = 2. * CPI / DFLOAT(INCHI)
+---
+>          ZDCHI = 2. * CPI / FLOAT(INCHI)
+14123c14115
+<            ZCHI(I) = DFLOAT(I-1)*ZDCHI
+---
+>            ZCHI(I) = FLOAT(I-1)*ZDCHI
+15174c15166
+<          ZDCHI = 2. * CPI / DFLOAT(INCHI)
+---
+>          ZDCHI = 2. * CPI / FLOAT(INCHI)
+15176c15168
+<            ZCHIFFT(I) = DFLOAT(I-1)*ZDCHI
+---
+>            ZCHIFFT(I) = FLOAT(I-1)*ZDCHI
+15879c15871
+<          ZDCHI = 2. * CPI / DFLOAT(INCHI)
+---
+>          ZDCHI = 2. * CPI / FLOAT(INCHI)
+15881c15873
+<            ZCHIFFT(I) = DFLOAT(I-1)*ZDCHI
+---
+>            ZCHIFFT(I) = FLOAT(I-1)*ZDCHI
+16112c16104
+<          CALL SSCAL(KNFFT,1./SQRT(DFLOAT(KNFFT)),PFFTFUN,1)
+---
+>          CALL SSCAL(KNFFT,1./SQRT(FLOAT(KNFFT)),PFFTFUN,1)
+16140d16131
+<          INCLUDE 'COMSOL.inc'
+16147c16138
+<      R   ZTMF(NPT+2*NPISO),  ZFUNCD(NPT+2*NPISO) 
+---
+>      R   ZTMF(NPT+2*NPISO)
+16156,16158c16147
+<             CALL PRFUNC(KN,PPSI,ZFUNC,0)
+< CYQL2018
+<             IF (NSTTP.EQ.4) CALL PRFUNC(KN,PPSI,ZFUNCD,1)
+---
+>             CALL PRFUNC(KN,PPSI,ZFUNC)
+16187,16188d16175
+< C           WRITE(*,*) 'YQL2018-CURENT: ZS JPHI'
+< 
+16231c16218
+<                   ZX         = 1. + ZCID2(J3) / ZTMF(J3)**2
+---
+>                   ZX           = 1. + ZCID2(J3) / ZTMF(J3)**2
+16234,16244c16221
+< CYQL2018
+<                ELSE IF (NSTTP .EQ. 4) THEN
+< C                 ZX=D(CID2)/D(ZS)
+<                   ZX      =-1./ZH*CID2(I1(J3))  + 1./ZH*CID2(I1(J3)+1) +
+<      +                     (1./3.-ZA*ZA)*ZH/2.*D2CID2(I1(J3)) +
+<      +                     (ZB*ZB-1./3.)*ZH/2.*D2CID2(I1(J3)+1) 
+<                   PJIPHI(J3) =-ZPPRIM(J3)*PR(J3)-2.*CPI*CPI*ZFUNC(J3)
+<      &                         /SPSIM*ZCID2(J3)/ZS/PR(J3)*(
+<      &                         ZFUNCD(J3)*ZCID2(J3) +
+<      &                         ZFUNC(J3)*ZX )
+< C                 IF (ZS.LT.0.02) WRITE(*,*)   ZS,PJIPHI(J3)
+---
+> C
+16249d16225
+< 
+16353c16329
+<             ZCPR(IN) = PREDGE
+---
+> C           ZCPR(IN) = PREDGE
+16356c16332
+< C           ZCPR(IN) = PREDGE*(-ZCPPR(1))*(ZPISO(IN)-ZPISO(1))
+---
+>             ZCPR(IN) = PREDGE*(-ZCPPR(1))*(ZPISO(IN)-ZPISO(1))
+16408c16384
+<             CALL PRFUNC(KN,PSIISO,TTP,0)
+---
+>             CALL PRFUNC(KN,PSIISO,TTP)
+16414c16390
+<                CALL PRFUNC(KN,PSIISO,CIPR,0)
+---
+>                CALL PRFUNC(KN,PSIISO,CIPR)
+16435,16439d16410
+< 
+< C           WRITE(*,*) 'YQL2018-2: ZS TTP NSTTP,SPSIM=',NSTTP,SPSIM
+< C           DO J6=1,KN
+< C              WRITE(*,*) ZS(J6),TTP(J6)
+< C           ENDDO 
+16443c16414
+<             CALL PRFUNC(KN,PSIISO,CIPR,0)
+---
+>             CALL PRFUNC(KN,PSIISO,CIPR)
+16453,16482d16423
+< CYQL2018: ADD NSTTP=4 OPTION, WHERE (P',Q) IS SPECIFIED AS INPUT IN EXPEQ
+<          ELSE IF (NSTTP .EQ. 4) THEN   
+< 
+<             CALL PRFUNC(KN,PSIISO,CIPR,0)
+<  
+<             DO J6=1,KN
+<                ZS(J6)  = SQRT(1 - PSIISO(J6) / SPSIM)
+<             ENDDO
+<             CALL SPLINE(ZS,CID2,KN,D2CID2,ZWORK,ZWORK1)
+<             CALL PRFUNC(KN,PSIISO,ZWORK,1)
+< 
+<             DO J6=1,KN
+< C              ZX=D(CID2)/D(ZS)
+<                IF (J6.LT.KN) THEN
+<                   ZH = ZS(J6+1)-ZS(J6)
+<                   ZX = (CID2(J6+1)-CID2(J6))/ZH -
+<      &                 (D2CID2(J6)/3.+D2CID2(J6+1)/6.)*ZH
+<                ELSE 
+<                   ZH = ZS(J6)-ZS(J6-1)
+<                   ZX = (CID2(J6)-CID2(J6-1))/ZH + 
+<      &                 (D2CID2(J6-1)/6.+D2CID2(J6)/3.)*ZH
+<                ENDIF
+<                TTP(J6)=-2.*CPI*CPI*CIPR(J6)/SPSIM*CID2(J6)/ZS(J6)*(
+<      &                 CIPR(J6)*ZX + CID2(J6)*ZWORK(J6) )
+<             ENDDO
+< 
+< C           WRITE(*,*) 'YQL2018-4: ZS TTP NSTTP,SPSIM=',NSTTP,SPSIM
+< C           DO J6=1,KN
+< C              WRITE(*,*) ZS(J6),TTP(J6)
+< C           ENDDO 
+16499d16439
+<             IF (NSTTP.EQ.4) TMF(KN)=2.*(CPI*CIPR(KN)/CIDQ(KN))**2
+16587,16593d16526
+< 
+< CYQL2018 
+< C        COMPUTE Q
+< C        WRITE(*,*) 'YQL2018-2: ZS  T Q'
+< C        DO J9=1,KN
+< C           WRITE(*,*) ZS(J9), TMF(J9), TMF(J9)*CIDQ(J9)/CPI/2.
+< C        ENDDO
+16618c16551
+<          SUBROUTINE PRFUNC(KN,PP,PT,KD)
+---
+>          SUBROUTINE PRFUNC(KN,PP,PT)
+16822c16755
+<             CALL PPSPLN(KN,PP,NPPF,FCSM,RFUN,D2RFUN,PT,KD)
+---
+>             CALL PPSPLN(KN,PP,NPPF,FCSM,RFUN,D2RFUN,PT)
+17092c17025
+<          CALL PPSPLN(KN,PP,NPPR,PCSM,RPRM,D2RPRM,PT,0)
+---
+>          CALL PPSPLN(KN,PP,NPPR,PCSM,RPRM,D2RPRM,PT)
+17267c17200
+<             CALL PPSPLN(KN,PP,NPPF,FCSM,RPPF,D2RPPF,PT,0)
+---
+>             CALL PPSPLN(KN,PP,NPPF,FCSM,RPPF,D2RPPF,PT)
+17600c17533
+<          SUBROUTINE PPSPLN(KN,PP,KPP,PS,RPP,D2RPP,PT,KD)
+---
+>          SUBROUTINE PPSPLN(KN,PP,KPP,PS,RPP,D2RPP,PT)
+17621,17622c17554,17555
+<      R   D2RPP(NPISO),   PP(KN),   PS(NPISO),
+<      R   RPP(NPISO),     PT(KN)
+---
+>      R   D2RPP(2*NPISO),   PP(KN),   PS(2*NPISO),
+>      R   RPP(2*NPISO),     PT(KN)
+17628,17629d17560
+<          IF (KPP.GT.NPISO) STOP 'KPP>NPISO'
+< 
+17663,17664d17593
+< CYQL2018
+<          IF (KD.EQ.0) THEN
+17667,17675d17595
+< 
+<          ELSE IF (KD.EQ.1) THEN
+< C        FIRST DERIVATIVE
+<          PT(J2) =-1./ZH*RPP(I1(J2)) + 1./ZH*RPP(I1(J2)+1) +
+<      +           (1./3.-ZA*ZA)*ZH/2.*D2RPP(I1(J2)) +
+<      +           (ZB*ZB-1./3.)*ZH/2.*D2RPP(I1(J2)+1)
+< 
+<          ENDIF
+< 
+18538c18458
+<            CALL RESETR(PY,KN,DFLOAT(KSOUR-1)*PCOEF(KSOUR))
+---
+>            CALL RESETR(PY,KN,FLOAT(KSOUR-1)*PCOEF(KSOUR))
+18556c18476
+<                PY(J1) = PY(J1) * ZS1 + DFLOAT(J2-1)*PCOEF(J2)*ZDYDPSI
+---
+>                PY(J1) = PY(J1) * ZS1 + FLOAT(J2-1)*PCOEF(J2)*ZDYDPSI
+20672c20592
+<          ZDTHETA = 2. * CPI / DFLOAT(NBPSOUT-1)
+---
+>          ZDTHETA = 2. * CPI / FLOAT(NBPSOUT-1)
+20674c20594
+<             ZTETBPS(I) = DFLOAT(I-1) * ZDTHETA
+---
+>             ZTETBPS(I) = FLOAT(I-1) * ZDTHETA
+21217,21218c21137,21138
+<             ZSHIFTR = 1.1 * (ZRMAX-ZRMIN)/DFLOAT(NRBOX)
+<             ZSHIFTZ = 1.1 * (ZZMAX-ZZMIN)/DFLOAT(NZBOX)
+---
+>             ZSHIFTR = 1.1 * (ZRMAX-ZRMIN)/FLOAT(NRBOX)
+>             ZSHIFTZ = 1.1 * (ZZMAX-ZZMIN)/FLOAT(NZBOX)
+21257,21258c21177,21178
+<          ZDR = ZRBOXLEN / DFLOAT(NRBOX-1)
+<          ZDZ = ZZBOXLEN / DFLOAT(NZBOX-1)
+---
+>          ZDR = ZRBOXLEN / FLOAT(NRBOX-1)
+>          ZDZ = ZZBOXLEN / FLOAT(NZBOX-1)
+21266c21186
+<             ZZ = ZBOTTOM + DFLOAT(J-1)*ZDZ
+---
+>             ZZ = ZBOTTOM + FLOAT(J-1)*ZDZ
+21269c21189
+<                ZR = ZRBOXLFT + DFLOAT(I-1)*ZDR
+---
+>                ZR = ZRBOXLFT + FLOAT(I-1)*ZDR
+22182c22102
+<          ZSTEP = DFLOAT(1) / DFLOAT(10)
+---
+>          ZSTEP = FLOAT(1) / FLOAT(10)
+22651c22571
+<          ZDT  = 2. * CPI / DFLOAT(INUM)
+---
+>          ZDT  = 2. * CPI / FLOAT(INUM)
+23406c23326
+<             ZDT  = CPI / DFLOAT(IBND-2)
+---
+>             ZDT  = CPI / FLOAT(IBND-2)
+23416c23336
+<             ZDT  = 2 * CPI / DFLOAT(IBND)
+---
+>             ZDT  = 2 * CPI / FLOAT(IBND)
+23511c23431
+<             TMP_HV    = (REXT-1.0)/DFLOAT(NV)
+---
+>             TMP_HV    = (REXT-1.0)/FLOAT(NV)
+23694c23614
+<          ZDPSI = 1. / DFLOAT(NPPF1-1)
+---
+>          ZDPSI = 1. / FLOAT(NPPF1-1)
+23696c23616
+<            FCSM(I) = SQRT(DFLOAT(I-1)*ZDPSI)
+---
+>            FCSM(I) = SQRT(FLOAT(I-1)*ZDPSI)
+23748c23668
+<          ZDPSI = 1. / DFLOAT(NPPF1-1)
+---
+>          ZDPSI = 1. / FLOAT(NPPF1-1)
+23750c23670
+<            FCSM(I) = SQRT(DFLOAT(I-1)*ZDPSI)
+---
+>            FCSM(I) = SQRT(FLOAT(I-1)*ZDPSI)
+23758,23759d23677
+<          I = 1 + FLOOR(0.95*(NPPF1-1))
+<          QPSI95 = QPSI(I)+(QPSI(I+1)-QPSI(I))*(0.95-FCSM(I)**2)/ZDPSI
+23766,23769c23684
+<          WRITE(*,*) 'EQDSK: QZERO    =',QPSI(1) 
+<          WRITE(*,*) 'EQDSK: QPSI95   =',QPSI95  
+<          WRITE(*,*) 'EQDSK: QEDGE    =',QPSI(NPPF1)
+<          WRITE(*,*) 'EQDSK: Q-PROFILE (PSI_P,Q):'
+---
+>          WRITE(*,*) 'EQDSK: Q-PROFILE (S,Q):'
+23771c23686
+<             WRITE(*,1302) FCSM(I)**2,QPSI(I)
+---
+>             WRITE(*,1302) FCSM(I),QPSI(I)
+23786,23795d23700
+< 
+< C        SPECIAL TREATMENT HERE FOR A SPARC EQUILIBRIUM
+<          K_SPARC = 0
+<          IF (K_SPARC.EQ.1) THEN
+<             R0EXP_SAVE = R0EXP
+<             B0EXP_SAVE = B0EXP
+<             R0EXP = 1.0
+<             B0EXP = 22.49
+<          ENDIF
+< 
+23799c23704
+<          ZCOFTTP = ZSIGNCU / B0EXP 
+---
+>          ZCOFTTP = ZSIGNCU / B0EXP
+23806,23811d23710
+< 
+< C        SPECIAL TREATMENT HERE FOR A SPARC EQUILIBRIUM
+<          IF (K_SPARC.EQ.1) THEN
+<             R0EXP = R0EXP_SAVE
+<             B0EXP = B0EXP_SAVE
+<          ENDIF
+23888,23891d23786
+<  
+< C        WRITE(NXOUT,1301) NPSI1,NPROPT
+<          WRITE(NXOUT,1301) KSHAVE,NPROPT
+<          WRITE(NXOUT,1303) (CSM(L)/CSM(KSHAVE), L=1,KSHAVE)
+23893c23788,23791
+<          WRITE(NXOUT,1303) (CPPR(L),L=1,KSHAVE)
+---
+>          WRITE(NXOUT,1301) NPSI1,NPROPT
+>          WRITE(NXOUT,1303) (CSM(L), L=1,NPSI1)
+> C
+>          WRITE(NXOUT,1303) (CPPR(L),L=1,NPSI1)
+23895,23897c23793,23795
+<      +                                        (TTP(L),L=1,KSHAVE)
+<          IF (NPROPT .EQ. 2) WRITE(NXOUT,1303) (RIPR(L),L=1,KSHAVE)
+<          IF (NPROPT .EQ. 3) WRITE(NXOUT,1303) (RJDOTB(L),L=1,KSHAVE)
+---
+>      +                                                (TTP(L),L=1,NPSI1)
+>          IF (NPROPT .EQ. 2) WRITE(NXOUT,1303) (RIPR(L),L=1,NPSI1)
+>          IF (NPROPT .EQ. 3) WRITE(NXOUT,1303) (RJDOTB(L),L=1,NPSI1)
+23996c23894
+<          ZDPSI = ABS(SPSIM) / DFLOAT(NRBOX-1)
+---
+>          ZDPSI = ABS(SPSIM) / FLOAT(NRBOX-1)
+23998c23896
+<            ZSTEMP(I) = SPSIM + DFLOAT(I-1)*ZDPSI
+---
+>            ZSTEMP(I) = SPSIM + FLOAT(I-1)*ZDPSI
+24004c23902
+<          CALL PPSPLN(NRBOX,ZSTEMP,NPSI,CSM,TMF,ZD2TMP,ZTEMP,0)
+---
+>          CALL PPSPLN(NRBOX,ZSTEMP,NPSI,CSM,TMF,ZD2TMP,ZTEMP)
+24012c23910
+<          CALL PPSPLN(NRBOX,ZSTEMP,NPSI,CSM,CPR,ZD2TMP,ZTEMP,0)
+---
+>          CALL PPSPLN(NRBOX,ZSTEMP,NPSI,CSM,CPR,ZD2TMP,ZTEMP)
+24020c23918
+<          CALL PPSPLN(NRBOX,ZSTEMP,NPSI,CSM,TTP,ZD2TMP,ZTEMP,0)
+---
+>          CALL PPSPLN(NRBOX,ZSTEMP,NPSI,CSM,TTP,ZD2TMP,ZTEMP)
+24028c23926
+<          CALL PPSPLN(NRBOX,ZSTEMP,NPSI,CSM,CPPR,ZD2TMP,ZTEMP,0)
+---
+>          CALL PPSPLN(NRBOX,ZSTEMP,NPSI,CSM,CPPR,ZD2TMP,ZTEMP)
+24042c23940
+<          CALL PPSPLN(NRBOX,ZSTEMP,NPSI,CSM,QPSI,ZD2TMP,ZTEMP,0)
+---
+>          CALL PPSPLN(NRBOX,ZSTEMP,NPSI,CSM,QPSI,ZD2TMP,ZTEMP)
+24367c24265
+<          ZABIT(J281+1) = DFLOAT(J281) / DFLOAT(NT)
+---
+>          ZABIT(J281+1) = FLOAT(J281) / FLOAT(NT)
+24507c24405
+<          ZABIS(J285+1) = (J285 - .5) / DFLOAT(NPSI)
+---
+>          ZABIS(J285+1) = (J285 - .5) / FLOAT(NPSI)
+24579c24477
+<          ZABIPR(J294)   = DFLOAT(J294-1) / DFLOAT(NISO)
+---
+>          ZABIPR(J294)   = FLOAT(J294-1) / FLOAT(NISO)
+24586c24484
+<          ZABIC(J295) = DFLOAT(J295-1) / DFLOAT(NCHI)
+---
+>          ZABIC(J295) = FLOAT(J295-1) / FLOAT(NCHI)
+24593c24491
+<          ZABISG(J296) = DFLOAT(J296-1) / DFLOAT(NS)
+---
+>          ZABISG(J296) = FLOAT(J296-1) / FLOAT(NS)
+24749,24750c24647
+< *         Q<QSHAVE OR PSI<PSISHAVE, WHICHEVER COMES FIRST.            *
+< *         THE SURFACE Q=QSHAVE OR PSI=PSISHAVE IS SAVED IN DISK FILE  *
+---
+> *         Q < QSHAVE. THE SURFACE Q=QSHAVE IS SAVED IN DISK FILE      *
+24773c24670
+<       IF (ZQ.LE.QSHAVE.AND.CS(J)*CS(J).LE.PSISHAVE) GOTO 20
+---
+>       IF (ZQ.LE.QSHAVE) GOTO 20
+24775,24776c24672
+<       WRITE(6,*) ' Q =',ZQ,' < QSHAVE =',QSHAVE
+<       WRITE(6,*) ' PSI =',CS(J)*CS(J),' < PSISHAVE =',PSISHAVE
+---
+>       WRITE(6,*) ' Q0 =',ZQ,' < QSHAVE =',QSHAVE
+24780,24781d24675
+<       KSHAVE = J
+<       WRITE(*,*) 'NPSI1=',NPSI1,' KSHAVE=',KSHAVE
+24800d24693
+< *         OR PSI=PSISHAVE                                             *
+27101c26994
+<          ZDCHI = 2. * CPI / DFLOAT(INCHI)
+---
+>          ZDCHI = 2. * CPI / FLOAT(INCHI)
+27103c26996
+<            ZCHI(I) = DFLOAT(I-1)*ZDCHI
+---
+>            ZCHI(I) = FLOAT(I-1)*ZDCHI

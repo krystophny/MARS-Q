@@ -1,0 +1,67 @@
+%SDIR = '/home/liuy/Work/ITER_RIPPLE/Data/10MA/RES_RIP_EP_NDB1/';
+SDIR = '/home/liuy/Work/DIII-D/D3D177028/Data/RootA/';
+
+kxp     = 1;
+plot_FR = 10;
+plot_EQ = 0;
+
+if plot_FR>0
+
+f = load([SDIR 'FREQUENCIES.OUT']);
+
+ytxt = {'{\omega}_E/{\omega}_A',      %2
+        '{\omega}_{*N}^i/{\omega}_A', %3
+        '{\omega}_{*N}^e/{\omega}_A', %4
+        '{\omega}_{*T}^i/{\omega}_A', %5
+        '{\omega}_{*T}^e/{\omega}_A', %6
+        '<{\omega}_t^i>/{\omega}_A',  %7
+        '<{\omega}_b^i>/{\omega}_A',  %8
+        '<{\omega}_{b,d}^i>/{\omega}_A',  %9
+        '<{\omega}_d^e>/{\omega}_A',  %10
+        '<{\omega}_d^{\alpha}>/{\omega}_A',  %11
+        '<{\omega}_{b}^{\alpha}>/{\omega}_A',  %12
+        '<{\omega}_d^{nbi}>/{\omega}_A',  %13
+        '<{\omega}_{b,d}^{nbi}>/{\omega}_A',  %14
+       };   
+
+fn = [2 3 4 5 6 7 8 8 10 11 12 13 13];
+s = f(:,1);
+if kxp==1
+   x    = s;
+   xtxt = '\psi_N^{1/2}';
+elseif kxp==2
+   x    = s.^kxp;
+   xtxt = '\psi_N';
+end
+
+for k=1:length(ytxt)
+    y = f(:,k+1);  
+    if k>=8, y(1)=y(2); end
+    if k==8 | k==10 | k==12, y=y*18; end
+    hf=figure(fn(k));
+    plot(x,y,'b-','LineWidth',3), hold on,
+    xlabel(xtxt,'FontSize',18,'FontWeight','Bold')
+    ylabel(ytxt{k},'FontSize',18,'FontWeight','Bold')
+    ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+end
+
+end
+
+if plot_EQ>0
+e = load([SDIR 'PROFEQ.OUT']);
+s = e(:,1);
+if kxp==1
+   x    = s;
+   xtxt = '\psi_N^{1/2}';
+elseif kxp==2
+   x    = s.^kxp;
+   xtxt = '\psi_N';
+end
+
+hf=figure(plot_EQ);
+semilogy(x,e(:,18),'r-',x,e(:,19),'b-','LineWidth',3), hold on,
+xlabel(xtxt,'FontSize',18,'FontWeight','Bold')
+ylabel('{\nu}_{eff}/{\omega}_A','FontSize',18,'FontWeight','Bold')
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+legend('ion','electron')
+end

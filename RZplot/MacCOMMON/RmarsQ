@@ -1,0 +1,183 @@
+#!/bin/sh
+
+#cp ITER/gxxxxxx EQDSK.IN
+
+#cp ITER/PROFDEN_XXXX.IN PROFDEN.IN
+#cp ITER/PROFROT_XXXX.IN PROFROT.IN
+#cp ITER/PROWE_XXXX.IN   PROFWE.IN
+#cp ITER/PROFTI_XXXX.IN  PROFTI.IN
+#cp ITER/PROFTE_XXXX.IN  PROFTE.IN
+
+cat >RUN.IN <<'EOF'
+&BASIC
+ NCASE  = 1,
+ TALPHA1= (1.00000E-01, 0.00000E-08),
+ ZCHARGE= 1,
+ NITMAX = 100,
+ NSWEEP = 1,
+ GAMMA  = 1.66667,
+ RNTOR  = -1.,
+ M1     =-9,
+ M2     = 33,
+ NPROFN = 4,
+ NPROFIE= 4,
+ NPROFT = 3,
+ ETA    = 1.0000e-10,
+ NV     = 200,
+ NWALL  = 1,
+ TAUW   = 1.0000e+4,
+ IWALL  = 48,
+ IWO    = 1,
+ IVISC  = 1,
+ PVISC  = 0.1,
+ NPROFR = 4,
+ ROTE   = 1.0000e-02, 
+ NPROFWE= 4,
+ ROTWE0 = 1.0000e-02,
+ FRACPTH = 1.0,
+ NEXPV   = 0,
+&END
+
+&FEEDBACK
+ INCFEED= 0,    
+ NCOIL  = 2,   
+ FCCHI  =-0.200000, 0.200000, 
+ FWCHI  = 0.100000, 0.100000, 
+ SCCHI  = 0.0,
+ SWCHI  = 0.05,
+ BTCHI  = 0.05,
+ FEEDI  = ( 1.0000e-03, 0.0000e-03),( 1.0000e-03, 0.0000e-03),
+ IFEED  = 47,
+ ISENS  = 47,
+ NSENS  = 0,
+ KKF    =-1, 
+ KREADECA = 0,
+&END
+
+&KINETIC
+ INCKIN = 0,
+ ATAU   = (1.00000E-08, 0.0000e-01),
+ ALTAU  = 0.5,    
+ ALPHAP = 5.0000e-01,
+ ALPHAD = 1.0,
+ OMEGACI0 = 1.0000e+02,
+ IPERTURB = 1,
+ KFASTRUN = 0,
+ KENORM   = 2,
+ NSPECIES = 2,
+ IFOWPSI0 = 1,
+ ISPECIES_F0   = 0,0,3,
+ KNBI   = 0,
+ DZETA0 = 1.0E+0,
+ S0TYPE4= 0.5,
+ R0TYPE4= 1.5,
+ HHTYPE4C = 0.5,
+ ESPECIES_M    = 2.0,5.4463e-04,2.00,
+ ESPECIES_Z    = 1.0,-1.0, 1.0,
+ PSPECIES_AP   = 1.0, 1.0, 0.0,
+ PSPECIES_AT   = 1.0, 1.0, 0.0,
+ PSPECIES_NP   = 0.0, 0.0, 0.0,
+ PSPECIES_NTB  = 0.0, 0.0, 0.0,
+ PSPECIES_NTD  = 1.0, 0.0, 0.0,
+ PSPECIES_FOWP = 0.0, 0.0, 0.0,
+ PSPECIES_FOWT = 0.0, 0.0, 0.0,
+ NPROFK   = 0,
+ INUTYPE  = 0,
+ NPROFUI  = 1,
+ NUEFFIA  = 1.00000e-0,
+ NPROFUE  = 1,
+ NUEFFEA  = 1.00000e-0,
+&END
+
+&QLIN
+ TALPHA2= 1.0,    
+ TALPHA3= 1.0,    
+ TALPHA6= 1.0,    
+ TALPHA8= 0.9,    
+ TDELTAMIN = 0.04,
+ TDELTAMAX = 0.08,
+ TDELTALIM = 1000.,
+ TDELTALOW = 50.,
+ CTJXB  = 0.0,
+ CTNTV  = 0.0,
+ CTREY  = 0.0,
+ CDMHD  = 0.0,
+ CDNTV  = 0.0,
+ NPROFVD= 3,
+ NPROFDD= 3,
+ TCHIM0 = 2.0000e-08,
+ TCHID0 = 2.0000e-08,
+ NPROFVP= 0,
+ TVPINCH0 = 0.,
+ CTEDGE   = 0.999,
+ CDEDGE   = 0.999,
+ KSOLSAVE = 0,
+ KSOLREAD = 0,
+ KNTV     = 0,
+&END
+
+&NUMERIC
+ PTRAPI = 1.00,
+ PTRAPH = 0.90,
+ NRES   = 7,
+ NFIT   = 3,
+ NTORQ  = 5,
+ IPDIVB = 1,
+ NCONVB1= 0,
+ NCONVCS= 0,
+ IOMPNUM= 1,
+ NVACJ  = 0,
+&END
+
+&OUTOPT
+ DPLOLP(1) = .T.,.F.,.F., .F.,.F.,.F., .F.,.F.,.F., .F.,.F.,.F.,.F.,.F.,.F.,.F.,.F.,
+ JSOUT     = 7,
+ ORMIN    = 0.0,
+ ORMAX    = 2.0,
+ OZMIN    =-2.0,
+ OZMAX    = 2.0,
+ NORR     = 0,
+ NOZZ     = 0,
+ NREORBIT = 0,
+ KRE_INIT = 10,
+ KRE1     = 1,
+ KRE2     = 2,
+ NRE1     = 20,
+ NRE2     = 30,
+ KRE_VAC  = 1,
+ KRE_STAR = 5,
+ KRE_STEP = 10,
+ KRE_STEP_MAX = 330000,
+ KRE_SOLVER = 1,
+ KRE_SIGMA0 =-1,
+ KRE_TRACE  = 5,
+ RE_TSTEP = 1.0e-3,
+ RE_TIME  = 300.0,
+ RE_EFIELD= 1.0,
+ RE_SAC   = 1.0,
+ RE_SYNCH = 1.0,
+ RE_BREMS = 1.0,
+ RE_S0    = 0.0,
+ RE_CHI0  = 6.2831853,
+ RE_P0    = 5.00E+01,
+ RE_LAMBDA0  = 0.1,
+ RE_ATOL     = 1.0e-7,
+ RE_PERTURB  = 1.0000E-00,
+ RE_CONST(1) = 1.00e+19, 15.0, 10.0, 1.0,
+&END
+EOF
+
+rm *.OUT
+time /home/liuy/IRIS/mars-code/gitMarsQ/mars-code/MarsQ/marsq.x > log_mars
+#time ~/marsq/MarsQ/marsq.x > log_mars
+
+echo "Finished MARS-Q run."
+exit
+
+
+
+
+
+
+
+

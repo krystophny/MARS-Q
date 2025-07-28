@@ -1,0 +1,507 @@
+function [V1,V2,V3,Vn] = MacGetV123(VM1,VM2,VM3,VM1N,R,Z,dRds,dZds,dRdchi,dZdchi,jacobian)
+
+global Mac SDIR Acad DISP_MAX
+
+DPSIDS = Mac.DPSIEQ;
+T      = Mac.TEQ;
+
+expmchi = exp(Mac.Mm*Mac.chi*i);
+
+% V1,2,3 along unit vectors a1,a2,a3
+V1a = VM1*expmchi;
+V2a = VM2*expmchi;
+V3a = VM3*expmchi;
+V1aN= VM1N*expmchi;
+
+% V1 along e_s
+chione = ones(1,Mac.Nchi);
+ss = Mac.s(1:Mac.Ns1)*chione; ss(1,:) = ss(2,:);
+%V1 = V1a.*jacobian(1:Mac.Ns1,:)./ss;  V1(1,:) = V1(2,:);
+V1 = V1a;
+
+% V2 along e_chi
+Bchi = DPSIDS*chione./jacobian(1:Mac.Ns1,:);
+Bphi = T*chione./R(1:Mac.Ns1,:).^2;
+G11  = dRds(1:Mac.Ns1,:).^2 + dZds(1:Mac.Ns1,:).^2;
+G12  = dRds(1:Mac.Ns1,:).*dRdchi(1:Mac.Ns1,:) + dZds(1:Mac.Ns1,:).*dZdchi(1:Mac.Ns1,:);
+G22  = dRdchi(1:Mac.Ns1,:).^2 + dZdchi(1:Mac.Ns1,:).^2;
+G22(1,:) = G22(2,:);
+G33  = R(1:Mac.Ns1,:).^2;
+B2   = Bchi.^2.*G22 + Bphi.^2.*G33;
+V2 = -V1.*G12.*Bchi.^2./B2 + V2a.*Bphi.*G33./B2 + V3a.*Bchi;
+
+% V3 along e_phi
+V3 = -V1.*G12.*Bchi.*Bphi./B2 - V2a.*Bchi.*G22./B2 + V3a.*Bphi;
+
+% Vn
+GradS = sqrt(G33.*G22)./jacobian(1:Mac.Ns1,:);
+Vn = V1a./GradS;
+VnN= V1aN./GradS;
+
+% V_poloidal
+Vp = V2.*jacobian(1:Mac.Ns1,:)./sqrt(G33.*G11);
+%Vp = dZdchi.*sqrt(G33.*G11)./jacobian(1:Mac.Ns1,:);
+% Vn = Xi dot grad Ti = V1a*(dTi/ds) ==> ECEI data
+
+if 1==0
+   d = load([SDIR 'PROFEQ_n1']);
+   x = d(:,1);
+   y = d(:,10)/d(1,10);
+   xx = linspace(0,1,2001);
+   yy = spline(x,y,xx);
+   dy = diff(yy)./diff(xx);
+   xo = (xx(1:end-1)+xx(2:end))/2;
+   dy = spline(xo,dy,x);
+   for k=1:size(V1a,2)
+       Vn(:,k) = V1a(:,k).*dy;
+   end
+end
+
+if 1==1
+%change the edge points of Vn
+I = find(Mac.s<Mac.edge); I = I(end);
+for k=I+1:Mac.Ns1
+    Vn(k,:) = Vn(I,:);
+end
+
+I = find(Mac.s>Mac.core); I = I(1);
+for k=1:I-1
+    Vn(k,:) = Vn(I,:);
+end
+end
+
+
+% Fourier harmonic of Vn
+expmchi = exp(-Mac.chi'*Mac.Mm'*i);
+VnM = Vn*expmchi*(Mac.chi(2)-Mac.chi(1))/2/pi;
+
+% contour plot for Vn 
+if (Mac.plot_Vn>0)
+  if 1==1
+  figure(10*Mac.plot_Vn+0)
+  %I = find(abs(imag(Vn)) > 0.3); 
+  %Vn(I) = 0.3*sign(imag(Vn(I)));
+  %Cn = max(max(abs(Vn))); Vn=Vn/Cn;
+  II = 1:Mac.Ns1;
+  %fac = Mac.R0EXP*1e+3;
+  fac = 1.0;
+  DISP_MAX = max(max(abs(Vn(II,:))))*fac
+  %pcolor(R(II,:)*Mac.R0EXP,Z(II,:)*Mac.R0EXP,log10(abs(Vn(II,:)))*fac), hold on,
+  pcolor(R(II,:)*Mac.R0EXP,Z(II,:)*Mac.R0EXP,abs(Vn(II,:))*fac), hold on,
+  shading interp
+  colormap(jet), colorbar
+ % [C,H]=contour(R(1:Mac.Ns1,:)*Mac.R0EXP,Z(1:Mac.Ns1,:)*Mac.R0EXP,imag(Vn)*1e+3,[0 0]); hold on,
+ %set(H,'LineWidth',2,'Color','b')
+  %rsqq = [0.73715 0.94761]; %A
+  %rsqq = Mac.s(Mac.Iratsurf); 
+  rsqq = [];
+  %rsqq = [0.57600 0.95546]; %B
+  %rsqq = [0.62629 0.84143 0.94591]; %C
+  %rsqq = [0.79370 0.97005]; %D
+  for k=1:length(rsqq)
+      rsq = rsqq(k);  [Y,I]=min(abs(Mac.s-rsq)); 
+      %plot(R(I,:)*Mac.R0EXP,Z(I,:)*Mac.R0EXP,'--','LineWidth',1,'Color','k'), hold on,
+  end
+  xlabel('R [m]','FontSize',18,'FontWeight','Bold')
+  ylabel('Z [m]','FontSize',18,'FontWeight','Bold')
+  %title('log_{10}|\xi_n| [a.u.]','FontSize',16,'FontWeight','Bold')
+  %title('\xi_n [a.u.]','FontSize',16,'FontWeight','Bold')
+  title('|\xi_n| [mm]','FontSize',16,'FontWeight','Bold')
+  ha = get(10*Mac.plot_Vn+0,'CurrentAxes');
+  set(ha,'FontSize',18)
+  axis equal, 
+  %axis([0 7 -6 6]), 
+  %caxis([-1 1])
+  if isstruct(Acad)>0
+  if isfield(Acad,'axis'), axis(Acad.axis), end
+  end
+  end
+
+  if 1==0
+  figure(10*Mac.plot_Vn+1)
+  pcolor(R(II,:)*Mac.R0EXP,Z(II,:)*Mac.R0EXP,abs(Vp(II,:))), hold on,
+  shading interp
+  colormap(jet), colorbar
+  xlabel('R [m]','FontSize',18,'FontWeight','Bold')
+  ylabel('Z [m]','FontSize',18,'FontWeight','Bold')
+  title('\xi_{\chi} [mm]','FontSize',16,'FontWeight','Bold')
+  ha = get(10*Mac.plot_Vn+1,'CurrentAxes');
+  set(ha,'FontSize',16,'FontWeight','Bold')
+  axis equal, %axis([1 2.3 -1.12 1.12]), caxis([-1 1])
+  end
+
+  if 1==1
+  % plot Xn across mid-plane along psi_p
+  hf=figure(10*Mac.plot_Vn+2);
+  [Y,I]=max(R(Mac.Ns1,:));
+  Vn(1,I) = Vn(4,I);
+  Vn(2,I) = Vn(4,I);
+  Vn(3,I) = Vn(4,I);
+  plot(Mac.s(1:Mac.Ns1).^2,abs(Vn(:,I)),Mac.SS,'LineWidth',3), hold on,
+  ylabel('|\xi_n| [mm] ','FontSize',18,'FontWeight','Bold')
+  xlabel('{\psi}_N','FontSize',18,'FontWeight','Bold')
+  ha=get(hf,'CurrentAxes');
+  set(ha,'FontSize',18)
+
+  %save displacement data
+  RES = [Mac.s(1:Mac.Ns1).^2,abs(Vn(:,I))];
+  save Xn_midplane.txt RES -ascii
+
+  %save GradS along LFS mid-plane
+  II  = 1:Mac.Ns1;
+  RES = [Mac.s(II).^2 GradS(II,I)];
+  save GradS.txt RES -ascii
+
+  %check contribution of -(xi dot grad P) to deltaP
+  %==> deltaP mostly contributed by convection term in KSTAR
+  if (1==0 & Mac.RunEQ>0 & Mac.RunP>0 & Mac.plot_Pfluid>0)
+     Ti0  = 2.75069e+03; 
+     Te0  = 2.90103e+03;
+     facP = Te0/(Te0+Ti0);
+
+     s = Mac.s(1:Mac.Ns1);
+     y = Mac.PEQ*facP;
+     dy = diff(y)./diff(s);
+     dy = spline((s(1:end-1)+s(2:end))/2,dy,s);
+     dy =-V1(:,I).*dy(:)/Mac.VNORM*Mac.PNORM;
+     figure(10*Mac.plot_Pfluid+3);
+     plot(s.^2,abs(dy),'b--','LineWidth',3), hold on,
+  end
+  end
+
+  if 1==0
+  %DIII-D wall surface
+  data = load('/home/liuy/Work/RE_KINK/Data/BOUNDW_D3D')*1.6995;
+  RW   = data(:,1);
+  ZW   = data(:,2);
+  plot(RW,ZW,'k-','LineWidth',4)
+  text(0.9,-0.1,'wall','FontSize',24,'FontWeight','Bold','Color','k','Rotation',90)
+  end
+
+  if 1==0
+  figure(10*Mac.plot_Vn+1)
+  pcolor(R(1:Mac.Ns1,:)*Mac.R0EXP,Z(1:Mac.Ns1,:)*Mac.R0EXP,abs(VnN)), hold on,
+  shading interp
+  colormap(jet)
+  xlabel('R [m]','FontSize',18,'FontWeight','Bold')
+  ylabel('Z [m]','FontSize',18,'FontWeight','Bold')
+  title('|\xi_n| [mm]','FontSize',16,'FontWeight','Bold')
+  ha = get(10*Mac.plot_Vn+1,'CurrentAxes');
+  set(ha,'FontSize',14,'FontWeight','Bold')
+  axis equal
+  colorbar, %colormap(hot)
+  end
+
+  if 1==0
+     [Y,Ixpt] = min(Z(Mac.Ns1,:));
+     psin = Mac.s.^2;
+     II = find(psin>0.98 & psin<1); psin=psin(II);
+     phi = linspace(0,1,201); 
+     Vn2 = abs(real(Vn(II,Ixpt)*exp(i*phi*2*pi*3)));
+     hf=figure(10*Mac.plot_Vn+2);
+     surf(transpose(psin),transpose(phi),transpose(Vn2)), 
+     shading interp
+     xlabel('\psi_n','FontSize',16,'FontWeight','Bold')
+     ylabel('\phi/2{\pi}','FontSize',16,'FontWeight','Bold')
+     zlabel('|displacement|(mm)','FontSize',16,'FontWeight','Bold')
+     title('12.5MA/5.3T,n=3,60kAt,optimum','FontSize',18,'FontWeight','Bold')
+     axis([0.98 1 0 1 0 7])
+     ha = get(10*Mac.plot_Vn+2,'CurrentAxes');
+     set(ha,'FontSize',14,'FontWeight','Bold')
+  end
+
+  %save MoR data
+  if 1==1
+     RE_XnR = max(max(abs(Vn-VnN)))/max(max(abs(Vn)))
+     Mac.SVD_XRER = RE_XnR; 
+  end
+  
+  if 1==0
+  % plot Vn across mid-plane 
+  hf=figure(10*Mac.plot_Vn+1);
+  I = 1;
+  plot(R(1:Mac.Ns1,I)*Mac.R0EXP,abs(Vn(:,I))*1000,'r-','LineWidth',3), hold on,
+  I = round((Mac.Nchi+1)/2);
+  plot( R(1:Mac.Ns1,I)*Mac.R0EXP,abs(Vn(:,I))*1000,'r-','LineWidth',3), hold on,
+  ylabel('|\xi_n| [mm/kAt] ','FontSize',16,'FontWeight','Bold')
+  xlabel('R [m]','FontSize',16,'FontWeight','Bold')
+  ha=get(hf,'CurrentAxes');
+  set(ha,'FontSize',16,'FontWeight','Bold')
+  end
+
+  if 1==0
+  % plot Vn across mid-plane in 2D plane (R,phi)
+  R0 = 0.0;
+  I1 = 1;                     
+  I2 = round((Mac.Nchi+1)/2); 
+  R1 = [flipud(R(1:Mac.Ns1,I1))' R(1:Mac.Ns1,I2)'];
+  Z1 = [flipud(Z(1:Mac.Ns1,I1))' Z(1:Mac.Ns1,I2)'];
+  p1 = linspace(0,2*pi,101);
+  [R2,p2] = meshgrid(R1,p1);
+  X2 = R0 + (R2-R0).*cos(p2);
+  Y2 = R0 + (R2-R0).*sin(p2);
+  U1 = [flipud(Vn(1:Mac.Ns1,I1)); Vn(1:Mac.Ns1,I2)];
+  U2 = (imag(U1*exp(i*Mac.n*p1)))';
+
+  figure(10*Mac.plot_Vn+2)
+  plot(R1,Z1), hold on,
+
+  figure(10*Mac.plot_Vn+3)
+  pcolor(X2*Mac.R0EXP,Y2*Mac.R0EXP,U2), hold on,
+  shading interp
+  [C,H]=contour(X2*Mac.R0EXP,Y2*Mac.R0EXP,U2,[0 0]); hold on,
+  set(H,'LineWidth',2,'Color','b')
+
+  for k=1:length(rsqq)
+      rsq = rsqq(k);  [Y,I]=min(abs(Mac.s-rsq));
+      R1  = R(I,I1);  
+      X1  = R0 + (R1-R0)*cos(p1);
+      Y1  = R0 + (R1-R0)*sin(p1);
+      plot(X1*Mac.R0EXP,Y1*Mac.R0EXP,'--','LineWidth',1,'Color',[1 1 1]), hold on,
+      R1  = R(I,I2);  
+      X1  = R0 + (R1-R0)*cos(p1);
+      Y1  = R0 + (R1-R0)*sin(p1);
+      plot(X1*Mac.R0EXP,Y1*Mac.R0EXP,'--','LineWidth',1,'Color',[1 1 1]), hold on,
+  end
+
+  xlabel('R [m]','FontSize',16,'FontWeight','Bold')
+  ylabel('R [m]','FontSize',16,'FontWeight','Bold')
+  title('normal displacement \xi_n','FontSize',16,'FontWeight','Bold')
+  ha = get(10*Mac.plot_Vn+2,'CurrentAxes');
+  set(ha,'FontSize',14,'FontWeight','Bold')
+  axis equal
+  axis([-2.3 2.3 -2.3 2.3])
+  text(1.8,2.0,'(a)','FontSize',18,'FontWeight','Bold')
+  colorbar, colormap(hot)
+  end
+
+  if 1==0
+  % plot Vn across along minor radius at midplane 
+  hf=figure(10*Mac.plot_Vn+4);
+  y1 = imag(Vn(1,I1));
+  y2 = imag(Vn(1,I2));
+  x = Mac.s(1:Mac.Ns1);
+  y = imag(Vn(:,I1));
+  x0 = [0; x(5:end)];
+  y0 = [(y1-y2)/2; y(5:end)];
+  %y = spline(x0.^2,y0,x.^2);
+  plot(x.^2,y,'r-','LineWidth',3), hold on,
+  x = Mac.s(1:Mac.Ns1);
+  y = imag(Vn(:,I2));
+  x0 = [0; x(5:end)];
+  y0 = [(y2-y1)/2; y(5:end)];
+  %y = spline(x0.^2,y0,x.^2);
+  plot(x.^2,y,'b-','LineWidth',3), hold on,
+  plot([0 1],[0 0],'k-'), hold on
+  text(0.3,0,'LFS','FontSize',18,'FontWeight','Bold','Color','b')
+  text(0.7,0,'HFS','FontSize',18,'FontWeight','Bold','Color','r')
+  for k=1:length(rsqq)
+      text(rsqq(k),0,'q=3','FontSize',18,'FontWeight','Bold','Color','k','Rotation',90)
+  end
+  ylabel('\xi_n','FontSize',16,'FontWeight','Bold')
+  xlabel('\psi_p','FontSize',16,'FontWeight','Bold')
+  ha=get(hf,'CurrentAxes');
+  set(ha,'FontSize',16,'FontWeight','Bold')
+  a=axis; 
+  plot([rsqq; rsqq].^2,[ones(size(rsqq))*a(3); ones(size(rsqq))*a(4)], 'k--','LineWidth',1), hold on,
+  text(0.05,0.5,'(c)','FontSize',18,'FontWeight','Bold')
+  end
+
+  if 1==0
+  %Vn  near the plasma surface
+  hf=figure(10*Mac.plot_Vn+5);
+  I0 = 7;
+  Rs = R(Mac.Ns1-I0,:);
+  Zs = Z(Mac.Ns1-I0,:);
+  Rc = (min(Rs)+max(Rs))/2;
+  Zc = (min(Zs)+max(Zs))/2;
+  Tg = atan2(Zs-Zc,Rs-Rc);
+  plot(Tg(2:end),real(Vn(Mac.Ns1-I0,2:end))*1000,'b--','LineWidth',2), hold on,
+  plot(Tg(2:end),imag(Vn(Mac.Ns1-I0,2:end))*1000,'r-','LineWidth',2), hold on,
+  plot(Tg(2:end),abs(Vn(Mac.Ns1-I0,2:end))*1000,'k-.','LineWidth',2), hold on,
+  ylabel('\xi_n [mm/kA]','FontSize',16,'FontWeight','Bold')
+  xlabel('\theta','FontSize',16,'FontWeight','Bold')
+  ha=get(hf,'CurrentAxes');
+  set(ha,'FontSize',16,'FontWeight','Bold')
+  end
+
+  %normal displacement at the plasma surface
+  if 1==0
+  figure(10*Mac.plot_Vn+6)
+  VV = real(exp(i*Mac.n*Mac.phi)*Vn(Mac.Ns1,:));
+  x = Mac.chi*180/pi; 
+  y = Mac.phi*180/pi;
+  [xx,yy]=meshgrid(x,y);
+  pcolor(xx,yy,VV*1000), hold on,
+  %caxis([-2.85 2.85])
+  shading interp
+  %[C,H]=contour(xx,yy,VV*1000,[0 0]); hold on,
+  %set(H,'LineWidth',2,'Color','b')
+  %xlabel('equal-arc. poloidal angle [deg.]','FontSize',14,'FontWeight','Bold')
+  %ylabel('toroidal angle [deg.]','FontSize',14,'FontWeight','Bold')
+  %title('plasma surface normal displacement [mm/kAt]','FontSize',14,'FontWeight','Bold')
+  ha = get(10*Mac.plot_Vn+6,'CurrentAxes');
+  set(ha,'FontSize',14)
+  axis([-180 180 0 360])
+  colorbar, %colormap(hot)
+  end
+
+  %normal displacement at the plasma surface, along poloidal angle
+  if 1==1
+  figure(10*Mac.plot_Vn+7)
+  %fac_I     = Mac.Ns1;
+  III       = find(Mac.s<=Mac.edge);
+  fac_I     = III(end)
+  %fac_I     = Mac.Ns1-1;
+  %fac_I     = find(Mac.s>=0.9 & Mac.s<=1.0);
+  theta_mix = 0; %in degree
+  t0 = theta_mix*pi/180;
+  VV  = (Vn(fac_I,:)*cos(t0)+Vp(fac_I,:)*sin(t0));
+  x = Mac.chi*180/pi;
+
+  if 1==0
+  Rs = R(fac_I,:);
+  Zs = Z(fac_I,:);
+  Rc = (min(Rs)+max(Rs))/2;
+  Zc = (min(Zs)+max(Zs))/2;
+  Tg = atan2(Zs-Zc,Rs-Rc);
+  [Tg,II]=sort(Tg);
+  end
+
+  %plot(Mac.chi*180/pi,real(VV),'r-','LineWidth',3), hold on,
+  %plot(Mac.chi*180/pi,imag(VV),'b-','LineWidth',3), hold on,
+  plot(Mac.chi*180/pi,abs(VV),'b-','LineWidth',3), hold on,
+  %plot(Mac.chi*180/pi,angle(Vn(fac_I,:)*exp(i*0.8)),'b-','LineWidth',3), hold on,
+  %Acad.Xedge = [x(:) VV(:)];
+  %xlabel('geom. pol. angle [deg.]','FontSize',16,'FontWeight','Bold')
+  xlabel('poloidal angle [deg.]','FontSize',16,'FontWeight','Bold')
+  %ylabel('|\xi_n| [mm/kAt]','FontSize',16,'FontWeight','Bold')
+  %ylabel('\xi_n [mm]','FontSize',16,'FontWeight','Bold')
+  ylabel('|\xi_n| [mm]','FontSize',16,'FontWeight','Bold')
+  ha = get(10*Mac.plot_Vn+7,'CurrentAxes');
+  set(ha,'FontSize',16)
+  %text(-100,1,'|{\delta}B_p|[G] along wall','FontSize',20,'FontWeight','Bold','Color','r')
+  %text(-100,10,'|{\xi}_n|[mm] along LCFS','FontSize',20,'FontWeight','Bold','Color','b')
+  %a=axis; axis([0 360 a(3) a(4)])
+
+   [Y,Ixpt] = min(Z(Mac.Ns1,:));
+   a = axis; 
+   x = Mac.chi(Ixpt)*180/pi;
+   %plot([x x],[a(3) a(4)],'k--')
+   chiX = Mac.chi(Ixpt)
+
+   Rexpt = 1.94; %[m]
+   II = find(Z(Mac.Ns1,:)>0); 
+   [Y,I]=min(abs(R(Mac.Ns1,II)*Mac.R0EXP-Rexpt));
+   Cexpt = Mac.chi(II(I))*180/pi;
+   Ixpt  = 121;
+   Cexpt = Mac.chi(Ixpt)*180/pi;
+   a=axis; %plot([Cexpt Cexpt],[a(3) a(4)],'k--')
+   res_Xn_xpt = Vn(fac_I,Ixpt) 
+
+   %legend('\xi_n','\chi_{\chi}')
+  end
+
+  if 1==0
+  [Y,Ixpt] = min(Z(Mac.Ns1,:));
+  x0       = Mac.chi(Ixpt)*180/pi;
+  x        = Mac.chi*180/pi;
+  fac_I    = Mac.Ns1;
+
+  hf=figure(10*Mac.plot_Vn+3);
+  plot(x,real(V1(fac_I,:)),'r-','LineWidth',2), hold on,
+  plot(x,imag(V1(fac_I,:)),'b-','LineWidth',2), hold on,
+  xlabel('poloidal angle [deg.]','FontSize',16,'FontWeight','Bold')
+  ylabel('\xi^1','FontSize',18,'FontWeight','Bold')
+  ha = get(hf,'CurrentAxes'); set(ha,'FontSize',16)
+  a=axis; plot([x0 x0],[a(3) a(4)],'k--')
+
+  hf=figure(10*Mac.plot_Vn+4);
+  plot(x,real(V2(fac_I,:)),'r-','LineWidth',2), hold on,
+  plot(x,imag(V2(fac_I,:)),'b-','LineWidth',2), hold on,
+  xlabel('poloidal angle [deg.]','FontSize',16,'FontWeight','Bold')
+  ylabel('\xi^2','FontSize',18,'FontWeight','Bold')
+  ha = get(hf,'CurrentAxes'); set(ha,'FontSize',16)
+  a=axis; plot([x0 x0],[a(3) a(4)],'k--')
+
+  hf=figure(10*Mac.plot_Vn+5);
+  plot(x,real(V3(fac_I,:)),'r-','LineWidth',2), hold on,
+  plot(x,imag(V3(fac_I,:)),'b-','LineWidth',2), hold on,
+  xlabel('poloidal angle [deg.]','FontSize',16,'FontWeight','Bold')
+  ylabel('\xi^3','FontSize',18,'FontWeight','Bold')
+  ha = get(hf,'CurrentAxes'); set(ha,'FontSize',16)
+  a=axis; plot([x0 x0],[a(3) a(4)],'k--')
+
+  end
+
+  if 1==0
+  %normal displacement along the plasma surface, at R-Z plane
+  figure(10*Mac.plot_Vn+8)
+  fac_scale = 50;
+  VV = imag((Vn(fac_I,1:end-1)+Vn(fac_I,2:end)))/2;
+  Y1 = R(fac_I,1:end-1) + Z(fac_I,1:end-1)*i;
+  Y2 = R(fac_I,2:end) + Z(fac_I,2:end)*i;
+  Y0 = (Y1+Y2)/2;
+  YD = Y2-Y1;
+  YY = Y0 + VV.*YD./abs(YD)*(-i)*fac_scale;
+  plot(real(Y0)*Mac.R0EXP,imag(Y0)*Mac.R0EXP,'r--','LineWidth',2), hold on,
+  %plot(real(YY)*Mac.R0EXP,imag(YY)*Mac.R0EXP,'b--','LineWidth',3), hold on,
+
+  VV = real((Vn(fac_I,1:end-1)+Vn(fac_I,2:end)))/2;
+  Y1 = R(fac_I,1:end-1) + Z(fac_I,1:end-1)*i;
+  Y2 = R(fac_I,2:end) + Z(fac_I,2:end)*i;
+  Y0 = (Y1+Y2)/2;
+  YD = Y2-Y1;
+  YY = Y0 + VV.*YD./abs(YD)*(-i)*fac_scale;
+  plot(real(YY)*Mac.R0EXP,imag(YY)*Mac.R0EXP,'b-','LineWidth',3), hold on,
+
+  xlabel('R [m]','FontSize',16,'FontWeight','Bold')
+  ylabel('Z [m]','FontSize',16,'FontWeight','Bold')
+  ha = get(10*Mac.plot_Vn+8,'CurrentAxes');
+  set(ha,'FontSize',14,'FontWeight','Bold')
+  text(1.25,-1,['\xi_n x' num2str(fac_scale)],'FontSize',18,'FontWeight','Bold')
+  axis equal
+  axis([3 9 -4 4.5]) 
+  end
+  
+  if 1==0
+   %poloidal harmonics of Vn
+   hf=figure(10*Mac.plot_Vn+9);
+   MN = [-1:9];
+   MM = MN - Mac.Mm(1) + 1;
+   Y = abs(VnM(:,MM)); Cn=max(max(abs(Y))); 
+   Y = imag(VnM(:,MM)); Y = Y/Cn;
+   hp=plot(Mac.s(1:Mac.Ns1),Y,'-','LineWidth',1); hold on,
+   ylabel('\xi_n','FontSize',16,'FontWeight','Bold')
+   xlabel('s\equiv\psi_p^{1/2}','FontSize',16,'FontWeight','Bold')
+   ha=get(hf,'CurrentAxes');
+   set(ha,'FontSize',16,'FontWeight','Bold')
+   for k=1:length(MN)
+       c = get(hp(k),'Color');
+       [X,I]=max(abs(Y(:,k)));
+       text(Mac.s(I),Y(I,k),int2str(MN(k)),'FontSize',18,'FontWeight','Bold','Color',c)
+   end
+
+   if 1==0
+   Y = real(VnM(:,MM)); Y = Y/Cn;
+   hp=plot(Mac.s(1:Mac.Ns1),Y,'--','LineWidth',1); hold on,
+   for k=1:length(MN)
+       c = get(hp(k),'Color');
+       [X,I]=max(abs(Y(:,k)));
+       text(Mac.s(I),Y(I,k),int2str(MN(k)),'FontSize',18,'FontWeight','Bold','Color',c)
+   end
+   axis tight
+   end
+   end
+
+  %save data
+  if 1==0
+  res = [Mac.chi; R(Mac.Ns1,:)*Mac.R0EXP; Z(Mac.Ns1,:)*Mac.R0EXP; real(Vn(fac_I,:)); imag(Vn(fac_I,:))]'; 
+  save XnSurf.txt res -ascii
+  end
+end
+
+
+
+
+

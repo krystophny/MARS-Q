@@ -1,0 +1,112 @@
+function [P1,P2,P3] = MacGetP123(PM1,PM2,PM3,PM4,PM5,R,Z)
+
+global Mac
+
+expmchi = exp(Mac.Mm*Mac.chi*i);
+
+% P1,2,3 along unit vectors a1,a2,a3
+P1 = PM1*expmchi;  %fluid component of perturbed pressure
+P2 = PM2*expmchi;  %perpendicular component of perturbed kinetic pressure 
+P3 = PM3*expmchi;  %parallel component of perturbed kinetic pressure 
+P4 = PM4*expmchi;  %deltaPe
+P5 = PM5*expmchi;  %perturbed electrostati cpotential deltaPhi
+
+% contour plot for P1, P2, P3 
+if (Mac.plot_Pfluid>0)
+  if 1==0
+  hf=figure(10*Mac.plot_Pfluid+0);
+  pcolor(R(1:Mac.Ns1,:)*Mac.R0EXP,Z(1:Mac.Ns1,:)*Mac.R0EXP,real(P1))
+  shading interp
+  xlabel('R [m]','FontSize',16,'FontWeight','Bold')
+  ylabel('Z [m]','FontSize',16,'FontWeight','Bold')
+  title('{\delta}P [kPascal]','FontSize',16,'FontWeight','Bold')
+  ha = get(hf,'CurrentAxes');
+  set(ha,'FontSize',14,'FontWeight','Bold')
+  axis equal
+  colormap(jet), colorbar
+  end
+
+  if 1==0
+  hf=figure(10*Mac.plot_Pfluid+1);
+  pcolor(R(1:Mac.Ns1,:)*Mac.R0EXP,Z(1:Mac.Ns1,:)*Mac.R0EXP,imag(P1))
+  shading interp
+  xlabel('R [m]','FontSize',16,'FontWeight','Bold')
+  ylabel('Z [m]','FontSize',16,'FontWeight','Bold')
+  title('Im({\delta}P) [kPascal]','FontSize',16,'FontWeight','Bold')
+  ha = get(hf,'CurrentAxes');
+  set(ha,'FontSize',14,'FontWeight','Bold')
+  axis equal
+  colormap(jet), colorbar
+  end
+
+  if 1==1
+  hf=figure(10*Mac.plot_Pfluid+2);
+  pcolor(R(1:Mac.Ns1,:)*Mac.R0EXP,Z(1:Mac.Ns1,:)*Mac.R0EXP,abs(P1))
+  shading interp
+  xlabel('R [m]','FontSize',16,'FontWeight','Bold')
+  ylabel('Z [m]','FontSize',16,'FontWeight','Bold')
+  title('|{\delta}P| [kPascal]','FontSize',16,'FontWeight','Bold')
+  ha = get(hf,'CurrentAxes');
+  set(ha,'FontSize',14,'FontWeight','Bold')
+  axis equal
+  colormap(jet), colorbar
+  end
+
+  if 1==1
+  hf=figure(10*Mac.plot_Pfluid+3);
+  [Y,I]=max(R(Mac.Ns1,:));
+  plot(Mac.s(1:Mac.Ns1).^2,abs(P1(:,I)),Mac.SS,'LineWidth',3), hold on,
+  ylabel('|{\delta}P| [kPascal]','FontSize',18,'FontWeight','Bold')
+  xlabel('{\psi}_N','FontSize',18,'FontWeight','Bold')
+  ha=get(hf,'CurrentAxes');
+  set(ha,'FontSize',18)
+  end
+end
+
+if (Mac.plot_Pperp>0)
+  figure(10*Mac.plot_Pperp)
+  pcolor(R(1:Mac.Ns1,:)*Mac.R0EXP,Z(1:Mac.Ns1,:)*Mac.R0EXP,abs(P2))
+  shading interp
+  xlabel('R [m]','FontSize',16,'FontWeight','Bold')
+  ylabel('Z [m]','FontSize',16,'FontWeight','Bold')
+  title('|{\delta}P_{\perp}| [kPascal]','FontSize',16,'FontWeight','Bold')
+  ha = get(10*Mac.plot_Pperp,'CurrentAxes');
+  set(ha,'FontSize',16)
+  axis equal
+  colormap(jet), colorbar
+end
+
+if (Mac.plot_Ppara>0)
+  figure(10*Mac.plot_Ppara)
+  pcolor(R(1:Mac.Ns1,:)*Mac.R0EXP,Z(1:Mac.Ns1,:)*Mac.R0EXP,abs(P3))
+  shading interp
+  xlabel('R [m]','FontSize',16,'FontWeight','Bold')
+  ylabel('Z [m]','FontSize',16,'FontWeight','Bold')
+  title('|{\delta}P_{||}| [kPascal]','FontSize',16,'FontWeight','Bold')
+  ha = get(10*Mac.plot_Ppara,'CurrentAxes');
+  set(ha,'FontSize',16)
+  axis equal
+  colormap(jet), colorbar
+end
+
+if (Mac.plot_DPHI>0)
+  figure(10*Mac.plot_DPHI)
+  C = max(max(abs(P5)));
+  P5 = P5/C;
+  pcolor(R(1:Mac.Ns1,:)*Mac.R0EXP,Z(1:Mac.Ns1,:)*Mac.R0EXP,abs(P5))
+  shading interp
+  xlabel('R [m]','FontSize',16,'FontWeight','Bold')
+  ylabel('Z [m]','FontSize',16,'FontWeight','Bold')
+  %title('|\delta\phi| [V]','FontSize',16,'FontWeight','Bold')
+  title('|\delta\phi| [a.u.]','FontSize',16,'FontWeight','Bold')
+  ha = get(10*Mac.plot_DPHI,'CurrentAxes');
+  set(ha,'FontSize',16)
+  axis equal
+  colormap(jet), colorbar
+end
+
+
+
+
+
+

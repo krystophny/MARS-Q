@@ -1,0 +1,47 @@
+PROG =	marsf2.x
+
+SRCS =   dimensim.f globalm.f gijlm.f   \
+               gijum.f feedbackm.f   gvacuumm.f  rcomdm.f \
+               convolcofm.f  resmatm.f nag.f  pams.f   \
+               marsf.f smlpck.f feedback.f printatoh.f \
+               splines.f
+
+INCS =	cdipam.inc  newrun.inc   tent.inc vtophat.inc \
+            tophat.inc  comioc.inc   integc.inc    \
+            compam.inc  specmat.inc \
+            vtent.inc   
+
+MODS = 
+
+.PRECIOUS:	$(SRCS) $(INCS) $(MODS)
+
+OBJS =	$(SRCS:.f=.o)
+
+#LIBS2 =	 -L/u/chum/lohan2/nag -lnag
+#LIBS = -L/u/ferron/gato/tv80 -L/u2/chum/lohan1/baloo/bal1.5/sourcel -ltv80 -lncarg -lncarg_gks \
+       -lncarg_c -L/usr/X11R6/lib -lX11
+#LIBS1 = -L/sur/local/lf9561/lib -llapackmt -lblasmt
+
+#F95 = lf95
+F95 = ifort
+#F95DBFLAGS = --ap --chk --co  --f95 -g --lst --pca --sav --trace --warn --xref \
+#            --dbl --long -staticlink -tpp 
+#F95FLAGS =  -O --dbl --long --staticlink --tpp 
+F95FLAGS =  -O -r8 -cm -w
+LDFLAGS = $(F95FLAGS) -i_dynamic
+all: $(PROG)
+
+$(PROG): $(OBJS)
+	$(F95) $(LDFLAGS) -o $@ $(OBJS) $(LIBS) $(LIBS2) $(LIBS1)
+
+clean:
+	rm -f $(PROG) $(OBJS) *.d work.*
+
+tar:
+	gtar zcvf ../$(PROG).tar.gz $(SRCS) $(INCS) $(MODS) makefile
+
+.SUFFIXES: $(SUFFIXES) .f
+
+.f.o:
+	$(F95) $(F95FLAGS) -c $<
+

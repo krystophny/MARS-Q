@@ -1,0 +1,261 @@
+# Makefile for MARS-Q with new FFT on venus - Alan Turnbull  04/2014
+# 
+#
+
+MARS =   marsq
+
+PROG =	 $(MARS).x
+
+# Suffix Types
+.SUFFIXES:
+.SUFFIXES: .f .f90 .mod .inc .o .x
+
+
+# Fortran Sources
+FSOURCES =  $(MARS).f                                                   \
+            pams.f         smlpck.f        feedback.f     printatoh.f   \
+            splines.f      kinetic.f                                    \
+            torque.f       anisotropic.f   adaptive.f     output_t7.f   \
+            fftdriver.f    fftroutines.f   fftoutpt.f     abortrun.f 
+
+# Fortran Module Sources Needed for Pure Modules
+MODSOURC =  dimensim.f     globalm.f       gijlm.f                      \
+            gijum.f        feedbackm.f     gvacuumm.f     rcomdm.f      \
+            convolcofm.f   resmatm.f       adaptivem.f                  \
+            anisotropicm.f kineticm.f      torquem.f
+
+# Fortran Module Sources Needed for Modules and Objects
+MSOURCES =  common_ntv.f   mpienv.f        ntv.f                        \
+            ntv_lib.f      ntv_pre.f     
+
+# Fortran 90 Module Sources Needed for Modules and Objects
+MSOURC90 =  KineticExtendAnalysis.f90  ToolBox.f90
+
+# Fortran LSODE sources
+LSODE_DIR = ./lsode
+LSOURCES  =  ./lsode/daxpy.f   ./lsode/dcopy.f   ./lsode/dewset.f       \
+             ./lsode/dgbsl.f   ./lsode/dgesl.f   ./lsode/dprepj.f       \
+             ./lsode/dsolsy.f  ./lsode/dstode.f  ./lsode/dvnorm.f       \
+             ./lsode/iumach.f  ./lsode/lsode.f   ./lsode/xerrwd.f       \
+             ./lsode/xsetun.f  ./lsode/dcfode.f  ./lsode/ddot.f         \
+             ./lsode/dgbfa.f   ./lsode/dgefa.f   ./lsode/dintdy.f       \
+             ./lsode/dscal.f   ./lsode/dsrcom.f  ./lsode/dumach.f       \
+             ./lsode/idamax.f  ./lsode/ixsav.f   ./lsode/xsetf.f
+	 
+# Include Files
+INCLUDES =  cdipam.inc     newrun.inc      tent.inc       vtophat.inc   \
+            tophat.inc     comioc.inc      integc.inc                   \
+            compam.inc     specmat.inc                                  \
+            comfft.inc     setfft.inc                                   \
+            vtent.inc
+
+# Fortran Modules
+MODULES  =  $(MODSOURC:.f=.mod) $(MSOURCES:.f=.mod) 
+
+MODUL90  =  kineticextendanalysis.mod  toolbox.mod                       # $(MSOURC90: .f90=.mod) but with upper case removed
+
+
+# Object Files
+OBJECTS  =  $(FSOURCES:.f=.o)                                            # Fortran object files
+MODOBJCT =  $(MODSOURC:.f=.o)                                            # Fortran object files needed only for modules       
+MOBJECTS =  $(MSOURCES:.f=.o)                                            # Fortran object files needed for modules and object files
+MOBJEC90 =  $(MSOURC90:.f90=.o)                                          # Fortran 90 object files needed for modules and object files
+LOBJECTS =  $(LSOURCES:.f=.o)                                            # Fortran LSODE object files
+
+# Libraries and directories
+
+LIBDIR  = 
+
+INCDIR  = 
+
+LIBS =
+
+# Fortran Compiler
+#F95 =  /opt/pgi/linux86-64/13.2/bin/pgf95
+#FFLAGS = -OPT:Olimit=0 -m64 
+#F95FLAGS = -O2 -r8 -tp amd64e
+#F95FLAGS = -O3 -fdefault-real-8 -fdefault-double-8 -fopenmp -static-libgfortran  
+#F95FLAGS = -O2 -ffree-line-length-none -fdefault-real-8 -fdefault-double-8 -fopenmp -static-libgfortran  
+
+FFLAGS  =
+
+
+#F95 = /task/imd/local64/bin/mpif90
+F95 = mpif90
+F95FLAGS = -O1 -r8 -openmp
+
+LDFLAGS = 
+
+
+# Directives
+.PRECIOUS: $(FSOURCES) $(MODSOURC) $(MSOURCES) $(MSOURC90) $(LSOURCES) $(INCLUDES)
+
+
+# Actions
+
+# Target program construction
+all: $(PROG)
+
+$(PROG): $(OBJECTS) $(MOBJECTS) $(MOBJEC90) $(MODOBJCT) $(MODULES) $(MODUL90) $(LOBJECTS) $(INCLUDES)
+	@echo ""
+	@echo "At PROG:"
+	@echo "Making:         " $@
+	@echo "From:           " $+
+	@$(F95) $(LDFLAGS) -o $@ $(OBJECTS) $(MOBJECTS) $(MOBJEC90) $(MODOBJCT) $(LOBJECTS) $(LIBS) 
+
+
+# Dependent object file construction
+$(OBJECTS): $(INCLUDES)
+	@echo ""
+	@echo "At OBJECTS:"
+	@echo "Making:         " $@ 
+	@echo "From source:    " $(basename $@).f
+	@echo "Dependent files:" $+ 
+	@$(F95) $(F95FLAGS) -c $(basename $@).f -o $@
+
+$(MOBJECTS): $(INCLUDES)
+	@echo ""
+	@echo "At MOBJECTS:"
+	@echo "Making:         " $@
+	@echo "From source:    " $(basename $@).f
+	@echo "Dependent files:" $+ 
+	@$(F95) $(F95FLAGS) -c $(basename $@).f -o $@
+
+$(MOBJEC90): $(INCLUDES)
+	@echo ""
+	@echo "At MOBJEC90:"
+	@echo "Making:         " $@ 
+	@echo "From source:    " $(basename $@).f90
+	@echo "Dependent files:" $+ 
+	@$(F95) $(F95FLAGS) -c $(basename $@).f90 -o $@
+
+# Module file  construction
+$(MODULES): $(INCLUDES)
+	@echo ""
+	@echo "At MODULES:"
+	@echo "Making:         " $@ 
+	@echo "From source:    " $(basename $@).f
+	@echo "Dependent files:" $+ 
+	@$(F95) $(F95FLAGS) -c $(basename $@).f -o $(basename $@).o
+
+# Special case for f90 modules due to change in case
+toolbox.mod:  ToolBox.f90 $(INCLUDES)
+	@echo ""
+	@echo "At ToolBox:"
+	@echo "Making:         " $@
+	@echo "From source:    " $<
+	@echo "Dependent files:" $+
+	@$(F95) $(F95FLAGS) -c -o ToolBox.o $<
+
+kineticextendanalysis.mod: KineticExtendAnalysis.f90 $(INCLUDES)
+	@echo ""
+	@echo "At KineticExtendAnalysis:"
+	@echo "Making:         " $@
+	@echo "From source:    " $<
+	@echo "Dependent files:" $+ 
+	@$(F95) $(F95FLAGS) -c -o KineticExtendAnalysis.o $<
+
+# LSODE object file  construction
+$(LOBJECTS):
+	@echo ""
+	@echo "At LOBJECTS:"
+	@echo "Making:         " $@ 
+	@echo "From source:    " $(basename $@).f
+	@$(F95) $(F95FLAGS) -c $(basename $@).f -o $(basename $@).o
+
+
+# Dependencies
+
+# General Object file  dependencies
+
+$(OBJECTS):     dimensim.mod globalm.mod gijlm.mod gijum.mod rcomdm.mod
+
+# Specific dependencies
+$(MARS).o:         $(MODULES) $(MODUL90)
+
+feedback.o:        feedbackm.mod gvacuumm.mod resmatm.mod torquem.mod
+
+anisotropic.o:     anisotropicm.mod kineticm.mod
+
+adaptive.o:        adaptivem.mod mpienv.mod torquem.mod
+
+torque.o:          torquem.mod ntv.mod ntv_lib.mod ntv_pre.mod common_ntv.mod    \
+                   gvacuumm.mod feedbackm.mod convolcofm.mod resmatm.mod
+kinetic.o:         kineticm.mod mpienv.mod gvacuumm.mod resmatm.mod toolbox.mod  \
+	           kineticextendanalysis.mod anisotropicm.mod convolcofm.mod
+
+kineticm.mod:      gvacuumm.mod resmatm.mod toolbox.mod                          \
+	           kineticextendanalysis.mod anisotropicm.mod convolcofm.mod
+
+mpienv.o:          kineticm.mod
+mpienv.mod:        kineticm.mod
+
+ntv.o:             ntv_lib.mod common_ntv.mod
+ntv.mod:           ntv_lib.mod common_ntv.mod
+
+ntv_pre.o:         ntv_lib.mod
+ntv_pre.mod:       ntv_lib.mod
+
+common_ntv.o:      ntv_lib.mod ntv_pre.mod
+common_ntv.mod:    ntv_lib.mod ntv_pre.mod
+
+KineticExtendAnalysis.o:   toolbox.mod
+kineticextendanalysis.mod: toolbox.mod
+
+
+# General Catchall Suffix Dependencies
+$(OBJECTS): %.o: %.f
+
+$(MOBJECTS): %.o: %.f
+
+$(MOBJEC90): %.o: %.f90
+
+$(MODULES): %.mod: %.f
+
+$(LOBJECTS): %.o: %.f
+
+# Dependencies for modules in F90 codes used special treatment above
+
+
+# Other Tasks
+find_dependencies: make_dependencies.sh
+	@echo ""
+	@echo "Running make_dependencies.sh."
+	@./make_dependencies.sh "$(OBJECTS) $(MODOBJCT) $(MOBJECTS) $(MOBJEC90) $(LOBJECTS)" >> log.dependencies
+	@cat Dependency_list
+
+
+reallyclean:
+	@echo ""
+	@echo "Removing files: " $(PROG) $(OBJECTS) $(MODOBJCT) $(MOBJECTS) $(MOBJEC90) $(MODULES) $(MODUL90) $(LOBJECTS)
+	@rm -f $(PROG) $(OBJECTS) $(MODOBJCT) $(MOBJECTS) $(MOBJEC90) $(MODULES) $(MODUL90) $(LOBJECTS)
+
+mostlyclean:
+	@echo ""
+	@echo "Removing files: " $(PROG) $(OBJECTS) $(MODOBJCT) $(MOBJECTS) $(MOBJEC90) $(LOBJECTS)
+	@rm -f $(PROG) $(OBJECTS) $(MODOBJCT) $(MOBJECTS) $(MOBJEC90) $(LOBJECTS)
+
+test:
+	@echo ""
+	@echo "Existing Source Files:"
+	@echo $(FSOURCES) $(MODSOURC) $(MSOURCES) $(MSOURC90) $(LOBJECTS) $(INCLUDES)
+	@echo ""
+	@echo "Existing Modules:"
+	@echo $(MODULES) $(MODUL90)
+	@echo ""
+	@echo "Existing Object Files:"
+	@echo $(PROG) $(OBJECTS) $(MODOBJCT) $(MOBJECTS) $(MOBJEC90) $(LOBJECTS)
+
+update:
+	@echo ""
+	@echo "Updating files:"
+	@echo  $(OBJECTS) $(MODOBJCT) $(MOBJECTS) $(MOBJEC90) $(MODULES) $(MODUL90) $(LOBJECTS) $(PROG)
+	@touch $(OBJECTS) $(MODOBJCT) $(MOBJECTS) $(MOBJEC90) $(MODULES) $(MODUL90) $(LOBJECTS)
+	@touch $(PROG)	
+
+
+tar:
+	gtar zcvf ../$(MARS).tgz $(FSOURCES) $(MODSOURC) $(MSOURCES) $(MSOURC90)  \
+                     $(LSOURCES)                                        \
+                     $(INCLUDES)                               \
+                     makefile_new_marsq

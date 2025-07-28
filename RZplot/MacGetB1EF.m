@@ -1,0 +1,200 @@
+%read in error field (BR,BZ) at one surface
+%convert into B1
+%and save to INPUT_BNM_EF if Mac.RunEF=1
+ 
+function MacGetB1EF(filename,R,Z,dRdchi,dZdchi)
+
+global Mac
+global SDIR SFLD
+
+if Mac.RunEF==1 | Mac.RunEF==2  
+%read in standard data
+fid = fopen(filename,'r');
+data=fscanf(fid,'%f');
+fclose(fid);
+
+N    = round(length(data)/6);
+data = reshape(data,6,N);
+data = data';
+
+elseif Mac.RunEF==3 
+
+%read in data from DIII-D PROBE_G code output
+%and convert into toroidal Fourier harmonics
+NSP = 24;
+n   = 6;
+ccol= 'k';
+
+d = load(filename);
+phi = d(:,1)*pi/180;
+RR  = d(:,2);
+ZZ  = d(:,3);
+BP  = d(:,4);
+BR  = d(:,5);
+BZ  = d(:,6);
+NST = floor(length(phi)/NSP);
+phi = reshape(phi,NST,NSP);
+RR  = reshape(RR,NST,NSP);
+ZZ  = reshape(ZZ,NST,NSP);
+BR  = reshape(BR,NST,NSP);
+BZ  = reshape(BZ,NST,NSP);
+BP  = reshape(BP,NST,NSP);
+
+phi = phi(1,:); phi=phi(:);
+RR  = RR(:,1);
+ZZ  = ZZ(:,1);
+
+dphi = phi(2)-phi(1);
+ephi = exp(-1i*n*phi);
+BR = BR*ephi*dphi/2/pi; 
+BZ = BZ*ephi*dphi/2/pi; 
+BP = BP*ephi*dphi/2/pi; 
+
+%check divB (approximately) at four tip points
+[Y,I] = min(RR); I=I+1; BB = sqrt(abs(BR(I)).^2+abs(BZ(I)).^2+abs(BP(I)).^2)/Mac.R0EXP;
+divB_1 = abs(BR(I)+(BZ(I+1)-BZ(I-1))/(ZZ(I+1)-ZZ(I-1)) + 1i*n*BP(I)/RR(I))/BB
+[Y,I] = max(RR); BB = sqrt(abs(BR(I)).^2+abs(BZ(I)).^2+abs(BP(I)).^2)/Mac.R0EXP;
+divB_2 = abs(BR(I)+(BZ(I+1)-BZ(I-1))/(ZZ(I+1)-ZZ(I-1)) + 1i*n*BP(I)/RR(I))/BB
+[Y,I] = min(ZZ); BB = sqrt(abs(BR(I)).^2+abs(BZ(I)).^2+abs(BP(I)).^2)/Mac.R0EXP;
+divB_3 = abs((RR(I+1)*BR(I+1)-RR(I-1)*BR(I-1))/(RR(I+1)-RR(I-1))/RR(I) + 1i*n*BP(I)/RR(I))/BB
+[Y,I] = max(ZZ); BB = sqrt(abs(BR(I)).^2+abs(BZ(I)).^2+abs(BP(I)).^2)/Mac.R0EXP;
+divB_4 = abs((RR(I+1)*BR(I+1)-RR(I-1)*BR(I-1))/(RR(I+1)-RR(I-1))/RR(I) + 1i*n*BP(I)/RR(I))/BB
+
+%output BP 
+if 1==0
+   res = [RR ZZ real(BP) imag(BP)];
+   save TEMP_BP res -ascii
+end 
+
+%generate <data>
+data = [RR ZZ real(BR) imag(BR) real(BZ) imag(BZ)];
+end 
+
+
+% read in data
+BR = data(:,3)+data(:,4)*i;
+BZ = data(:,5)+data(:,6)*i;
+%BR = BR/Mac.B0EXP/2;  %divide by 2 for 5MA_GAP0-2, otherwise not
+%BZ = BZ/Mac.B0EXP/2;  %divide by 2 for 5MA_GAP0-2, otherwise not
+BR = BR/Mac.B0EXP;
+BZ = BZ/Mac.B0EXP;
+
+% surface shape
+Rw = data(:,1)/Mac.R0EXP;
+Zw = data(:,2)/Mac.R0EXP;
+Tw = atan2(Zw-Z(1,1),Rw-R(1,1))*180/pi;
+
+[Tw,II] = unique(Tw);
+Rw = Rw(II);
+Zw = Zw(II);
+BR = BR(II);
+BZ = BZ(II);
+
+% get B1, and Fourier decomposition
+[smin,II] = min(abs(Mac.s-Mac.rs));
+
+% first get Rw,Zw in MARS-F chi-angle
+TwM = atan2(Z(II,:)-Z(1,1),R(II,:)-R(1,1))*180/pi;
+KK = find(diff(TwM)<-180);
+if length(KK)==1&2*KK>length(TwM), TwM(KK+1:end)=TwM(KK+1:end)+360; end
+if length(KK)==1&2*KK<length(TwM), TwM(1:KK)=TwM(1:KK)-360; end
+
+% extend Tw by 2*pi from both ends
+KK = find(diff(Tw)<-180);
+if length(KK)==1&2*KK>length(Tw), Tw(KK+1:end)=Tw(KK+1:end)+360; end
+if length(KK)==1&2*KK<length(Tw), Tw(1:KK)=Tw(1:KK)-360; end
+Tw1 = Tw(1:end-1)-360;
+Tw2 = Tw(2:end)+360;
+
+% get BR,BZ in MARS-F chi-angle
+BR1 = BR(1:end-1);
+BR2 = BR(2:end);
+BZ1 = BZ(1:end-1);
+BZ2 = BZ(2:end);
+TwN = [Tw1; Tw; Tw2];
+BRN = [BR1; BR; BR2];
+BZN = [BZ1; BZ; BZ2];
+BRM = spline(TwN,BRN,TwM');
+BZM = spline(TwN,BZN,TwM');
+
+B1 = R(II,:)'.*(dZdchi(II,:)'.*BRM - dRdchi(II,:)'.*BZM);
+
+mm = [-80:80]';
+expchi = exp(-i*mm*Mac.chi(1:end-1));
+B1m    = expchi*B1(1:end-1)*(Mac.chi(2)-Mac.chi(1))/2/pi;
+
+%fac    = 9.7430e-04 + 9.7430e-04i;
+fac    = 1;
+B1m    = B1m/fac;
+
+% save data into INPUT_BNM_EF
+res = [length(mm) II; real(B1m) imag(B1m)];
+save INPUT_BNM_EF.IN res -ascii -double
+
+% plotting
+if Mac.plot_EF > 0
+
+   ccol = 'b';
+
+   hf=figure(10*Mac.plot_EF+0);
+   plot(Rw*Mac.R0EXP,Zw*Mac.R0EXP,'r-','LineWidth',2), hold on
+   xlabel('R [m]','FontSize',16,'FontWeight','Bold')
+   ylabel('Z [m]','FontSize',16,'FontWeight','Bold')
+   axis equal
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+
+   %check control surface
+   [smin,II] = min(abs(Mac.s-Mac.rs));
+   plot(R(II,:)*Mac.R0EXP,Z(II,:)*Mac.R0EXP,'b--','LineWidth',2), hold on
+   
+
+   [Tw,JJ] = sort(Tw);
+   B0 = Mac.B0EXP*1e+4;  %[GAUSS}
+   hf=figure(10*Mac.plot_EF+1);
+
+   hs=subplot(2,2,1);
+   plot(Tw,real(BR(JJ)*B0),'-','Color',ccol,'LineWidth',3), hold on,
+   ylabel('Re({\delta}B_R) [Gauss]','FontSize',16,'FontWeight','Bold')
+   set(hs,'FontSize',14,'FontWeight','Bold')
+
+   hs=subplot(2,2,2);
+   plot(Tw,imag(BR(JJ)*B0),'-','Color',ccol,'LineWidth',3), hold on,
+   ylabel('Im({\delta}B_R) [Gauss]','FontSize',16,'FontWeight','Bold')
+   set(hs,'FontSize',14,'FontWeight','Bold')
+
+   hs=subplot(2,2,3);
+   plot(Tw,real(BZ(JJ)*B0),'-','Color',ccol,'LineWidth',3), hold on,
+   xlabel('geometric \theta (degrees)','FontSize',16,'FontWeight','Bold')
+   ylabel('Re({\delta}B_Z) [Gauss]','FontSize',16,'FontWeight','Bold')
+   set(hs,'FontSize',14,'FontWeight','Bold')
+
+   hs=subplot(2,2,4);
+   plot(Tw,imag(BZ(JJ)*B0),'-','Color',ccol,'LineWidth',3), hold on,
+   xlabel('geometric \theta (degrees)','FontSize',16,'FontWeight','Bold')
+   ylabel('Im({\delta}B_Z) [Gauss]','FontSize',16,'FontWeight','Bold')
+   set(hs,'FontSize',14,'FontWeight','Bold')
+
+   if Mac.RunEF>0
+   hf=figure(10*Mac.plot_EF+2);
+
+   hs=subplot(2,1,1);
+   plot(TwM,real(B1*B0),'-','Color',ccol,'LineWidth',3), hold on,
+   ylabel('Re({\delta}B^1) [Gauss]','FontSize',16,'FontWeight','Bold')
+   set(hs,'FontSize',14,'FontWeight','Bold')
+
+   hs=subplot(2,1,2);
+   plot(TwM,imag(B1*B0),'-','Color',ccol,'LineWidth',3), hold on,
+   xlabel('poloidal angle (degrees)','FontSize',16,'FontWeight','Bold')
+   ylabel('Im({\delta}B^1) [Gauss]','FontSize',16,'FontWeight','Bold')
+   set(hs,'FontSize',14,'FontWeight','Bold')
+
+   hf=figure(10*Mac.plot_EF+3);
+   plot(mm,real(B1m),'-o',mm,imag(B1m),'--s','Color',ccol,'LineWidth',2), hold on,
+   xlabel('m','FontSize',16,'FontWeight','Bold')
+   ylabel('error field B^1_m','FontSize',16,'FontWeight','Bold')
+   legend('Re(B^1_m)','Im(B^1_m)')
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+   end
+end
+
+

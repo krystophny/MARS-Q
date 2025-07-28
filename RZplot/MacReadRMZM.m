@@ -1,0 +1,57 @@
+function [RM,ZM] = MacReadRMZM(filename)
+
+global Mac
+
+%command = ['!cp ' filename ' RMZM_F'];
+%eval(command), load RMZM_F
+
+  RMZM_F = load(filename,'-ascii');
+
+Mac.Nm0 = RMZM_F(1,1);
+Mac.Ns1 = RMZM_F(1,2);
+Mac.Ns2 = RMZM_F(1,3);
+
+if Mac.Norm
+  Mac.R0EXP = RMZM_F(1,4);
+  Mac.B0EXP = RMZM_F(2,4);
+end
+
+Ns = Mac.Ns1 + Mac.Ns2;
+Mac.Ns = Ns;
+
+NRATSURF     = RMZM_F(2,2);
+Mac.Iratsurf = RMZM_F(3:NRATSURF+2,2);
+
+Mac.s = RMZM_F(2:Ns+1,1);
+RM = RMZM_F(Ns+2:end,1) + RMZM_F(Ns+2:end,2)*i;
+ZM = RMZM_F(Ns+2:end,3) + RMZM_F(Ns+2:end,4)*i;
+
+RM = reshape(RM,Ns,Mac.Nm0);
+ZM = reshape(ZM,Ns,Mac.Nm0);
+
+RM(:,2:end) = 2*RM(:,2:end);
+ZM(:,2:end) = 2*ZM(:,2:end);
+
+%cutting RMZM
+if Mac.cut_RZ > 0
+  II = find(Mac.s <= Mac.cut_RZ);
+  Mac.s = Mac.s(II);
+  RM = RM(II,:);
+  ZM = ZM(II,:);
+  Mac.Ns = length(II);
+  Mac.Ns2 = Mac.Ns - Mac.Ns1;
+  if Mac.Ns2 < 0, Mac.Ns1 = Mac.Ns; Mac.Ns2 = 0; end
+end
+
+if Mac.plot_RZM>0
+   figure(Mac.plot_RZM)
+   subplot(2,2,1), plot(Mac.s(1:Mac.Ns),real(RM)), hold on,
+                   ylabel('Re(R_m)','FontSize',14)
+   subplot(2,2,2), plot(Mac.s(1:Mac.Ns),imag(RM(:,1:40))), hold on,
+                   ylabel('Im(R_m)','FontSize',14)
+   subplot(2,2,3), plot(Mac.s(1:Mac.Ns),real(ZM)), hold on,
+                   xlabel('s','FontSize',14), ylabel('Re(Z_m)','FontSize',14)
+   subplot(2,2,4), plot(Mac.s(1:Mac.Ns),imag(ZM)), hold on,
+                   xlabel('s','FontSize',14), ylabel('Im(Z_m)','FontSize',14)
+end
+

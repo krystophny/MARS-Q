@@ -1,0 +1,65 @@
+# Makefile for MARS-F on lohan6 - M. Lanctot 2008-10-01
+# Taken from:
+# Makefile for MARS-F on lohan4 - H. Reimerdes
+# 04-21-2006 First try
+#
+
+# Macros
+FFLAGS = -OPT:Olimit=0 -m64
+
+PROG =	 marsf.x
+
+SRCS =   dimensim.f globalm.f gijlm.f   \
+         gijum.f feedbackm.f   gvacuumm.f  rcomdm.f \
+         convolcofm.f  resmatm.f kineticm.f torquem.f \
+         nag.f  pams.f   \
+         marsf.f smlpck.f feedback.f printatoh.f \
+         splines.f ToolBox.f90 KineticExtendAnalysis.f90  \
+         kinetic.f \
+         ntv_lib.f ntv_pre.f ntv_common.f ntv.f torque.f
+
+INCS =	 cdipam.inc  newrun.inc   tent.inc vtophat.inc \
+         tophat.inc  comioc.inc   integc.inc    \
+         compam.inc  specmat.inc \
+         vtent.inc   
+
+MODS = 
+
+.PRECIOUS:	$(SRCS) $(INCS) $(MODS)
+
+OBJS =	$(SRCS:.f.f90=.o)
+
+#LIBDIR = \
+#        -L/usr/pgi/linux86-64/6.1/lib
+
+#LIBS = \
+#        $(LIBDIR)
+LIBS =
+
+F95 = /opt/pgi/linux86-64/10.8/bin/pgf95
+ 
+#F95FLAGS = -mp -O2 -r8 -tp amd64e
+#LDFLAGS  = -mp -O2 -r8 -tp amd64e
+F95FLAGS = -O1 -r8 -tp amd64e
+#LDFLAGS  = -O -r8 -tp amd64e
+#LDFLAGS =
+
+all: $(PROG)
+
+$(PROG): $(OBJS)
+	$(F95) $(F95FLAGS) -o $@ $(OBJS) $(LIBS)
+
+clean:
+	rm -f $(PROG) *.o *.mod *.d *.x    
+
+test:
+	echo $(OBJS) 
+
+tar:
+	gtar zcvf ../$(PROG).tar.gz $(SRCS) $(INCS) $(MODS) Makefile_Portland README
+
+.SUFFIXES: $(SUFFIXES) .f
+
+.f.o:
+	$(F95) $(F95FLAGS) -c $<
+

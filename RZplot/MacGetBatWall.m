@@ -1,0 +1,412 @@
+function [Bnm,Btm,Bpm] = MacGetBatWall(R,Z,Br,Bz,Bphi)
+
+global Mac Acad
+global SDIR
+
+Bnm = 0;  Btm = 0; Bpm = 0;
+
+% find the index for wall surfaces
+II = zeros(1,length(Mac.rw));
+for j=1:length(II)
+    [smin,II(j)] = min(abs(Mac.s-Mac.rw(j)));
+    %[smin,II(j)] = min(abs(Mac.s-1));
+    II(j) = II(j); %choose a surface just inside the wall
+end
+
+s_rw=Mac.s(II);
+
+Tw = []; Rw = [];  Zw = []; Cw = [];
+Bwr = []; Bwz = []; Bwphi = [];
+for j=1:1
+    Zmin=min(Z(II(j),:));  Zmax=max(Z(II(j),:)); Z0=0.5*(Zmin+Zmax);
+    Rmin=min(R(II(j),:));  Rmax=max(R(II(j),:)); R0=0.5*(Rmin+Rmax);
+    %Z0 = 0.45/Mac.R0EXP; %for ITER
+    %R0 = 3.0/Mac.R0EXP;  Z0 = 0.0;  %for JET62653
+    R0 = R(1,1); Z0=Z(1,1);
+    %disp(['R0=',num2str(R0*Mac.R0EXP),', Z0=',num2str(Z0*Mac.R0EXP)])
+    T = atan2(Z(II(j),:)-Z0,R(II(j),:)-R0);
+    %I = find(T<0); T(I) = T(I) + 2*pi;  %for JET62653
+    [T,JJ] = sort(T);
+    Tw = [Tw T];
+    Rw = [Rw R(II(j),JJ)];
+    Zw = [Zw Z(II(j),JJ)];
+    Bwr = [Bwr Br(II(j),JJ)];
+    tmp = Bz(II(j),JJ);
+    Bwz = [Bwz tmp];
+    tmp = Bphi(II(j),JJ); 
+    Bwphi = [Bwphi tmp];
+
+    Cw = [Cw Mac.chi(JJ)];
+end
+
+data = [[Rw(:) Zw(:)]*Mac.R0EXP real(Bwr(:)) imag(Bwr(:)) real(Bwz(:)) imag(Bwz(:)) real(Bwphi(:)) imag(Bwphi(:))];
+
+save MacDataBs data -ascii
+
+data = [Tw(:) Cw(:) Rw(:)*Mac.R0EXP Zw(:)*Mac.R0EXP];
+save MacDataT data -ascii
+
+
+% plot Bw at the wall
+if Mac.plot_BW > 0
+   h = 3.0/Mac.Ns1;
+   Brr = real(Bwr); Bzr = real(Bwz);
+   Bt = sqrt(Brr.^2 + Bzr.^2);  
+   %Bt = max(max(Bt));
+   [II,BB]=find(Bt==0.0);  Bt(II,BB) = 1.0;
+   R1 = Rw + h*Brr./Bt;
+   Z1 = Zw + h*Bzr./Bt;
+
+   figure(Mac.plot_BW)
+   R2 = [Rw(:) R1(:)]';
+   Z2 = [Zw(:) Z1(:)]';
+
+   plot(Rw*Mac.R0EXP,Zw*Mac.R0EXP,'c-'), hold on,
+   plot(R2*Mac.R0EXP,Z2*Mac.R0EXP,'b-'), hold on,
+   axis equal
+   xlabel('R [m]','FontSize',16)
+   ylabel('Z [m]','FontSize',16)
+end
+
+if (Mac.plot_BC>0)
+  figure(Mac.plot_BC)
+  SS = Mac.SS;
+  B0 = Mac.B0EXP*1e+4;
+  subplot(2,2,1), plot(Tw*180/pi,real(Bwr)*B0,SS,'LineWidth',2), hold on 
+                  ylabel('Re[Br]','FontSize',16),
+  subplot(2,2,2), plot(Tw*180/pi,imag(Bwr)*B0,SS,'LineWidth',2), hold on 
+                  ylabel('Im[Br]','FontSize',16),
+  subplot(2,2,3), plot(Tw*180/pi,real(Bwz)*B0,SS,'LineWidth',2), hold on 
+                  ylabel('Re[Bz]','FontSize',16),
+  subplot(2,2,4), plot(Tw*180/pi,imag(Bwz)*B0,SS,'LineWidth',2), hold on 
+                  ylabel('Im[Bz]','FontSize',16),
+%  subplot(3,2,5), plot(Tw,real(Bwphi),SS,'LineWidth',2), hold on 
+%                  xlabel('\theta','FontSize',16),
+%                  ylabel('Re[B_\phi]','FontSize',16),
+%  subplot(3,2,6), plot(Tw,imag(Bwphi),SS,'LineWidth',2), hold on 
+                  xlabel('\theta','FontSize',16),
+                  ylabel('Im[B_\phi]','FontSize',16),
+end
+  
+%get Bn, Bt, Bphi in Fourier harmonics in physical theta angle
+%using Gauss quadrature for integration
+if length(Mac.rw)==1 
+
+%clean Tw,Rw,Zw,Bwr,Bwz,Bwphi
+[Tw,JJ] = unique(Tw); Rw = Rw(JJ); Zw = Zw(JJ); Cw = Cw(JJ);
+Bwr = Bwr(JJ); Bwz = Bwz(JJ); Bwphi = Bwphi(JJ); 
+Tw = [Tw(end)-2*pi Tw]; Cw =[Cw(end)-2*pi Cw];
+Rw = [Rw(end) Rw]; Zw=[Zw(end) Zw];
+Bwr = [Bwr(end) Bwr];  Bwz = [Bwz(end) Bwz];  Bwphi = [Bwphi(end) Bwphi];
+
+%get Gauss quadrature points for Fourier decomposition
+[z,w] = MacGaussQuad1D(2);
+x0 = (Tw(1:end-1)+Tw(2:end))*0.5;
+h2 = diff(Tw)*0.5;
+xx = z'*h2 + ones(size(z'))*x0;
+wh = w'*h2;
+xx = xx(:);  wh=wh(:);
+
+kdR = 0;
+if kdR > 0 
+
+%Fourier decompose (Rw,Zw) in Tw-angle
+expmt = exp(-i*xx*[-Mac.Nm2:Mac.Nm2])/(2*pi);
+Rx    = spline(Tw,Rw,xx').*wh';
+Zx    = spline(Tw,Zw,xx').*wh';
+Rm = Rx*expmt; 
+Zm = Zx*expmt;
+
+%compute (dR/dTw,dZ/dTw) via Fourier harmonics
+expmt = exp(i*[-Mac.Nm2:Mac.Nm2]'*Tw);
+dR = i*([-Mac.Nm2:Mac.Nm2].*Rm)*expmt;
+dZ = i*([-Mac.Nm2:Mac.Nm2].*Zm)*expmt;
+%res = [dR(:)  dZ(:)]
+dR = real(dR);
+dZ = real(dZ);
+
+else
+
+%another way to compute dR,dZ
+dRT = diff(Rw)./diff(Tw);
+x = (Tw(2:end)+Tw(1:end-1))/2;
+x = [x(end)-2*pi x x(1)+2*pi];
+dRT = [dRT(end) dRT dRT(1)];
+dR = pchip(x,dRT,Tw);
+dZT = diff(Zw)./diff(Tw);
+dZT = [dZT(end) dZT dZT(1)];
+dZ = pchip(x,dZT,Tw);
+
+end
+
+%compute physical Bn & Bt from Bwr & Bwz
+nA = sqrt(dR.^2+dZ.^2);
+Bn = (Bwr.*dZ - Bwz.*dR)./nA;
+Bt = (Bwr.*dR + Bwz.*dZ)./nA;
+
+%print geomtric elements at sensor locations 
+if 1==0
+   JJ   = 2:length(Tw);
+   CHIS = Mac.CHIS*pi;
+   Sdr  = spline(Cw,dR(JJ),CHIS);
+   Sdz  = spline(Cw,dZ(JJ),CHIS);
+   Se   = spline(Cw,nA(JJ),CHIS);
+   Sbr  = spline(Cw,Bwr(JJ),CHIS);
+   Sbz  = spline(Cw,Bwz(JJ),CHIS);
+   Sbn  = spline(Cw,Bn(JJ),CHIS);
+   Sbt  = spline(Cw,Bt(JJ),CHIS);
+
+   for k=1:length(CHIS)
+       MAT_B = [Sdz(k) -Sdr(k); Sdr(k) Sdz(k)]/Se(k)
+       FLD_A = [Sbr(k); Sbz(k)]
+       FLD_B = [Sbn(k); Sbt(k)]
+   end
+end
+
+%re-compute B1 from Bn
+if Mac.plot_Bs > 0
+  I = find(abs(diff(Cw))>pi);
+  Cw(I+1:end) = Cw(I+1:end)+2*pi;
+  Cw = [Cw(end)-2*pi Cw];
+  [Cw,JJ] = unique(Cw);
+  dTdC = diff(Tw(JJ))./diff(Cw);
+  x = (Cw(1:end-1)+Cw(2:end))/2;
+  dTdC = [dTdC(end) dTdC dTdC(1)];
+  x = [x(end)-2*pi x x(1)+2*pi];
+  dTC = pchip(x,dTdC,Cw);
+  B1n = Bn(JJ).*Rw(JJ).*nA(JJ).*dTC;
+  I = find(Cw>pi);
+  Cw(I) = Cw(I) - 2*pi;
+  [Cw,I] = sort(Cw);
+  B1n = B1n(I);
+  figure(Mac.plot_Bs)
+  subplot(3,2,1), plot(Cw,real(B1n),'k-'), hold on,
+  subplot(3,2,2), plot(Cw,imag(B1n),'k-'), hold on,
+end
+
+%test new Bn
+%N = round((length(Tw)+1)/2);
+%I1 = N-20;    I2 = N+20;    II = I1:I2;
+%T1 = Tw(I1);  T2 = Tw(I2);  T0 = (T1+T2)*0.5;
+%Bn = zeros(size(Tw));
+%Bn(II) = 1.0e+6*(Tw(II)-T1).^3.*(Tw(II)-T2).^3;
+
+%Fourier decompose Bn, Bt & Bphi along Tw angle
+expmt = exp(-i*xx*Mac.Mm')/(2*pi);
+Bnx   = spline(Tw,Bn,xx').*wh';
+Btx   = spline(Tw,Bt,xx').*wh';
+Bpx   = spline(Tw,Bwphi,xx').*wh';
+Bnm = Bnx*expmt; 
+Btm = Btx*expmt; 
+Bpm = Bpx*expmt; 
+
+%test new Bn
+%Ts  = 2*pi*(13-1)/29;
+%Bnm = exp(-(Mac.Mm'-3).^2/111);
+%Bnm = Bnm.*exp(i*Mac.Mm'*Ts);
+%expmt = exp(i*Mac.Mm*Tw);
+%Bn    = Bnm*expmt;
+
+
+
+%plot results
+if (Mac.plot_BWP > 0)
+  if 1==0
+  figure(10*Mac.plot_BWP+0)
+  SS = Mac.SS;
+  subplot(3,2,1), plot(Tw*180/pi,real(Bn),SS,'LineWidth',2), hold on 
+                  ylabel('Re[Bn]','FontSize',16),
+  subplot(3,2,2), plot(Tw*180/pi,imag(Bn),SS,'LineWidth',2), hold on 
+                  ylabel('Im[Bn]','FontSize',16),
+  subplot(3,2,3), plot(Tw*180/pi,real(Bt),SS,'LineWidth',2), hold on 
+                  ylabel('Re[Bt]','FontSize',16),
+  subplot(3,2,4), plot(Tw*180/pi,imag(Bt),SS,'LineWidth',2), hold on 
+                  ylabel('Im[Bt]','FontSize',16),
+  subplot(3,2,5), plot(Tw*180/pi,real(Bwphi),SS,'LineWidth',2), hold on 
+                  xlabel('\theta','FontSize',16),
+                  ylabel('Re[B_\phi]','FontSize',16),
+  subplot(3,2,6), plot(Tw*180/pi,imag(Bwphi),SS,'LineWidth',2), hold on 
+                  xlabel('\theta','FontSize',16),
+                  ylabel('Im[B_\phi]','FontSize',16),
+
+  save Bn_CCa Tw Bn
+  end
+
+  % get field at sensor location
+  RS = 2.0430; %[m] 
+  ZS =-1.1098; %[m]
+  TS = atan2(ZS/Mac.R0EXP-Z(1,1),RS/Mac.R0EXP-R(1,1));
+  %if TS<0, TS=TS+2*pi; end
+  BnS = spline(Tw,abs(Bn),TS);
+  BtS = spline(Tw,abs(Bt),TS);
+  RES_SENSOR = [TS*180/pi BnS BtS]
+ 
+  if 1==1
+  hf=figure(10*Mac.plot_BWP+1);
+  plot(Tw*180/pi,abs(Bn),'b-','LineWidth',3), hold on 
+  xlabel('geom. pol. angle [deg.]','FontSize',18),
+  ylabel('|Bn| [Gauss]','FontSize',18),
+  ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+  a = axis; axis([0 360 a(3) a(4)])
+  plot([TS TS]*180/pi,[a(3) a(4)],'k--')
+  end
+
+  if 1==1
+  hf=figure(10*Mac.plot_BWP+7);
+  plot(Tw*180/pi,abs(Bt),'b-','LineWidth',3), hold on 
+  %plot(Tw*180/pi,abs(Bwz),'b--','LineWidth',3), hold on 
+  xlabel('geom. pol. angle [deg.]','FontSize',18),
+  ylabel('|Bp| [Gauss]','FontSize',18),
+  ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+  %a = axis; axis([0 360 a(3) a(4)])
+  plot([TS TS]*180/pi,[a(3) a(4)],'k--')
+  end
+
+  if 1==8
+  hf=figure(10*Mac.plot_BWP+8);
+  II=2:length(Cw)-1;
+  plot(Cw(II)*180/pi,real(Bwr(II)),'b-','LineWidth',3), hold on 
+  plot(Cw(II)*180/pi,imag(Bwr(II)),'b--','LineWidth',3), hold on 
+  plot(Cw(II)*180/pi,real(Bwz(II)),'r-','LineWidth',3), hold on 
+  plot(Cw(II)*180/pi,imag(Bwz(II)),'r--','LineWidth',3), hold on 
+  %chiPICK=37.968;
+  %BwrPICK=spline(Cw(II)*180/pi,Bwr(II),chiPICK)
+  %BwzPICK=spline(Cw(II)*180/pi,Bwz(II),chiPICK)
+  xlabel('pol. angle [deg.]','FontSize',18),
+  ylabel('{\delta}B [Gauss]','FontSize',18),
+  ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+  a = axis; axis([0 360 a(3) a(4)])
+  legend('Re(B_R)','Im(B_R)','Re(B_Z)','Im(B_Z)')
+  end
+
+  if 1==0
+  hf=figure(10*Mac.plot_BWP+8);
+  plot(R(Mac.Ns1,:)*Mac.R0EXP,Z(Mac.Ns1,:)*Mac.R0EXP,'b-','LineWidth',3), hold on 
+  plot(R(II(1),:)*Mac.R0EXP,Z(II(1),:)*Mac.R0EXP,'r-','LineWidth',3), hold on 
+  xlabel('R [m]','FontSize',18),
+  ylabel('Z [m]','FontSize',18),
+  ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+  end
+
+  if 1==0
+  hf=figure(10*Mac.plot_BWP+4);
+  Bna = real(exp(-i*Mac.n*Mac.phi)*Bt)';
+  [pp,cc] = meshgrid(Mac.phi,Tw);
+  pp = pp*180/pi;
+  cc = cc*180/pi;
+  pcolor(pp,cc,Bna), shading interp, hold on 
+  contour(pp,cc,Bna,'k-')
+  colorbar,  %colormap(hot)
+  xlabel('toroidal angle [deg.]','FontSize',16,'FontWeight','Bold')
+  ylabel('poloidal angle [deg]','FontSize',16,'FontWeight','Bold')
+
+  x = Mac.phi*180/pi;
+  n=1; m=2; plot(x,-x*n/m,'r-.','LineWidth',3), hold on
+  n=1; m=3; plot(x,-x*n/m,'b-.','LineWidth',3), hold on
+  text(150,-30,'m=3','FontSize',24,'FontWeight','Bold','Color','b')
+  text(100,-110,'m=2','FontSize',24,'FontWeight','Bold','Color','r')
+  ha=get(hf,'CurrentAxes'); 
+  set(ha,'FontSize',16,'FontWeight','Bold')
+  set(ha,'XTick',[0 90 180 270 360],'YTick',[-180 -90 0 90 180])
+  end
+
+  if 1==0
+  hf=figure(10*Mac.plot_BWP+3);
+  Bna = real(exp(i*Mac.n*Mac.phi)*Bn)'/max(abs(Bn));
+  [pp,cc] = meshgrid(Mac.phi,Mac.chi);
+  pp = pp*180/pi;
+  cc = cc*180/pi;
+  pcolor(pp,cc,Bna), shading interp, hold on 
+  contour(pp,cc,Bna,'k-')
+  colorbar,  %colormap(hot)
+  xlabel('geometric toroidal angle','FontSize',16,'FontWeight','Bold')
+  ylabel('geometric poloidal angle','FontSize',16,'FontWeight','Bold')
+
+  %find poloidal angles for top,bottom,LFS,HFS
+  [Y,k]=min(R(II,:)); chi_HFS=Mac.chi(k)*180/pi;
+  [Y,k]=max(R(II,:)); chi_LFS=Mac.chi(k)*180/pi;
+  [Y,k]=min(Z(II,:)); chi_bot=Mac.chi(k)*180/pi;
+  [Y,k]=max(Z(II,:)); chi_top=Mac.chi(k)*180/pi;
+  axis([0 400 -180 180])
+  text(365,chi_HFS,'HFS','FontSize',16,'FontWeight','Bold')
+  text(365,chi_LFS,'LFS','FontSize',16,'FontWeight','Bold')
+  text(365,chi_bot,'BOT','FontSize',16,'FontWeight','Bold')
+  text(365,chi_top,'TOP','FontSize',16,'FontWeight','Bold')
+  end
+
+  if 1==0 %for JET62653
+  a0  = 100/180*pi; b0=-0.32;  c0=0.85;
+  Bn1 = b0*real(Bn*exp(i*a0));
+  Bn2 = b0*real(Bn*exp(i*a0+i*pi/2));
+  figure(1)
+  subplot(2,1,1), plot(Tw*180/pi,Bn1,'b-','LineWidth',3), hold on,
+  subplot(2,1,2), plot(Tw*180/pi,Bn2,'b-','LineWidth',3), hold on,
+  run /home/yliu/SEP06/JET/SHOT62646/R62646_poloidal.m
+
+  eval(['load ' SDIR 'Coil_Angles.csv'])
+  data = Coil_Angles;
+
+  Rc1 = data(:,2); Zc1 = data(:,3);
+  Rc2 = data(:,4); Zc2 = data(:,5);
+  if (Mac.plot_shape > 0)
+    figure(Mac.plot_shape)
+    plot([Rc1 Rc2],[Zc1 Zc2],'r-s','MarkerSize',8), hold on,
+  end
+  R0 = 3.0;  Z0 = 0.0;  
+  T1 = atan2(Zc1-Z0,Rc1-R0);
+  I = find(T1<0); T1(I) = T1(I) + 2*pi;
+  T2 = atan2(Zc2-Z0,Rc2-R0);
+  I = find(T2<0); T2(I) = T2(I) + 2*pi;
+  tt = [];  ff1 = []; ff2 = [];
+  Bn1 = Bn1*c0.*Rw;
+  Bn2 = Bn2*c0.*Rw;
+  for k=1:length(T1)
+    t  = linspace(T1(k),T2(k),51);
+    b1 = spline(Tw,Bn1,t);
+    b2 = spline(Tw,Bn2,t);
+    f1 = (sum(b1)-b1(1)/2-b1(end)/2)*(t(2)-t(1))/(T2(k)-T1(k));
+    f2 = (sum(b2)-b2(1)/2-b2(end)/2)*(t(2)-t(1))/(T2(k)-T1(k));
+    tt = [tt; T1(k); T2(k)];
+    ff1= [ff1; f1; f1];
+    ff2= [ff2; f2; f2];
+  end
+  figure(1)
+  subplot(2,1,1), plot(tt*180/pi,ff1,'b--','LineWidth',2), hold on,
+  subplot(2,1,2), plot(tt*180/pi,ff2,'b--','LineWidth',2), hold on,
+  end
+
+end
+
+%contour plot of Re(Bn) along theta and phi, at the wall surface
+if (Mac.plot_BWC > 0)
+  figure(Mac.plot_BWC)
+  t  = linspace(0,2*pi,81);
+  p  = linspace(0,2*pi,81);
+  b  = spline(Tw,Bn,t);
+  bb = -0.25*real(b(:)*exp(i*p));
+  contourf(p*180/pi,t*180/pi,bb,31), colorbar 
+end
+
+res = [Tw(:) Rw(:)*Mac.R0EXP Zw(:)*Mac.R0EXP real(Bn(:)) imag(Bn(:)) real(Bt(:)) imag(Bt(:)) real(Bwphi(:)) imag(Bwphi(:))];
+save Btotal.asc res -ascii -double
+
+if (Mac.plot_BWM > 0)
+  figure(Mac.plot_BWM)
+  SS = [Mac.SS(1) 'o'];
+  subplot(3,2,1), plot(Mac.Mm,real(Bnm),SS,'LineWidth',2), hold on 
+                  ylabel('Re[B^m_n]','FontSize',16),
+  subplot(3,2,2), plot(Mac.Mm,imag(Bnm),SS,'LineWidth',2), hold on 
+                  ylabel('Im[B^m_n]','FontSize',16),
+  subplot(3,2,3), plot(Mac.Mm,real(Btm),SS,'LineWidth',2), hold on 
+                  ylabel('Re[B^m_t]','FontSize',16),
+  subplot(3,2,4), plot(Mac.Mm,imag(Btm),SS,'LineWidth',2), hold on 
+                  ylabel('Im[B^m_t]','FontSize',16),
+  subplot(3,2,5), plot(Mac.Mm,real(Bpm),SS,'LineWidth',2), hold on 
+                  xlabel('m','FontSize',16),
+                  ylabel('Re[B^m_\phi]','FontSize',16),
+  subplot(3,2,6), plot(Mac.Mm,imag(Bpm),SS,'LineWidth',2), hold on 
+                  xlabel('m','FontSize',16),
+                  ylabel('Im[B^m_\phi]','FontSize',16),
+end
+
+end 

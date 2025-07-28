@@ -1,0 +1,2753 @@
+function [RM,ZM] = MacREORBIT(R,Z,dirname,filename,kopt)
+
+global Mac tmax smax SDIR
+
+kopt=14;  %1: poloidal projection of orbit
+         %2: Poincare plot on poloidal plane
+         %22: Poincare plot on toroidal plane
+         %3: 2D plot in (s0,lambda0)
+         %4: 2D plot in (s0,p0), for results with KRE_INIT=5
+         %5: 2D plot in (s0,p0) with fixed KRE_SIGMA0, for results with KRE_INIT=6         
+         %6: 2D plot in (s0,chi0) with fixed KRE_SIGMA0, for results with KRE_INIT=7
+         %7: 2D plot in (s0,chi0) with both KRE_SIGMA0, for results with KRE_INIT=8 or 10
+	 %8: 2D plot in (p0,chi0) with both KRE_SIGMA0, for results with KRE_INIT=10
+	 %9: 2D plot in (s0,p0) with both KRE_SIGMA0, for results with KRE_INIT=10
+	 %10: 2D plot in (s0,lamda0) with both KRE_SIGMA0, for results with KRE_INIT=10
+	 %11: 2D plot in (chi0,RE_PERTURB) with both KRE_SIGMA0, for results with KRE_INIT=10
+	 %12: 2D plot in (p0,lamda0) with both KRE_SIGMA0, for results with KRE_INIT=10
+	 %13: calculate diffusion-convection coefficient based on (CHI0,PHI0) scan, for results with KRE_INIT=10(30) 
+	 %14: for results with KRE_INIT=9,19
+
+SCOL = 'b';
+SSL  = 'b-';
+kprint = 0;
+
+if kopt==1, 
+%fullname=[dirloc filename]; 
+%fullname=['/cscratch/liuy/ITER_EP/RE_TRACE0040.OUT'];
+%fullname=['/cscratch/liuy/RE_KINK/S0.5_P100_B1000G/RE_TRACE0098.OUT'];
+%fullname=['/cscratch/liuy/RE_KINK/Single/RE_TRACE0001.OUT'];  
+%fullname=['/cscratch/liuy/RE_transport/86ms/RE_TRACE0300.OUT'];
+%fullname=['/cscratch/liuy/RE_transport/177040/RE_TRACE0032.OUT'];
+%fullname=['/cscratch/liuy/RE_transport/177040run/RE_TRACE0001.OUT'];
+%fullname=['/cscratch/liuy/ZhaoYF/RE_TRACE0030.OUT'];
+%fullname=[SDIR 'FIDIST_5D/2D/RE_TRACE0002.OUT'];
+%fullname='/cscratch/liuy/MAST-U/RE_TRACE0001.OUT';
+%fullname=[SDIR 'FIDIST_FO/RE_TRACE0003.OUT'];
+fullname=[SDIR 'FIDIST/RootAR/RE_PERTURB0.4/RE_TRACE0001.OUT'];
+
+%288   320   352   384   416   448   480   512
+
+d   = load(fullname);
+
+%N = floor(size(d,1)/10);
+%d = d(1:10000,:);
+
+%t = d(:,1)*Mac.TAUA*1e+6; II=find(t<13); d=d(II,:);
+%t = d(:,1); II=find(t<19.26669097623780); d=d(II,:);
+
+t   = d(:,1);
+s   = d(:,2);
+c   = d(:,3);
+Pre = d(:,4); f = Pre;
+p   = d(:,5);
+lam = d(:,6);
+Epar= d(:,7); Epar(1)=Epar(2);
+b   = d(:,8);
+mu  = d(:,9);
+sig = d(:,10);
+M   = lam.*p.^2/2;  
+res_M = abs(M(1)-M(end))/M(1);
+
+Pre2= Pre - floor(Pre/2/pi)*2*pi;  
+end
+
+if kopt==2 | kopt==22
+N = 100; IB=1:N+1; s=[]; c=[]; t=[]; p=[]; f=[];
+Npoints=5000000000;  
+Tmaxmax=283e+10;    %[micro-second]
+Tline1 =-80.95; %[micro-second]  
+Tline2 =-81.18; %[micro-second]
+%dirloc='/home/liuy/Work/RE_KINK/Data_REORBIT/PERB_1000G_P0.01_L0/';
+%dirloc='/cscratch/liuy/Wiseberg/SSH_n3_IUcoil/';
+%dirloc='/cscratch/liuy/WorkTemp/VAC/';
+%dirloc='/cscratch/liuy/WorkITER_EPb/';
+%dirloc='/home/liuy/Work/ITER/Data_EP/15MAQ10/Poincare/n1_1row/EP_PLS_EP_3.5MeV_LAMB0_S+1/';
+%dirloc='/home/liuy/Work/ITER/Data_EP/15MAQ10/Poincare/n1_1row/EP_VAC_FLT/';
+%dirloc='/home/liuy/Work/ITER/Data_EP/15MAQ10/Poincare/Single/';
+%dirloc='/home/liuy/Work/SuCY/Idl/';
+%dirloc='/home/liuy/Work/D3D177038/Data_MK2_RE/IR_I200_P3_SINGLE/';
+%dirloc='/home/liuy/Work/D3D177038/Data_MK2_RE/IR_I200_FLT/';
+%dirloc='/cscratch/liuy/WorkTEMP/IR_I200_P3_PITCH_MK2/';
+%dirloc='/home/liuy/Work/ITER/Data_EP/10MA/EP_P0.5MeV_B1G/';
+%dirloc='/cscratch/liuy/IK_fluid_B1e-1/';
+%dirloc='/home/liuy/Work/RE_IK/Data_RE/FULLuniformS/IK_fluid_B0/';
+%dirloc='/home/liuy/Work/JET95135/Data_RE/FLT/B100G/';
+%dirloc='/home/liuy/Work/ITER/Data_EP/10MA/FLT_B100G/';
+%dirloc='/home/liuy/Work/ITER/Data_EP/15MAQ10/Poincare/n3_3row_trap/EP_PLS_EP_3.5MeV_LAMB1.1_C/';
+%dirloc='/home/liuy/Work/RE_KINK/Data_REK/ReLimiter_B500_FLT/';
+dirloc='/cscratch/liuy/Du2/';
+
+kprint = 0;
+
+%add end point from RE_LOSS.OUT
+send = [];
+cend = [];
+fend = [];
+pend = [];
+if 1==0
+   d=load([dirloc 'RE_LOSS.OUT']);
+   send = d(3,4);
+   cend = d(3,5);
+   pend = send.^2;
+end
+
+for k=1:N
+    ss  = sprintf('%04i',k);
+    %ss  = '0830';  %'0230','0590', '0830','1190'
+    d   = load([dirloc 'RE_TRACE' ss '.OUT']);
+    if size(d,1)>Npoints, d=d(1:Npoints,:); end
+    II  = find(d(:,1)<Tmaxmax/Mac.TAUA/1e+6); d=d(II,:);
+    t   = [t; d(:,1)];
+    s   = [s; d(:,2)];
+    c   = [c; d(:,3)];
+    f   = [f; d(:,4)];
+    if size(d,2)>=16, p   = [p; d(:,16)]; end %canonical toroidal momentum 
+    if size(d,2)<16,  p   = s.^2; end %canonical toroidal momentum 
+    s   = [s; send];
+    c   = [c; cend];
+    f   = [f; fend];
+    p   = [p; pend];
+    %II  = find(t<9448);
+    %s   = s(II);
+    %c   = c(II);
+    IB(k+1) = IB(1) + length(s);
+end
+end
+
+if kopt==1 | kopt==2 | kopt==22
+c0  = c;  
+c   = c - floor(c/2/pi)*2*pi;  
+f   = f - floor(f/2/pi)*2*pi;  
+%II  = find(c>pi);  c(II) = c(II)-2*pi;
+
+[ss,cc] = meshgrid(Mac.s(1:Mac.Ns),Mac.chi);
+Rre     = interpn(ss',cc',R(1:Mac.Ns,:),s,c);
+Zre     = interpn(ss',cc',Z(1:Mac.Ns,:),s,c);
+end
+
+if Mac.plot_RE_1D >0 & kopt==1 
+   E0EXP = Mac.R0EXP*Mac.B0EXP/Mac.TAUA;
+   hf=figure(10*Mac.plot_RE_1D+0);
+   XL=0.2; XW=0.75; YB=0.15; YW=0.8; AW=0.1; N=7;
+   subplot('position',[XL YB+YW*(N-1)/N XW YW/N]); 
+   plot(t*Mac.TAUA*1e+6,p,[SCOL '-'],'LineWidth',3); hold on
+   axis tight; a=axis; AD=(a(4)-a(3))*AW; axis([0 a(2) a(3)-AD a(4)+AD])
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold','XTickLabel',{})
+   ylabel('p','FontSize',18,'FontWeight','Bold')
+                
+   subplot('position',[XL YB+YW*(N-2)/N XW YW/N]); 
+   plot(t*Mac.TAUA*1e+6,lam,[SCOL '-'],'LineWidth',3); hold on
+   axis tight; a=axis; AD=(a(4)-a(3))*AW; axis([0 a(2) a(3)-AD a(4)+AD])
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold','XTickLabel',{})
+   %ylab=get(ha,'YTickLabel'); ylab{end}=[]; set(ha,'YTickLabel',ylab)
+   ylabel('\lambda','FontSize',18,'FontWeight','Bold')
+                
+   %subplot('position',[XL YB+YW*(N-3)/N XW YW/N]); 
+   %plot(t*Mac.TAUA*1e+6,M,[SCOL '-'],'LineWidth',3); hold on
+   %axis tight; a=axis; AD=(a(4)-a(3))*AW; axis([0 a(2) a(3)-AD a(4)+AD])
+   %ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold','XTickLabel',{})
+   %ylab=get(ha,'YTickLabel'); ylab{end}=[]; set(ha,'YTickLabel',ylab)
+   %ylabel('M','FontSize',18,'FontWeight','Bold')
+ 
+   subplot('position',[XL YB+YW*(N-3)/N XW YW/N]); 
+   plot(t*Mac.TAUA*1e+6,Epar*E0EXP,[SCOL '-'],'LineWidth',3); hold on
+   axis tight; a=axis; AD=(a(4)-a(3))*AW; axis([0 a(2) a(3)-AD a(4)+AD])
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold','XTickLabel',{})
+   %ylab=get(ha,'YTickLabel'); ylab{end}=[]; set(ha,'YTickLabel',ylab)
+   ylabel('E [V/m]','FontSize',18,'FontWeight','Bold')
+                
+   subplot('position',[XL YB+YW*(N-4)/N XW YW/N]); 
+   plot(t*Mac.TAUA*1e+6,lam.*b,[SCOL '-'],'LineWidth',3); hold on
+   axis tight; a=axis; AD=(a(4)-a(3))*AW; axis([0 a(2) a(3)-AD a(4)+AD])
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold','XTickLabel',{})
+   %ylab=get(ha,'YTickLabel'); ylab{end}=[]; set(ha,'YTickLabel',ylab)
+   ylabel('{\lambda}B','FontSize',18,'FontWeight','Bold')
+                
+   subplot('position',[XL YB+YW*(N-5)/N XW YW/N]); 
+   plot(t*Mac.TAUA*1e+6,s,[SCOL '-'],'LineWidth',3); hold on
+   plot([t(1) t(end)]*Mac.TAUA*1e+6,[1 1],'k-','LineWidth',0.5); hold on
+   axis tight; a=axis; AD=(a(4)-a(3))*AW; axis([0 a(2) a(3)-AD a(4)+AD])
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+   %ylab=get(ha,'YTickLabel'); ylab{end}=[]; set(ha,'YTickLabel',ylab)
+   ylabel('s','FontSize',18,'FontWeight','Bold')
+
+   subplot('position',[XL YB+YW*(N-6)/N XW YW/N]); 
+   plot(t*Mac.TAUA*1e+6,c,[SCOL '-'],'LineWidth',3); hold on
+   axis tight; a=axis; AD=(a(4)-a(3))*AW; axis([0 a(2) a(3)-AD a(4)+AD])
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+   %ylab=get(ha,'YTickLabel'); ylab{end}=[]; set(ha,'YTickLabel',ylab)
+   ylabel('\theta','FontSize',18,'FontWeight','Bold')
+
+   subplot('position',[XL YB+YW*(N-7)/N XW YW/N]); 
+   plot(t*Mac.TAUA*1e+6,Pre2,[SCOL '-'],'LineWidth',3); hold on
+   axis tight; a=axis; AD=(a(4)-a(3))*AW; axis([0 a(2) a(3)-AD a(4)+AD])
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+   %ylab=get(ha,'YTickLabel'); ylab{end}=[]; set(ha,'YTickLabel',ylab)
+   ylabel('\phi','FontSize',18,'FontWeight','Bold')
+
+   hf=figure(10*Mac.plot_RE_1D+1);
+   plot(t,s,[SCOL '-'],'LineWidth',1); hold on
+   plot([t(1) t(end)],[1 1],'k-','LineWidth',0.5); hold on
+   plot([t(1) t(end)],[0.9995 0.9995],'k--','LineWidth',0.5); hold on
+   plot([t(1) t(end)],[1.0005 1.0005],'k--','LineWidth',0.5); hold on
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+   xlabel('t/\tau_A','FontSize',18,'FontWeight','Bold')
+   ylabel('s','FontSize',18,'FontWeight','Bold')
+
+   hf=figure(10*Mac.plot_RE_1D+2);
+   plot(t,c0,[SCOL '-'],'LineWidth',1); hold on
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+   xlabel('t/\tau_A','FontSize',18,'FontWeight','Bold')
+   ylabel('\theta','FontSize',18,'FontWeight','Bold')
+
+   hf=figure(10*Mac.plot_RE_1D+3);
+   plot(t,b,[SCOL '-'],'LineWidth',1); hold on
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+   xlabel('t/\tau_A','FontSize',18,'FontWeight','Bold')
+   ylabel('B','FontSize',18,'FontWeight','Bold')
+
+   hf=figure(10*Mac.plot_RE_1D+4);
+   semilogy(t(1:end-1),diff(t),[SCOL '-'],'LineWidth',1); hold on
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+   xlabel('t/\tau_A','FontSize',18,'FontWeight','Bold')
+   ylabel('{\Delta}t/\tau_A','FontSize',18,'FontWeight','Bold')
+
+   S_MIN = min(s);
+   S_MAX = max(s);
+   T_MAX = t(end)*Mac.TAUA*1e+6; %[us]
+   if 1-S_MAX<1.1e-3, II=find(1-s<1.1e-3); T_MAX=t(II(1))*Mac.TAUA*1e+6; S_MAX=1; end
+   RES_S_LIMIT = [S_MIN S_MAX T_MAX]
+end
+
+
+if Mac.plot_RE_2D>0 & (kopt==1 | kopt==2 | kopt==22)
+   if kopt==1
+      hf = figure(2);
+      II = find(s<9.999); 
+      x=Rre(II); y=Zre(II); N=length(x); %N=round(N/5);
+      plot(x(1:N)*Mac.R0EXP,y(1:N)*Mac.R0EXP,SSL,'LineWidth',0.5), hold on
+      plot(Rre(1)*Mac.R0EXP,Zre(1)*Mac.R0EXP,'kx','LineWidth',1,'MarkerSize',9)
+   end
+
+   if kopt==2 | kopt==1 | kopt==22
+      ff  = load([dirname 'PROFEQ.OUT']);
+      s1 = ff(:,1);
+      q1 = ff(:,2);
+      [Is,rs,qs] = MacGetRatSurf(s1,q1,1,[1:30],0);  
+      pmin = zeros(N,1); pavg = pmin; pmax = pmin;
+      RE_S0 = 0; psip=linspace(RE_S0^2,1,N+2); psip=psip(2:N+1);
+   end
+
+   if kopt==1
+      hf = figure(2);
+      %IK = Is(1); 
+      plot(R(1,1)*Mac.R0EXP,Z(1,1)*Mac.R0EXP,'r+','LineWidth',1,'MarkerSize',9)
+      for IK=Mac.Ns1:Mac.Ns1
+          plot(R(IK,:)*Mac.R0EXP,Z(IK,:)*Mac.R0EXP,'g-','LineWidth',1)
+      end
+      %plot(R(IK,:)*Mac.R0EXP,Z(IK,:)*Mac.R0EXP,'k--','LineWidth',1)
+      NVG = 26;
+      IK = Mac.Ns1+NVG-1; 
+      plot(R(IK,:)*Mac.R0EXP,Z(IK,:)*Mac.R0EXP,'b-','LineWidth',3)
+
+      %wall shape
+      IWALL = 23;
+      IK = Mac.Ns1+IWALL-1; 
+      plot(R(IK,:)*Mac.R0EXP,Z(IK,:)*Mac.R0EXP,'b-','LineWidth',1)
+      
+      %limiting surface (approximate)
+      ILIM = 16;
+      IK = Mac.Ns1+ILIM-1; 
+      %plot(R(IK,:)*Mac.R0EXP,Z(IK,:)*Mac.R0EXP,'b-','LineWidth',1)
+
+      %run /home/liuy/Work/MAST-U/Work/drawBoundNVG.m
+
+      [X,IK]=min(abs(Mac.s-0.5));
+      %plot(R(IK,:)*Mac.R0EXP,Z(IK,:)*Mac.R0EXP,'r--','LineWidth',1)
+      IK = Mac.Ns1+64-1; 
+      %plot(R(IK,:)*Mac.R0EXP,Z(IK,:)*Mac.R0EXP,'r-','LineWidth',2)
+      IK = Mac.Ns1+64-2; 
+      %plot(R(IK,:)*Mac.R0EXP,Z(IK,:)*Mac.R0EXP,'r--','LineWidth',2)
+   end
+
+   if kopt==2 | kopt==22
+      kmod = 1;  %default=1
+
+      hf = figure(2);
+      N = length(IB)-1;
+      for k=1:N
+          if mod(k,1)==0
+          II = IB(k):IB(k+1)-1;
+          if N>1, col= [(N-k)/(N-1) (k-1)*(N-k)/((N-1)^2/4) (k-1)/(N-1)]; end
+          if N==1, col=[0 0 0]; end
+          plot(Rre(II)*Mac.R0EXP,Zre(II)*Mac.R0EXP,'.','Color',col), hold on
+	  %plot(Rre(II(1))*Mac.R0EXP,Zre(II(1))*Mac.R0EXP,'x','LineWidth',1,'Color','r','MarkerSize',9), hold on
+          RE_LAUNCH=[Rre(II(1))*Mac.R0EXP Zre(II(1))*Mac.R0EXP]
+          if Tline1 < Tline2
+             Rtmp = Rre(II); Ztmp = Zre(II); ttmp = t(II)*Mac.TAUA*1e+6;
+             JJ = find(ttmp>Tline1 & ttmp<Tline2);
+             plot(Rtmp(JJ)*Mac.R0EXP,Ztmp(JJ)*Mac.R0EXP,'k-','LineWidth',2,'Color',col), hold on
+          end
+          end
+      end
+      IK = Is(1); 
+      %plot(R(IK,:)*Mac.R0EXP,Z(IK,:)*Mac.R0EXP,'k--','LineWidth',1)
+      IK = Mac.Ns1; 
+      plot(R(IK,:)*Mac.R0EXP,Z(IK,:)*Mac.R0EXP,'k-','LineWidth',1)
+      %plot(R(Is(2),:)*Mac.R0EXP,Z(Is(2),:)*Mac.R0EXP,'k-','LineWidth',1)
+
+      hf = figure(10*Mac.plot_RE_2D+1);
+      for k=1:N
+	  if mod(k,kmod)==0 
+          II = IB(k)+1:IB(k+1)-1;
+          if N>1, col= [(N-k)/(N-1) (k-1)*(N-k)/((N-1)^2/4) (k-1)/(N-1)]; end
+          if N==1, col=[0 0 0]; end
+          plot(c(II)*180/pi,s(II),'.','LineWidth',0.5,'Color',col), hold on
+          if Tline1 < Tline2
+             ctmp = c(II)*180/pi; stmp = s(II); ttmp = t(II)*Mac.TAUA*1e+6;
+             JJ = find(ttmp>Tline1 & ttmp<Tline2);
+             plot(ctmp(JJ),stmp(JJ).^2,'k-','LineWidth',2,'Color',col), hold on
+          end
+          end
+      end
+      xlabel('poloidal angle [deg.]','FontSize',18,'FontWeight','Bold')
+      ylabel('\psi_p^{1/2}','FontSize',18,'FontWeight','Bold')
+      ha = get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+      %axis([-180 180 0 1])
+      %MacVecRast(10*Mac.plot_RE_2D,[dirloc 'poincare_sc'],50,'bottom','eps')
+      if kprint>0, print(10*Mac.plot_RE_2D+1,[dirloc 'poincare_sc'],'-djpeg'), end
+
+      hf = figure(10*Mac.plot_RE_2D+2);
+      for k=1:N
+          if mod(k,kmod)==0
+          II = IB(k)+1:IB(k+1)-1;
+          if N>1, col= [(N-k)/(N-1) (k-1)*(N-k)/((N-1)^2/4) (k-1)/(N-1)]; end
+          if N==1, col=[0 0 1]; end
+          if kopt==2,  plot(c(II)*180/pi,p(II),'.','LineWidth',0.5,'Color',col), hold on, end
+          if kopt==22, plot(f(II)*180/pi,p(II),'.','LineWidth',0.5,'Color',col), hold on, end
+          end
+      end
+      if kopt==2,  xlabel('poloidal angle [deg.]','FontSize',18,'FontWeight','Bold'), end
+      if kopt==22, xlabel('toroidal angle [deg.]','FontSize',18,'FontWeight','Bold'), end
+      ylabel('P_{\phi}','FontSize',18,'FontWeight','Bold')
+      ha = get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+      %axis([-180 180 0.75 1.15])
+      %MacVecRast(10*Mac.plot_RE_2D,[dirloc 'poincare_sc'],50,'bottom','eps')
+      if kprint>0, print(10*Mac.plot_RE_2D+2,[dirloc 'poincare_pc'],'-djpeg'), end
+
+
+      hf = figure(10*Mac.plot_RE_2D+3);
+      for k=1:N
+          if mod(k,kmod)==0
+          II = IB(k)+1:IB(k+1)-1;
+          if N>1, col= [(N-k)/(N-1) (k-1)*(N-k)/((N-1)^2/4) (k-1)/(N-1)]; end
+          if N==1, col=[0 0 1]; end
+          plot(t(II)*Mac.TAUA*1e+6,s(II).^2,'.','LineWidth',0.5,'Color',col), hold on
+          end
+      end
+      xlabel('time [{\mu}s]','FontSize',18,'FontWeight','Bold')
+      ylabel('\psi_p','FontSize',18,'FontWeight','Bold')
+      ha = get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+
+
+      hf = figure(10*Mac.plot_RE_2D+4);
+      for k=1:N
+          if mod(k,kmod)==0
+          II = IB(k)+1:IB(k+1)-1;
+          if N>1, col= [(N-k)/(N-1) (k-1)*(N-k)/((N-1)^2/4) (k-1)/(N-1)]; end
+          if N==1, col=[0 0 1]; end
+          plot(t(II)*Mac.TAUA*1e+6,c(II)*180/pi,'.','LineWidth',0.5,'Color',col), hold on
+          end
+      end
+      xlabel('time [{\mu}s]','FontSize',18,'FontWeight','Bold')
+      ylabel('poloidal angle [deg.]','FontSize',18,'FontWeight','Bold')
+      ha = get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+
+      for k=1:N
+          II = IB(k)+1:IB(k+1)-1;  
+          if length(II)==0, disp(['warning: k=',int2str([k IB(k)+1 IB(k+1)-1])]), end
+          if length(II)>0,
+             pavg(k) = mean(p(II));
+             pmin(k) = min(p(II));
+             pmax(k) = max(p(II));
+          end
+      end
+
+      II = find(pmax>0);
+
+      if N>1 
+      hf = figure(10*Mac.plot_RE_2D+5);
+      plot(psip(II),pavg(II),'k-','LineWidth',1), hold on
+      plot(psip(II),pmin(II),'b-',psip(II),pmax(II),'r-','LineWidth',1), hold on
+      xlabel('{\psi}_p','FontSize',18,'FontWeight','Bold')
+      ylabel('P_{\phi}^{min,max}','FontSize',18,'FontWeight','Bold')
+      ha = get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+      axis equal
+      %axis([0.6 1 0.75 1.15]); 
+      a=axis;
+      for k=1:length(rs)
+          plot([rs(k)^2 rs(k)^2],[a(3) a(4)],'k--')
+      end
+      if kprint>0, print(10*Mac.plot_RE_2D+3,[dirloc 'islands_pc'],'-depsc'), end
+
+      hf = figure(10*Mac.plot_RE_2D+6);
+      plot(psip(II),pmax(II)-pmin(II),'b-','LineWidth',3), hold on
+      xlabel('{\psi}_p','FontSize',18,'FontWeight','Bold')
+      ylabel('P_{\phi}^{max}-P_{\phi}^{min}','FontSize',18,'FontWeight','Bold')
+      ha = get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+      a=axis;
+      for k=1:length(rs)
+          plot([rs(k)^2 rs(k)^2],[a(3) a(4)],'k--')
+      end
+      end
+   end
+   hf=figure(Mac.plot_RE_2D);
+   %plot(R(Mac.Ns1,:)*Mac.R0EXP,Z(Mac.Ns1,:)*Mac.R0EXP,'r-','LineWidth',4), hold on
+   xlabel('R [m]','FontSize',18,'FontWeight','Bold')
+   ylabel('Z [m]','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+   axis equal
+
+   if kopt==1|kopt==2, 
+      MacPlotLimiter(2); 
+      %MacApproxLimiter(2); 
+   end
+
+   %figure(2), axis([1.8 4 -2 2])
+   if kprint>0, print(2,[dirloc 'poincare_rz'],'-djpeg'), end
+end
+
+if Mac.plot_RE_3D >0 & kopt==1 
+   hf = figure(Mac.plot_RE_3D);
+   plot3(Pre,Rre*Mac.R0EXP,Zre*Mac.R0EXP,'r-','LineWidth',1)
+   xlabel('\phi [rad.]','FontSize',16,'FontWeight','Bold')
+   ylabel('R [m]','FontSize',16,'FontWeight','Bold')
+   zlabel('Z [m]','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   
+   hf = figure(Mac.plot_RE_3D+1);
+   X1 = Rre*Mac.R0EXP.*cos(Pre);
+   Y1 = Rre*Mac.R0EXP.*sin(Pre);
+   Z1 = Zre*Mac.R0EXP;
+   plot3(X1,Y1,Z1,'b-','LineWidth',2), hold on
+   IK  = Mac.Ns1;
+   phi = linspace(0,2*pi,21);
+   for kp=1:length(phi)
+       X2 = R(IK,:)*Mac.R0EXP*cos(phi(kp));
+       Y2 = R(IK,:)*Mac.R0EXP*sin(phi(kp));
+       Z2 = Z(IK,:)*Mac.R0EXP;
+       plot3(X2,Y2,Z2,'r-','LineWidth',0.5)
+   end
+   xlabel('X [m]','FontSize',16,'FontWeight','Bold')
+   ylabel('Y [m]','FontSize',16,'FontWeight','Bold')
+   zlabel('Z [m]','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   axis equal
+   
+   if 1==0
+   hf = figure(97);
+   tt=t; 
+   plot(tt,Pre,'b-','LineWidth',1)
+   xlabel('time [{\tau}_A]','FontSize',16,'FontWeight','Bold')
+   ylabel('\phi','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+
+   hf = figure(98);
+   tt=t; RR=Rre*Mac.R0EXP;
+   plot(tt,RR,'b-','LineWidth',1)
+   xlabel('time [{\tau}_A]','FontSize',16,'FontWeight','Bold')
+   ylabel('R [m]','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+
+   Rmax = max(RR); Rmin=min(RR);
+   Ravg = (Rmax(1)+Rmin(1))/2;
+   II = find(RR(1:end-1)<=Ravg & RR(2:end)>=Ravg);
+   II1 = II;
+   II2 = II+1;
+   tn = tt(II1) - (tt(II2)-tt(II1))./(RR(II2)-RR(II1)).*(RR(II1)-Ravg);
+   tx = (tn(1:end-1)+tn(2:end))/2;
+   dt = diff(tn);
+   if 1==1  %for trapped particles
+   N  = floor(length(dt)/2);
+   II = 2*[0:N-1];
+   dt = dt(II+1) + dt(II+2);
+   tx = (tx(II+1) + tx(II+2))/2;
+   end
+   hf = figure(99);
+   plot(tx,dt,'b-','LineWidth',1)
+   xlabel('time [{\tau}_A]','FontSize',16,'FontWeight','Bold')
+   ylabel('{\Delta}t [{\tau}_A]','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+
+   dt_av = mean(dt); 
+   omegab = 2*pi/dt_av
+   N = floor(tt(end)/dt_av);
+   I = find(tt<=N*dt_av);
+   x = tt(I);
+   y = Pre(I);
+   z = sum((y(1:end-1)+y(2:end)).*diff(x))/2;
+   omegad = z*2/x(end)^2
+   end
+end
+
+
+if kopt==3
+   NS = 40;
+   NL = 20;
+   Tmax=16.488;  %[ms]
+   Mac.plot_RE_2D=3;
+   dirloc = '/home/liuy/Work/RE_KINK/Data_REORBIT/';
+   dirloc = 'Scan2D_P20_PERB50G_V_TM_NNN/';
+   d = load([dirloc dirloc 'RE_LOSS.OUT']);
+   if 1==0
+   II = find(d(:,1)<0); 
+   while length(II)>0 & max(II)<size(d,1)
+         d(II,1)=d(II+1,1); d(II,3)=d(II+1,3);
+         II = find(d(:,1)<0); 
+   end
+   II = find(d(:,2)>1); 
+   while length(II)>0 & max(II)<size(d,1)
+         d(II,2)=d(II+1,2); d(II,3)=d(II+1,3); 
+         II = find(d(:,2)>1); 
+   end
+   II = find(d(:,2)<0.999); d(II,3)=max(d(:,3));
+   end
+   smin = reshape(d(:,1),20,40,2);
+   smax = reshape(d(:,2),20,40,2);
+   tmax = reshape(d(:,3),20,40,2);
+
+   s = linspace(0,1,NS+2); s = s(2:end-1); s1=0.04; s2=s(end);
+   l = linspace(0,1,NL+1); l = l(2:end); l1=l(1);
+
+   %patch tmax data based on smax data
+   for k=1:2
+       [I,J]=find(smax(:,:,k)<0.999);
+       for m=1:length(I)
+           tmax(I(m),J(m),k)=Tmax;
+       end
+   end 
+  
+   for k=1:2
+   hf = figure(k*10*Mac.plot_RE_2D+1);
+   pcolor(s,l,smin(:,:,k).^2), shading interp,
+   xlabel('{\psi}_p','FontSize',16,'FontWeight','Bold')
+   ylabel('{\lambda}_0','FontSize',16,'FontWeight','Bold')
+   title('{\psi}_{min}','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   %axis([s1 s2 l1 1])
+   caxis([0 1])
+   colorbar
+   if k==1 & kprint>0, print([dirloc dirloc 'Scan2D_S-1_PsiMin.jpg'],'-djpeg'); end 
+   if k==2 & kprint>0, print([dirloc dirloc 'Scan2D_S+1_PsiMin.jpg'],'-djpeg'); end 
+
+   hf = figure(k*10*Mac.plot_RE_2D+2);
+   pcolor(s,l,smax(:,:,k).^2), shading interp,
+   xlabel('{\psi}_p','FontSize',16,'FontWeight','Bold')
+   ylabel('{\lambda}_0','FontSize',16,'FontWeight','Bold')
+   title('{\psi}_{max}','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   %axis([s1 s2 l1 1])
+   caxis([0 1])
+   colorbar
+   if k==1 & kprint>0, print([dirloc dirloc 'Scan2D_S-1_PsiMax.jpg'],'-djpeg'); end 
+   if k==2 & kprint>0, print([dirloc dirloc 'Scan2D_S+1_PsiMax.jpg'],'-djpeg'); end 
+
+   hf = figure(k*10*Mac.plot_RE_2D+3);
+   pcolor(s,l,tmax(:,:,k)), shading interp,
+   xlabel('{\psi}_p','FontSize',16,'FontWeight','Bold')
+   ylabel('{\lambda}_0','FontSize',16,'FontWeight','Bold')
+   title('t_{max} [{\mu}s]','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   %axis([s1 s2 l1 1])
+   caxis([0 Tmax])
+   colorbar
+   if k==1 & kprint>0, print([dirloc dirloc 'Scan2D_S-1_tMax.jpg'],'-djpeg'); end 
+   if k==2 & kprint>0, print([dirloc dirloc 'Scan2D_S+1_tMax.jpg'],'-djpeg'); end 
+
+   end
+end
+   
+if kopt==4
+   NS = 40;
+   NP = 20;
+   s0max = 1;
+   p0max = 100;
+   Mac.plot_RE_2D=2;
+   %dirloc = '/home/liuy/Work/D3D175768/Data_REORBIT/';
+   %dirloc = '/home/liuy/Work/D3D175772/Data_REORBIT/';
+   dirloc = '/home/liuy/Work/CORI/';
+   %dirloc = '/home/liuy/Work/COMPASS/Data/';
+   dirloc = 'RePlsBound_B200/';
+   d = load([dirloc dirloc 'RE_LOSS.OUT']);
+   smin = reshape(d(:,1),20,40,2);
+   smax = reshape(d(:,2),20,40,2);
+   tmax = reshape(d(:,3),20,40,2);
+
+   Tmax = max(max(max(tmax)));
+   %Tmax = 14.568;  %[ms], COMPASS
+
+   s = linspace(0,s0max,NS+2); s = s(2:end-1); s1=0.04; s2=s(end);
+   l = linspace(0,p0max,NP+1); l = l(2:end); l1=l(1);
+
+   %patch tmax data based on smax data
+   for k=1:2
+       [I,J]=find(smax(:,:,k)<0.999);
+       for m=1:length(I)
+           tmax(I(m),J(m),k)=Tmax;
+       end
+   end 
+
+   for k=1:2
+   hf = figure(k*10*Mac.plot_RE_2D+1);
+   pcolor(s,l,smin(:,:,k).^2), shading interp,
+   xlabel('{\psi}_p','FontSize',16,'FontWeight','Bold')
+   ylabel('p_0','FontSize',16,'FontWeight','Bold')
+   title('{\psi}_{min}','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   %axis([s1 s2 l1 1])
+   caxis([0 1])
+   colorbar
+   if k==1 & kprint>0, print([dirloc dirloc 'Scan2D_S-1_PsiMin.jpg'],'-djpeg'); end 
+   if k==2 & kprint>0, print([dirloc dirloc 'Scan2D_S+1_PsiMin.jpg'],'-djpeg'); end 
+
+   hf = figure(k*10*Mac.plot_RE_2D+2);
+   pcolor(s,l,smax(:,:,k).^2), shading interp,
+   xlabel('{\psi}_p','FontSize',16,'FontWeight','Bold')
+   ylabel('p_0','FontSize',16,'FontWeight','Bold')
+   title('{\psi}_{max}','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   %axis([s1 s2 l1 1])
+   caxis([0 1])
+   colorbar
+   if k==1 & kprint>0, print([dirloc dirloc 'Scan2D_S-1_PsiMax.jpg'],'-djpeg'); end 
+   if k==2 & kprint>0, print([dirloc dirloc 'Scan2D_S+1_PsiMax.jpg'],'-djpeg'); end 
+
+   hf = figure(k*10*Mac.plot_RE_2D+3);
+   pcolor(s,l,tmax(:,:,k)), shading interp,
+   xlabel('{\psi}_p','FontSize',16,'FontWeight','Bold')
+   ylabel('p_0','FontSize',16,'FontWeight','Bold')
+   title('t_{max} [{\mu}s]','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   %axis([s1 s2 l1 1])
+   colorbar
+   caxis([0 Tmax])
+   if k==1 & kprint>0, print([dirloc dirloc 'Scan2D_S-1_tMax.jpg'],'-djpeg'); end 
+   if k==2 & kprint>0, print([dirloc dirloc 'Scan2D_S+1_tMax.jpg'],'-djpeg'); end 
+
+   end
+end
+   
+if kopt==5
+   NS = 40;
+   NP = 40;
+   s0max = 1;
+   p0max = 100;  %=100 for ITER, =100 for ANTENNA
+   Mac.plot_RE_2D=2;
+   %dirloc = '/home/liuy/Work/COMPASS/Data/';
+   %dirloc = '/home/liuy/Work/ITER/Data_RE/';
+   dirloc = '/home/liuy/Work/RE_KINK/Data_ANTENNA/';
+   dirloc = 'Case04/';
+   d = load([dirloc dirloc 'RE_LOSS.OUT']);
+   smin = reshape(d(:,1),NP,NS);
+   smax = reshape(d(:,2),NP,NS);
+   tmax = reshape(d(:,3),NP,NS);
+
+   Tmax = max(max(tmax));
+   %Tmax = 82.439;  %[ms], COMPASS
+
+   s = linspace(0.5,s0max,NS+1); s = s(1:end-1); s1=0.5; s2=s(end);
+   l = linspace(0,p0max,NP+1); l = l(2:end); l1=l(1);
+
+   %patch tmax data based on smax data
+   [I,J]=find(smax(:,:)<0.999);
+   for m=1:length(I)
+       tmax(I(m),J(m))=Tmax;
+   end
+
+   k = 1;
+   hf = figure(k*10*Mac.plot_RE_2D+1);
+   pcolor(s,l,smin(:,:).^2), shading interp,
+   xlabel('{\psi}_p','FontSize',16,'FontWeight','Bold')
+   ylabel('p_0','FontSize',16,'FontWeight','Bold')
+   title('{\psi}_{min}','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   %axis([s1 s2 l1 1])
+   caxis([0 1])
+   colorbar
+   if k==1 & kprint>0, print([dirloc dirloc 'Scan2D_S-1_PsiMin.jpg'],'-djpeg'); end 
+
+   hf = figure(k*10*Mac.plot_RE_2D+2);
+   pcolor(s,l,smax(:,:).^2), shading interp,
+   xlabel('{\psi}_p','FontSize',16,'FontWeight','Bold')
+   ylabel('p_0','FontSize',16,'FontWeight','Bold')
+   title('{\psi}_{max}','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   %axis([s1 s2 l1 1])
+   caxis([0 1])
+   colorbar
+   if k==1 & kprint>0, print([dirname dirloc 'Scan2D_S-1_PsiMax.jpg'],'-djpeg'); end 
+
+   hf = figure(k*10*Mac.plot_RE_2D+3);
+   pcolor(s,l,tmax(:,:)), shading interp,
+   xlabel('{\psi}_p','FontSize',16,'FontWeight','Bold')
+   ylabel('p_0','FontSize',16,'FontWeight','Bold')
+   title('t_{max} [{\mu}s]','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   %axis([s1 1 0 p0max])
+   colorbar
+   caxis([0 Tmax])
+   if k==1 & kprint>0, print([dirloc dirloc 'Scan2D_S-1_tMax.jpg'],'-djpeg'); end 
+end
+   
+if kopt==6
+   NS = 40;
+   NC = 40;
+   s0max = 1;
+   c0max = 360;  
+   Mac.plot_RE_2D=2;
+   %dirloc = '/home/liuy/Work/RE_KINK/Data_ANTENNA/';
+   dirloc = '/home/liuy/Work/CORI/';
+   dirloc = 'ReLimiter_B200_P50/';
+   d = load([dirloc dirloc 'RE_LOSS.OUT']);
+   smin = reshape(d(:,1),NC,NS);
+   smax = reshape(d(:,2),NC,NS);
+   tmax = reshape(d(:,3),NC,NS);
+   send = reshape(d(:,4),NC,NS);
+   cend = reshape(d(:,5),NC,NS);
+   pend = reshape(d(:,6),NC,NS);
+
+   smin = [smin; smin(1,:)];
+   smax = [smax; smax(1,:)];
+   tmax = [tmax; tmax(1,:)];
+   send = [send; send(1,:)];
+   cend = [cend; cend(1,:)];
+   pend = [pend; pend(1,:)];
+
+   cend = cend - floor(cend/2/pi)*2*pi;
+   pend = pend - floor(pend/2/pi)*2*pi;
+
+   Tmax = max(max(tmax));
+
+   s = linspace(0,s0max,NS+1); s = s(1:end-1); s1=0; s2=s(end);
+   c = linspace(0,c0max,NC+1); 
+
+   %patch tmax data based on smax data
+   if 1==1
+   [I,J]=find(smax(:,:)<0.999);
+   for m=1:length(I)
+       tmax(I(m),J(m))=Tmax;
+   end
+   end
+
+   k = 1;
+   hf = figure(k*10*Mac.plot_RE_2D+1);
+   pcolor(s,c,smin(:,:).^2), shading interp,
+   xlabel('{\psi}_p','FontSize',16,'FontWeight','Bold')
+   ylabel('{\chi}_0 [degree]','FontSize',16,'FontWeight','Bold')
+   title('{\psi}_{min}','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   %caxis([0 1])
+   colorbar
+   if k==1 & kprint>0, print([dirloc dirloc 'Scan2D_S-1_PsiMin.jpg'],'-djpeg'); end 
+
+   hf = figure(k*10*Mac.plot_RE_2D+2);
+   pcolor(s,c,smax(:,:).^2), shading interp,
+   xlabel('{\psi}_p','FontSize',16,'FontWeight','Bold')
+   ylabel('{\chi}_0 [degree]','FontSize',16,'FontWeight','Bold')
+   title('{\psi}_{max}','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   %caxis([0 1])
+   colorbar
+   if k==1 & kprint>0, print([dirloc dirloc 'Scan2D_S-1_PsiMax.jpg'],'-djpeg'); end 
+
+   hf = figure(k*10*Mac.plot_RE_2D+3);
+   pcolor(s,c,tmax(:,:)), shading interp,
+   xlabel('{\psi}_p','FontSize',16,'FontWeight','Bold')
+   ylabel('{\chi}_0 [degree]','FontSize',16,'FontWeight','Bold')
+   title('t_{max} [{\mu}s]','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   %axis([s1 1 0 p0max])
+   colorbar
+   caxis([0 Tmax])
+   if k==1 & kprint>0, print([dirloc dirloc 'Scan2D_S-1_tMax.jpg'],'-djpeg'); end 
+
+   %REs location when hitting limiter surface
+   hf = figure(k*10*Mac.plot_RE_2D+4);
+   [I,J]=find(tmax(:,:)<Tmax);
+   for m=1:length(I)
+       plot(pend(I(m),J(m))*180/pi,cend(I(m),J(m))*180/pi,'b+','LineWidth',2,'MarkerSize',8), hold on  
+       %res = [m I(m) J(m) pend(I(m),J(m))*180/pi cend(I(m),J(m))*180/pi]
+   end
+   pa  = linspace(0,360,11);
+   ta1 = pa/2 + 0;
+   ta2 = pa/2 + 160; 
+   plot(pa,ta1,'k--','LineWidth',2), hold on
+   plot(pa,ta2,'k--','LineWidth',2), hold on
+   xlabel('{\phi}_{geom} [degree]','FontSize',18,'FontWeight','Bold')
+   ylabel('{\theta}_{geom} [degree]','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   axis([0 360 0 360])
+   if k==1 & kprint>0, print([dirloc dirloc 'Scan2D_Limiter.eps'],'-depsc'); end 
+end
+   
+if kopt==7
+   %s0min = 0.7^2;
+   s0min = 0;
+   s0max = 1;
+   c0max = 360;
+   Mac.plot_RE_2D=3;
+   %dirloc = '/home/liuy/Work/D3D175768/Data_REORBIT/';
+   %dirloc = '/home/liuy/Work/D3D175772/Data_REORBIT/';
+   %dirloc = '/home/liuy/Work/D3D177038/DataN_RE/';
+   %dirloc = '/home/liuy/Work/D3D165370/ReIK/';
+   %dirloc = '/home/liuy/Work/RE_KINK/Data_ANTENNA/';
+   dirloc = '/home/liuy/Work/RE_KINK/Data_REK/';
+   %dirloc = '/home/liuy/Work/RE_KINK/Data_IK/';
+   %dirloc = '/home/liuy/Work/COMPASS/Data/';
+   %dirloc = '/home/liuy/Work/ITER/Data_EP/10MA/';
+   %dirloc  = '/u/yliu/Work/ReOrbit/';
+   %dirloc = '/home/liuy/Work/JET95135/Data_RE/';
+   %dirloc = '/home/liuy/Work/RE_COMPASS/Data_RE/';
+   dirloc = '/home/liuy/Work/RE_ITER/DataRE_HALO/20kG/';
+   %dirloc = '/home/liuy/Work/ITER/Data_RE/';
+
+   %dirloc2 = 'ReLimiter_B1000_P50/';
+   %dirloc2 = 'RePlsBound_B200_P20/';
+   %dirloc2 = 'IR_I35_P3_N/';
+   %dirloc2 = 'Case07_N/';
+   %dirloc2 = 'ReCompass_I35_P50_F270_N/';
+   %dirloc2 = 'ReIK_P50_B500/';
+   %dirloc2 = 'RE_B100_P50/';
+   %dirloc2 = 'IR_I200_P3_CHI/';
+   %dirloc2 = 'IR_I100_P3_PHI180/';
+   %dirloc2 = 'ReIK_B0/';
+   %dirloc2 = 'P20/';
+   dirloc2 = '68ms_P50/';
+ 
+
+   kplot_2D = 0;
+   SSL = 'r-';
+   kprint=0;
+
+   d = load([dirloc dirloc2 'RE_LOSS.OUT']);
+   NS = d(1,5);
+   NC = d(1,6);
+   if size(d,2)>=7
+      STEPmax = d(1,2);
+      Tmax    = d(1,7);
+   else
+      STEPmax = 1e+15;
+   end
+
+   if 2*NS*NC+2 == size(d,1) 
+      c0max = d(2,3)*180/pi;
+      d     = d(3:end,:);
+   else
+      d  = d(2:end,:);
+   end
+
+   smin = reshape(d(:,1),NC,NS,2);
+   smax = reshape(d(:,2),NC,NS,2);
+   tmax = reshape(d(:,3),NC,NS,2);
+   send = reshape(d(:,4),NC,NS,2);
+   cend = reshape(d(:,5),NC,NS,2);
+   pend = reshape(d(:,6),NC,NS,2);
+   if size(d,2)>=7, iend = reshape(d(:,7),NC,NS,2); end
+
+   cend = cend - floor(cend/2/pi)*2*pi;
+   pend = pend - floor(pend/2/pi)*2*pi;
+
+   s = linspace(s0min,s0max,NS+2); s = s(2:end-1); s = [0 s];
+   c = linspace(0,c0max,NC+2);     c = c(2:end-1); c = [0 c 360]; 
+
+   if size(d,2)==6, Tmax=max(max(max(tmax))); end
+
+   [s1,c1] = meshgrid(Mac.s(1:Mac.Ns1),Mac.chi*180/pi);
+   [s2,c2] = meshgrid(sqrt(s),c);
+   %s1 = transpose(s1);
+   %c1 = transpose(c1);
+   %s2 = transpose(s2);
+   %c2 = transpose(c2);
+   RR = griddata(s1,c1,R(1:Mac.Ns1,:)',s2,c2)*Mac.R0EXP;
+   ZZ = griddata(s1,c1,Z(1:Mac.Ns1,:)',s2,c2)*Mac.R0EXP;
+
+   %patch tmax data based on smax data
+   for k=1:2
+       if size(d,2)>=7 
+          [I,J]=find(smax(:,:,k)<0.999 | iend(:,:,k)>=STEPmax);
+       else
+          [I,J]=find(smax(:,:,k)<0.999);
+       end
+       for m=1:length(I)
+           tmax(I(m),J(m),k)=Tmax;
+       end
+   end 
+
+   RES_GLOBAL = zeros(2,3);
+
+   for k=1:2
+
+   if 1==0
+   YY = smin(:,:,k).^2; 
+   A=(YY(1,:)+YY(end,:))/2; YY = [A; YY; A];
+   A=YY(:,1); V=mean(A); A(:)=V; YY = [A YY];
+   hf = figure(k*10*Mac.plot_RE_2D+1);
+   pcolor(RR,ZZ,YY), shading interp,
+   xlabel('R [m]','FontSize',16,'FontWeight','Bold')
+   ylabel('Z [m]','FontSize',16,'FontWeight','Bold')
+   title('{\psi}_{min}','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   %axis([s1 s2 l1 1])
+   %caxis([0 1])
+   axis equal, %axis([1 2 -0.6 0.55])
+   colorbar
+
+   hf = figure(k*10*Mac.plot_RE_2D+2);
+   pcolor(s,c,YY), shading interp,
+   xlabel('\psi_p','FontSize',16,'FontWeight','Bold')
+   ylabel('poloidal angle [deg]','FontSize',16,'FontWeight','Bold')
+   title('{\psi}_{min}','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   %axis([s1 s2 l1 1])
+   %caxis([0 1])
+   %axis equal, axis([1 2 -0.6 0.55])
+   colorbar
+   %if k==1, print(k*10*Mac.plot_RE_2D+2,[dirloc dirloc 'Scan2D_S-1_PsiMin.jpg'],'-djpeg'); end 
+   %if k==2, print(k*10*Mac.plot_RE_2D+2,[dirloc dirloc 'Scan2D_S+1_PsiMin.jpg'],'-djpeg'); end 
+   end
+
+   YY = smax(:,:,k).^2; 
+   A=(YY(1,:)+YY(end,:))/2; YY = [A; YY; A];
+   A=YY(:,1); V=mean(A); A(:)=V; YY = [A YY];
+   %[g,h]=contour(s,c,YY,[1 1],'k-'); 
+
+   if 1==0
+   hf = figure(k*10*Mac.plot_RE_2D+3);
+   pcolor(RR,ZZ,YY), shading interp,
+   xlabel('R [m]','FontSize',16,'FontWeight','Bold')
+   ylabel('Z [m]','FontSize',16,'FontWeight','Bold')
+   title('{\psi}_{max}','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   %axis([s1 s2 l1 1])
+   %caxis([0 1])
+   axis equal, %axis([1 2 -0.6 0.55])
+   colorbar
+
+   hf = figure(k*10*Mac.plot_RE_2D+4);
+   pcolor(s,c,YY), shading interp, hold on
+   xlabel('\psi_p','FontSize',16,'FontWeight','Bold')
+   ylabel('poloidal angle [deg]','FontSize',16,'FontWeight','Bold')
+   title('{\psi}_{max}','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   %axis([s1 s2 l1 1])
+   %caxis([0 1])
+   %axis equal, axis([1 2 -0.6 0.55])
+   colorbar
+   %if k==1, print(k*10*Mac.plot_RE_2D+4,[dirloc dirloc 'Scan2D_S-1_PsiMax.jpg'],'-djpeg'); end 
+   %if k==2, print(k*10*Mac.plot_RE_2D+4,[dirloc dirloc 'Scan2D_S+1_PsiMax.jpg'],'-djpeg'); end 
+   end
+
+   if kplot_2D == 1
+   YY = tmax(:,:,k); 
+   A=(YY(1,:)+YY(end,:))/2; YY = [A; YY; A];
+   A=YY(:,1); V=mean(A); A(:)=V; YY = [A YY];
+   hf = figure(k*10*Mac.plot_RE_2D+5);
+   pcolor(RR,ZZ,YY), shading interp, 
+   xlabel('R [m]','FontSize',16,'FontWeight','Bold')
+   ylabel('Z [m]','FontSize',16,'FontWeight','Bold')
+   title('t_{max} [{\mu}s]','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   %axis([s1 s2 l1 1])
+   axis equal, %axis([4 8 -0.2 4.8])
+   colorbar
+   caxis([0 Tmax])
+   hold on
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+5,[dirloc dirloc2 'Scan2D_S-1_tMax_RZ.jpg'],'-djpeg'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+5,[dirloc dirloc2 'Scan2D_S+1_tMax_RZ.jpg'],'-djpeg'); end 
+
+   hf = figure(k*10*Mac.plot_RE_2D+6);
+   pcolor(s(2:end),c,YY(:,2:end)), shading interp, hold on
+   %[g,h]=contour(s,c,YY); clabel(g,h)
+   %plot(g(1,:),g(2,:),'k-')
+   xlabel('\psi_p','FontSize',16,'FontWeight','Bold')
+   ylabel('poloidal angle [deg]','FontSize',16,'FontWeight','Bold')
+   title('t_{max} [{\mu}s]','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   %axis([s1 s2 l1 1])
+   %axis equal, axis([1 2 -0.6 0.55])
+   colorbar
+   caxis([0 Tmax])
+
+   %keyboard % ==> s0=7.1842e-01   c0=8.1074e-1, Tmax=16.488ms
+
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+6,[dirloc dirloc2 'Scan2D_S-1_tMax_SC.jpg'],'-djpeg'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+6,[dirloc dirloc2 'Scan2D_S+1_tMax_SC.jpg'],'-djpeg'); end 
+   end
+  
+   %REs location when hitting limiter surface
+   hf = figure(k*10*Mac.plot_RE_2D+7);
+   [I,J]=find(tmax(:,:,k)<Tmax);
+   res_loss = zeros(length(I),7);
+   s4 = linspace(s0min,s0max,NS+2); s4 = s4(2:end-1); 
+   c4 = linspace(0,c0max,NC+2);     c4 = c4(2:end-1); 
+   [s5,c5]=meshgrid(sqrt(s4),c4);
+   for m=1:length(I)
+       plot(pend(I(m),J(m),k)*180/pi,cend(I(m),J(m),k)*180/pi,'b+','LineWidth',1,'MarkerSize',8), hold on  
+       res_loss(m,:) = [m I(m) J(m) s5(I(m),J(m)) c5(I(m),J(m))*pi/180 pend(I(m),J(m),k)*180/pi cend(I(m),J(m),k)*180/pi];
+   end
+   if k==2, save TEMP.txt res_loss -ascii, end
+   pa  = linspace(0,360,11);
+   ta1 = pa/2 + 0;
+   ta2 = pa/2 + 160; 
+   %plot(pa,ta1,'k--','LineWidth',2), hold on
+   %plot(pa,ta2,'k--','LineWidth',2), hold on
+   xlabel('{\phi}_{geom} [degree]','FontSize',18,'FontWeight','Bold')
+   ylabel('{\theta}_{eqac} [degree]','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   axis([0 360 0 360])
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+7,[dirloc dirloc2 'Scan2D_S-1_Limiter.eps'],'-depsc'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+7,[dirloc dirloc2 'Scan2D_S+1_Limiter.eps'],'-depsc'); end 
+ 
+   %get histogram of lost REs along poloidal angle, with data stored in res_loss
+   %plot distribution function along poloidal angle based on histogram
+   if size(res_loss,1) > 2
+   hn = 36;  hw=360/hn;
+   hx = [0:hn-1]*hw + hw/2;
+   hy = zeros(1,hn);
+   for m=1:size(res_loss,1)
+       y = res_loss(m,7);
+       hm = ceil(y/hw);
+       hy(hm) = hy(hm) + 1;
+   end
+   histogram_max=max(hy)
+   hy = hy/max(hy);
+   hxx = linspace(0,360,361);
+   hyy = pchip(hx,hy,hxx);
+   hf = figure(k*10*Mac.plot_RE_2D+8);
+   plot(hxx,hyy,SSL,'LineWidth',3), hold on
+   xlabel('{\theta}_{eqac} [degree]','FontSize',18,'FontWeight','Bold')
+   ylabel('RE loss distribution','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   axis([0 360 0 1])
+   RES_GLOBAL(k,1) = 1/mean(hyy);
+   II = find(hyy>0);
+   WETTED_AREA = length(II)/360*100 %in poloidal angle fraction [%]
+   RES_GLOBAL(k,2) = WETTED_AREA;
+   end
+
+   %fraction of lost REs versus time
+   tt      = linspace(0,sqrt(Tmax)*0.999999,101).^2;
+   re_frac = tt*0; 
+   Ntot    = size(tmax,1)*size(tmax,2);
+   hf = figure(k*10*Mac.plot_RE_2D+9);
+   for m=2:length(tt)
+       [I,J]=find(tmax(:,:,k)<tt(m));
+       re_frac(m) = length(I);
+   end
+   re_frac = re_frac*100/Ntot*(s0max-s0min);
+   %x = linspace(0,tt(end),201);
+   x = linspace(0,20,201);
+   y = pchip(tt,re_frac,x);
+   %plot(tt,re_frac,'bo','LineWidth',1,'MarkerSize',9), hold on  
+   plot(x,y,SSL,'LineWidth',3), hold on  
+   xlabel('Time [{\mu}s]','FontSize',18,'FontWeight','Bold')
+   ylabel('loss fraction [%]','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   RES_GLOBAL(k,3) = re_frac(end);
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+9,[dirloc dirloc2 'Scan2D_S-1_Fraction.eps'],'-depsc'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+9,[dirloc dirloc2 'Scan2D_S+1_Fraction.eps'],'-depsc'); end 
+   end
+
+   save([dirloc dirloc2 'RES_GLOBAL'],'RES_GLOBAL','-ascii')
+end
+   
+if kopt==8
+   p0max = 100;
+   c0max = 360;
+   Mac.plot_RE_2D=2;
+   dirloc = '/home/liuy/Work/COMPASS/Data/';
+   dirloc = 'ReCompass_I0_S06_F270/';
+
+   d = load([dirloc dirloc 'RE_LOSS.OUT']);
+   NS = d(1,5);
+   NC = d(1,6);
+   if size(d,2)==7
+      STEPmax = d(1,2);
+      Tmax    = d(1,7);
+   else
+      STEPmax = 1e+15;
+   end
+
+   if 2*NS*NC+2 == size(d,1) 
+      p0max = d(2,5);
+      c0max = d(2,3)*180/pi;
+      d     = d(3:end,:);
+   else
+      d  = d(2:end,:);
+   end
+
+   smin = reshape(d(:,1),NC,NS,2);
+   smax = reshape(d(:,2),NC,NS,2);
+   tmax = reshape(d(:,3),NC,NS,2);
+   send = reshape(d(:,4),NC,NS,2);
+   cend = reshape(d(:,5),NC,NS,2);
+   pend = reshape(d(:,6),NC,NS,2);
+   if size(d,2)==7, iend = reshape(d(:,7),NC,NS,2); end
+
+   cend = cend - floor(cend/2/pi)*2*pi;
+   pend = pend - floor(pend/2/pi)*2*pi;
+
+   s = linspace(0,p0max,NS+2); s = s(2:end-1); 
+   c = linspace(0,c0max,NC+1); 
+
+   if size(d,2)==6, Tmax=max(max(max(tmax))); end
+
+   %patch tmax data based on smax data
+   for k=1:2
+       if size(d,2)==7 
+          [I,J]=find(smax(:,:,k)<0.999 | iend(:,:,k)>=STEPmax);
+       else
+          [I,J]=find(smax(:,:,k)<0.999);
+       end
+       for m=1:length(I)
+           tmax(I(m),J(m),k)=Tmax;
+       end
+   end 
+
+   for k=1:2
+
+   YY = tmax(:,:,k); 
+   YY = [YY; YY(1,:)];
+   hf = figure(k*10*Mac.plot_RE_2D+6);
+   pcolor(s,c,YY), shading interp, hold on
+   xlabel('p_0','FontSize',16,'FontWeight','Bold')
+   ylabel('poloidal angle [deg]','FontSize',16,'FontWeight','Bold')
+   title('t_{max} [{\mu}s]','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   colorbar
+   caxis([0 Tmax])
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+6,[dirloc dirloc 'Scan2D_S-1_tMax_SC.jpg'],'-djpeg'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+6,[dirloc dirloc 'Scan2D_S+1_tMax_SC.jpg'],'-djpeg'); end 
+
+   %REs location when hitting limiter surface
+   hf = figure(k*10*Mac.plot_RE_2D+7);
+   [I,J]=find(tmax(:,:,k)<Tmax);
+   for m=1:length(I)
+       plot(pend(I(m),J(m),k)*180/pi,cend(I(m),J(m),k)*180/pi,'b+','LineWidth',1,'MarkerSize',8), hold on  
+   end
+   pa  = linspace(0,360,11);
+   ta1 = pa/2 + 0;
+   ta2 = pa/2 + 160; 
+   xlabel('{\phi}_{geom} [degree]','FontSize',18,'FontWeight','Bold')
+   ylabel('{\theta}_{eqac} [degree]','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   axis([0 360 0 360])
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+7,[dirloc dirloc 'Scan2D_S-1_Limiter.eps'],'-depsc'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+7,[dirloc dirloc 'Scan2D_S+1_Limiter.eps'],'-depsc'); end 
+   end
+end
+  
+if kopt==9
+   s0min = 0;
+   %s0max = 0.4529;
+   s0max = 1;
+   p0max = 100;
+   p0max = 7.996850031855688e-03;  %=60keV for D+
+   s_q1 = 2.0544e-01;
+   Mac.plot_RE_2D=2;
+   %dirloc = '/home/liuy/Work/COMPASS/Data/';
+   %dirloc = '/home/liuy/Work/D3D177038/Data_RE/';  
+   %dirloc = '/home/liuy/Work/RE_IK/Data_RE/FULLuniformS/'; 
+    dirloc = '/home/liuy/Work/MAST-U45163/Data/';
+
+   %dirloc2 = 'ReCompass_I35_C0_F270e/';
+   %dirloc2 = 'IR_I50_C0/';
+   %dirloc2 = 'IK_hybrid_B1e-1/';
+   dirloc2 = '';
+
+   SSL    = 'b';
+   kprint = 1;
+   kEP    = 1; %=1 for EPs, otherwise for REs
+
+   %SCASE1 = {'LAM0.9_dB0G', 'LAM0.9_dB100G', 'LAM0.9_dB200G', 'LAM0.9_dB300G', 'LAM0.9_dB400G', 'LAM0.9_dB500G', 'LAM0.9_dB600G', 'LAM0.9_dB650G', 'LAM0.9_dB700G', 'LAM0.9_dB800G', 'LAM0.9_dB850G', 'LAM0.9_dB870G', 'LAM0.9_dB880G', 'LAM0.9_dB900G', 'LAM0.9_dB1000G'};
+   SCASE1 = {'LAM0.9_dB0G', 'LAM0.9_dB100G', 'LAM0.9_dB300G', 'LAM0.9_dB500G', 'LAM0.9_dB600G', 'LAM0.9_dB800G', 'LAM0.9_dB880G', 'LAM0.9_dB1000G'};
+   SCOL   = 'grbkcyr';
+
+   %SCASE1 = {SCASE1{1}};
+   SCASE1 = {'LAM0.9_dB800G'};
+
+   for kcase1 = 1:length(SCASE1)
+   %SCASE = '.OUT';
+   SCASE = ['_' SCASE1{kcase1}];
+   d = load([dirloc dirloc2 'RE_LOSS' SCASE]);
+   %SSL = SCOL(kcase1); 
+   NSC=length(SCASE1); 
+   if NSC>1, SSL = [(kcase1-1)/(NSC-1) 0 (NSC-kcase1)/(NSC-1)]; end
+   %close all,
+
+   NS = d(1,5);
+   NC = d(1,6);
+   if size(d,2)>=7
+      STEPmax = d(1,2);
+      Tmax    = d(1,7);
+   else
+      STEPmax = 1e+15;
+   end
+
+   if 2*NS*NC+2 == size(d,1) 
+      %s0min = d(2,2)^2;
+      %p0max = d(2,5);
+      d     = d(3:end,:);
+   else
+      d  = d(2:end,:);
+   end
+
+   smin = reshape(d(:,1),NC,NS,2);
+   smax = reshape(d(:,2),NC,NS,2);
+   tmax = reshape(d(:,3),NC,NS,2);
+   send = reshape(d(:,4),NC,NS,2);
+   cend = reshape(d(:,5),NC,NS,2);
+   pend = reshape(d(:,6),NC,NS,2);
+   if size(d,2)==7, iend = reshape(d(:,7),NC,NS,2); end
+
+   cend = cend - floor(cend/2/pi)*2*pi;
+   pend = pend - floor(pend/2/pi)*2*pi;
+
+   s = linspace(s0min,s0max,NS+2); %s = s(2:end-1); %s=s0
+   c = linspace(0,p0max,NC+2);     c = c(2:end-1); %c=p0
+
+   %convert s=p0 to MeV for D-ions
+   if kEP==1
+      V_LIGHT = 2.99792E+8;
+      E_E     = 1.6021917E-19;
+      M_I     = 1.67261E-27;
+      c = 2*M_I*V_LIGHT^2*(sqrt(c.^2+1)-1)/(E_E*1e+6);
+   end
+
+   [ss,cc] = meshgrid(Mac.s(1:Mac.Ns),Mac.chi);
+   Rend     = interpn(ss',cc',R(1:Mac.Ns,:),send,cend);
+   Zend     = interpn(ss',cc',Z(1:Mac.Ns,:),send,cend);
+
+   if size(d,2)==6, Tmax=max(max(max(tmax))); end
+
+   %patch tmax data based on smax data
+   for k=1:2
+       if size(d,2)==7 
+          [I,J]=find(smax(:,:,k)<0.999 | iend(:,:,k)>=STEPmax);
+       else
+          [I,J]=find(smax(:,:,k)<0.999);
+       end
+       for m=1:length(I)
+           tmax(I(m),J(m),k)=Tmax;
+       end
+   end 
+
+   RES_GLOBAL = zeros(2,3);
+
+   for k=1:2
+
+   YY = tmax(:,:,k);
+   YY = [YY(:,1) YY YY(:,end)]; 
+   hf = figure(k*10*Mac.plot_RE_2D+6);
+   %[ss,cc]=meshgrid(s.^0.5,c); [II,JJ]=find(ss<0.3 & cc<10); YY(II,JJ)=Tmax;
+   pcolor(s,c*1000,YY/1000), shading interp, hold on
+   xlabel('\psi_p','FontSize',16,'FontWeight','Bold')
+   if kEP==1
+      ylabel('E [keV]','FontSize',16,'FontWeight','Bold')
+   else
+      ylabel('p_0','FontSize',16,'FontWeight','Bold')
+   end
+   title('t_{max} [ms]','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   %axis([s0min s0max 0 p0max])
+   colorbar
+   caxis([0 Tmax/1000])
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+6,[dirloc dirloc2 'Scan2D_S-1_tMax_SP' SCASE '.jpg'],'-djpeg'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+6,[dirloc dirloc2 'Scan2D_S+1_tMax_SP' SCASE '.jpg'],'-djpeg'); end 
+
+   %REs location when hitting limiter surface
+   hf = figure(k*10*Mac.plot_RE_2D+7);
+   [I,J]=find(tmax(:,:,k)<Tmax);
+   res_loss = zeros(length(I),7);
+   s4 = linspace(s0min,s0max,NS+2); s4 = s4(2:end-1); 
+   c4 = linspace(0,p0max,NC+2);     c4 = c4(2:end-1); 
+   [s5,c5]=meshgrid(sqrt(s4),c4);
+   for m=1:length(I)
+       plot(pend(I(m),J(m),k)*180/pi,cend(I(m),J(m),k)*180/pi,'b+','LineWidth',1,'MarkerSize',8), hold on  
+       res_loss(m,:) = [m I(m) J(m) s5(I(m),J(m)) c5(I(m),J(m))*pi/180 pend(I(m),J(m),k)*180/pi cend(I(m),J(m),k)*180/pi];
+   end
+   pa  = linspace(0,360,11);
+   ta1 = pa/2 + 0;
+   ta2 = pa/2 + 160; 
+   xlabel('{\phi}_{geom} [degree]','FontSize',18,'FontWeight','Bold')
+   ylabel('{\theta}_{eqac} [degree]','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   axis([0 360 0 360])
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+7,[dirloc dirloc2 'Scan2D_S-1_Limiter.eps'],'-depsc'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+7,[dirloc dirloc2 'Scan2D_S+1_Limiter.eps'],'-depsc'); end 
+
+   %get histogram of lost REs along poloidal angle, with data stored in res_loss
+   %plot distribution function along poloidal angle based on histogram
+   if size(res_loss,1) > 2
+   hn = 36;  hw=360/hn;
+   hx = [0:hn-1]*hw + hw/2;
+   hy = zeros(1,hn);
+   for m=1:size(res_loss,1)
+       y = res_loss(m,7);
+       hm = ceil(y/hw);
+       hy(hm) = hy(hm) + 1;
+   end
+   histogram_max=max(hy)
+   hy = hy/max(hy);
+   hxx = linspace(0,360,361);
+   hyy = pchip(hx,hy,hxx);
+   hf = figure(k*10*Mac.plot_RE_2D+8);
+   plot(hxx,hyy,'Color',SSL,'LineWidth',3), hold on
+   xlabel('{\theta}_{eqac} [degree]','FontSize',18,'FontWeight','Bold')
+   ylabel('RE loss distribution','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   axis([0 360 0 1])
+   RES_GLOBAL(k,1) = 1/mean(hyy);
+   II = find(hyy>0);
+   WETTED_AREA = length(II)/360*100 %in poloidal angle fraction [%]
+   RES_GLOBAL(k,2) = WETTED_AREA;
+   end
+
+   %fraction of lost REs versus time
+   tt      = linspace(0,sqrt(Tmax)*0.999999,11).^2;
+   re_frac = tt*0; 
+   Ntot    = size(tmax,1)*size(tmax,2);
+   hf = figure(k*10*Mac.plot_RE_2D+9);
+   for m=2:length(tt)
+       [I,J]=find(tmax(:,:,k)<tt(m));
+       re_frac(m) = length(I);
+   end
+   re_frac = re_frac*100/Ntot*(s0max-s0min);
+   x = linspace(0,tt(end),201);
+   y = pchip(tt,re_frac,x);
+   %plot(tt,re_frac,'bo','LineWidth',1,'MarkerSize',9), hold on  
+   plot(x/1000,y,'Color',SSL,'LineWidth',3), hold on  
+   xlabel('Time [ms]','FontSize',18,'FontWeight','Bold')
+   ylabel('loss fraction [%]','FontSize',18,'FontWeight','Bold')
+   if NSC>1, text(x(end)/1000,y(end),SCASE1{kcase1}(10:end),'FontSize',18,'FontWeight','Bold','Color',SSL), end
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   RES_GLOBAL(k,3) = re_frac(end);
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+9,[dirloc dirloc2 'Scan2D_S-1_Fraction.eps'],'-depsc'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+9,[dirloc dirloc2 'Scan2D_S+1_Fraction.eps'],'-depsc'); end 
+
+   %final location of particles on (R,Z)-plane
+   hf = figure(k*10*Mac.plot_RE_2D+5);
+   MacPlotLimiter(k*10*Mac.plot_RE_2D+5) 
+   %for IK=Mac.Ns1:Mac.Ns  
+   %    plot(R(IK,:)*Mac.R0EXP,Z(IK,:)*Mac.R0EXP,'g-','LineWidth',1)   
+   %end
+   plot(Rend(:,:,k)*Mac.R0EXP,Zend(:,:,k)*Mac.R0EXP,'b*'),  
+   axis([0 2 -2.1 2.1])
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+5,[dirloc dirloc2 'Scan2D_S-1_LimRZ' SCASE '.eps'],'-depsc'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+5,[dirloc dirloc2 'Scan2D_S+1_LimRZ' SCASE '.eps'],'-depsc'); end 
+
+   end
+
+   save([dirloc dirloc2 'RES_GLOBAL' SCASE],'RES_GLOBAL','-ascii')
+   end
+
+   if 1==0
+   %single out individual particle
+   X = (Rend(:,:,1)*Mac.R0EXP-0.70661168).^2+(Zend(:,:,1)*Mac.R0EXP+1.554289805).^2;
+   [Y,II] = min(X); [Y,JJ]=min(Y);
+   s_target1 = s(JJ)   %=6.4516e-02
+   lamdba_target1 = c(II(JJ))  %=6.1290e-01
+   RZ_target1 = [Rend(II(JJ),JJ,1) Zend(II(JJ),JJ,1)]*Mac.R0EXP
+   
+   X = (Rend(:,:,2)*Mac.R0EXP-1.51501126).^2+(Zend(:,:,2)*Mac.R0EXP+0.0354532).^2;
+   [Y,II] = min(X); [Y,JJ]=min(Y);
+   s_target2 = s(JJ)  %=4.8387e-01
+   lamdba_target2 = c(II(JJ))  %=4.8387e-01
+   RZ_target2 = [Rend(II(JJ),JJ,2) Zend(II(JJ),JJ,2)]*Mac.R0EXP
+   end   
+end
+ 
+if kopt==10
+   s0min = 0;
+   s0max = 1;
+   p0max = 1;
+   Mac.plot_RE_2D=2;
+   %dirloc = '/home/liuy/Work/COMPASS/Data/';
+   %dirloc = '/home/liuy/Work/D3D177038/DataN_MK2_RE/';   
+   %dirloc = '/home/liuy/Work/ITER/Data_EP/10MA/';   
+   dirloc = '/home/liuy/Work/MAST-U45163/Data/';
+
+   %dirloc2 = 'ReCompass_I35_C0_F270e/';
+   %dirloc2 = 'IR_I200_P3_PITCH/';
+   %dirloc2 = 'EP_P0.5MeV_B1G/';
+   dirloc2 = '';
+
+   SSL    = 'b-';
+   kprint = 0;
+
+   SCASE1 = {'dB0G', 'dB1G', 'dB10G', 'dB100G'};
+   SCOL   = 'grbk';
+
+   for kcase1 = 1:length(SCASE1)
+
+   %d = load([dirloc dirloc2 'RE_LOSS.OUT']);
+   SCASE = ['_' SCASE1{kcase1}];
+   d = load([dirloc dirloc2 'RE_LOSS' SCASE]);
+   %close all, 
+
+   NS = d(1,5);
+   NC = d(1,6);
+   if size(d,2)>=7
+      STEPmax = d(1,2);
+      Tmax    = d(1,7);
+   else
+      STEPmax = 1e+15;
+   end
+
+   if 2*NS*NC+2 == size(d,1) 
+      %s0min = d(2,2)^2;
+      p0max = d(2,6);
+      d     = d(3:end,:);
+   else
+      d  = d(2:end,:);
+   end
+
+   smin = reshape(d(:,1),NC,NS,2);
+   smax = reshape(d(:,2),NC,NS,2);
+   tmax = reshape(d(:,3),NC,NS,2);
+   send = reshape(d(:,4),NC,NS,2);
+   cend = reshape(d(:,5),NC,NS,2);
+   pend = reshape(d(:,6),NC,NS,2);
+   if size(d,2)==7, iend = reshape(d(:,7),NC,NS,2); end
+
+   cend = cend - floor(cend/2/pi)*2*pi;
+   pend = pend - floor(pend/2/pi)*2*pi;
+
+   s = linspace(s0min,s0max,NS+2); s = s(2:end-1); 
+   c = linspace(0,p0max,NC+2); c = c(2:end-1); 
+
+   [ss,cc] = meshgrid(Mac.s(1:Mac.Ns),Mac.chi);
+   Rend     = interpn(ss',cc',R(1:Mac.Ns,:),send,cend);
+   Zend     = interpn(ss',cc',Z(1:Mac.Ns,:),send,cend);
+
+   if size(d,2)==6, Tmax=max(max(max(tmax))); end
+
+   %patch tmax data based on smax data
+   for k=1:2
+       if size(d,2)==7 
+          [I,J]=find(smax(:,:,k)<0.999 | iend(:,:,k)>=STEPmax);
+       else
+          [I,J]=find(smax(:,:,k)<0.999);
+       end
+       for m=1:length(I)
+           tmax(I(m),J(m),k)=Tmax;
+       end
+   end 
+
+   RES_GLOBAL = zeros(2,3);
+
+   for k=1:2
+
+   YY = tmax(:,:,k); 
+   hf = figure(k*10*Mac.plot_RE_2D+6);
+   pcolor(s,c,YY/1000), shading interp, hold on
+   xlabel('\psi_p','FontSize',16,'FontWeight','Bold')
+   ylabel('\lambda_0','FontSize',16,'FontWeight','Bold')
+   title('t_{max} [ms]','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   colorbar
+   caxis([0 Tmax/1000])
+
+   if k==2 & 1==1
+      [I,J] = find(YY<Tmax);
+      total_lost_re = length(I)
+      [ss,cc]=meshgrid(s,c);
+      figure(99)
+      for k9=1:length(I)
+          plot(ss(I(k9),J(k9)),cc(I(k9),J(k9)),'b+'), hold on
+      end
+      xlabel('\psi_p','FontSize',18,'FontWeight','Bold')
+      ylabel('\lambda_0','FontSize',18,'FontWeight','Bold')
+      ha = get(99,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+   end
+
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+6,[dirloc dirloc2 'Scan2D_S-1_tMax_SL' SCASE '.jpg'],'-djpeg'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+6,[dirloc dirloc2 'Scan2D_S+1_tMax_SL' SCASE '.jpg'],'-djpeg'); end 
+
+   %REs location when hitting limiter surface
+   hf = figure(k*10*Mac.plot_RE_2D+7);
+   [I,J]=find(tmax(:,:,k)<Tmax);
+   res_loss = zeros(length(I),7);
+   s4 = linspace(s0min,s0max,NS+2); s4 = s4(2:end-1); 
+   c4 = linspace(0,p0max,NC+2);     c4 = c4(2:end-1); 
+   [s5,c5]=meshgrid(sqrt(s4),c4);
+   for m=1:length(I)
+       plot(pend(I(m),J(m),k)*180/pi,cend(I(m),J(m),k)*180/pi,'b+','LineWidth',1,'MarkerSize',8), hold on  
+       res_loss(m,:) = [m I(m) J(m) s5(I(m),J(m)) c5(I(m),J(m))*pi/180 pend(I(m),J(m),k)*180/pi cend(I(m),J(m),k)*180/pi];
+   end
+   pa  = linspace(0,360,11);
+   ta1 = pa/2 + 0;
+   ta2 = pa/2 + 160; 
+   xlabel('{\phi}_{geom} [degree]','FontSize',18,'FontWeight','Bold')
+   ylabel('{\theta}_{eqac} [degree]','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   axis([0 360 0 360])
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+7,[dirloc dirloc2 'Scan2D_S-1_Limiter' SCASE '.eps'],'-depsc'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+7,[dirloc dirloc2 'Scan2D_S+1_Limiter' SCASE '.eps'],'-depsc'); end 
+
+   %get histogram of lost REs along poloidal angle, with data stored in res_loss
+   %plot distribution function along poloidal angle based on histogram
+   if size(res_loss,1) > 2
+   hn = 36;  hw=360/hn;
+   hx = [0:hn-1]*hw + hw/2;
+   hy = zeros(1,hn);
+   for m=1:size(res_loss,1)
+       y = res_loss(m,7);
+       hm = ceil(y/hw);
+       hy(hm) = hy(hm) + 1;
+   end
+   histogram_max=max(hy)
+   hy = hy/max(hy);
+   hxx = linspace(0,360,361);
+   hyy = pchip(hx,hy,hxx);
+   hf = figure(k*10*Mac.plot_RE_2D+8);
+   plot(hxx,hyy,SSL,'LineWidth',3), hold on
+   xlabel('{\theta}_{eqac} [degree]','FontSize',18,'FontWeight','Bold')
+   ylabel('RE loss distribution','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   axis([0 360 0 1])
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+8,[dirloc dirloc2 'Scan2D_S-1_Distrib' SCASE '.eps'],'-depsc'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+8,[dirloc dirloc2 'Scan2D_S+1_Distrib' SCASE '.eps'],'-depsc'); end 
+
+   RES_GLOBAL(k,1) = 1/mean(hyy);
+   II = find(hyy>0);
+   WETTED_AREA = length(II)/360*100 %in poloidal angle fraction [%]
+   RES_GLOBAL(k,2) = WETTED_AREA;
+   end
+
+   %fraction of lost REs versus time
+   tt      = linspace(0,sqrt(Tmax)*0.999999,11).^2;
+   re_frac = tt*0; 
+   Ntot    = size(tmax,1)*size(tmax,2);
+   hf = figure(k*10*Mac.plot_RE_2D+9);
+   for m=2:length(tt)
+       [I,J]=find(tmax(:,:,k)<tt(m));
+       re_frac(m) = length(I);
+   end
+   re_frac = re_frac*100/Ntot*(s0max-s0min);
+   x = linspace(0,tt(end),201);
+   y = pchip(tt,re_frac,x);
+   %plot(tt,re_frac,'bo','LineWidth',1,'MarkerSize',9), hold on  
+   SSL = SCOL(kcase1);
+   plot(x/1000,y,SSL,'LineWidth',3), hold on  
+   xlabel('Time [ms]','FontSize',18,'FontWeight','Bold')
+   ylabel('loss fraction [%]','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   RES_GLOBAL(k,3) = re_frac(end);
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+9,[dirloc dirloc2 'Scan2D_S-1_Fraction' SCASE '.eps'],'-depsc'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+9,[dirloc dirloc2 'Scan2D_S+1_Fraction' SCASE '.eps'],'-depsc'); end 
+
+   %final location of particles on (R,Z)-plane
+   hf = figure(k*10*Mac.plot_RE_2D+5);
+   MacPlotLimiter(k*10*Mac.plot_RE_2D+5) 
+   %for IK=Mac.Ns1:Mac.Ns  
+   %    plot(R(IK,:)*Mac.R0EXP,Z(IK,:)*Mac.R0EXP,'g-','LineWidth',1)   
+   %end
+   plot(Rend(:,:,k)*Mac.R0EXP,Zend(:,:,k)*Mac.R0EXP,'b*'),  
+   axis([0 2 -2.1 2.1])
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+5,[dirloc dirloc2 'Scan2D_S-1_LimRZ' SCASE '.eps'],'-depsc'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+5,[dirloc dirloc2 'Scan2D_S+1_LimRZ' SCASE '.eps'],'-depsc'); end 
+
+   end
+
+   end
+
+   if 1==0
+   %single out individual particle
+   X = (Rend(:,:,1)*Mac.R0EXP-0.70661168).^2+(Zend(:,:,1)*Mac.R0EXP+1.554289805).^2;
+   [Y,II] = min(X); [Y,JJ]=min(Y);
+   s_target1 = s(JJ)   %=6.4516e-02
+   lamdba_target1 = c(II(JJ))  %=6.1290e-01
+   RZ_target1 = [Rend(II(JJ),JJ,1) Zend(II(JJ),JJ,1)]*Mac.R0EXP
+   
+   X = (Rend(:,:,2)*Mac.R0EXP-1.51501126).^2+(Zend(:,:,2)*Mac.R0EXP+0.0354532).^2;
+   [Y,II] = min(X); [Y,JJ]=min(Y);
+   s_target2 = s(JJ)  %=4.8387e-01
+   lamdba_target2 = c(II(JJ))  %=4.8387e-01
+   RZ_target2 = [Rend(II(JJ),JJ,2) Zend(II(JJ),JJ,2)]*Mac.R0EXP
+   end
+   
+   save([dirloc dirloc2 'RES_GLOBAL'],'RES_GLOBAL','-ascii')
+end
+ 
+if kopt==11
+   b0min = 0;
+   b0max = 1000;  %[G]
+   c0max = 360;
+   Mac.plot_RE_2D=3;
+   %dirloc = '/home/liuy/Work/D3D165370/ReIK/';
+   dirloc = '/home/liuy/Work/RE_KINK/Data_REK/';
+
+   %dirloc = 'ReIK_CB/';
+   dirloc = 'ReREK_CB/';
+
+   kplot_2D = 1;
+   SSL = 'b-';
+
+   d = load([dirloc dirloc 'RE_LOSS.OUT']);
+   NC = d(1,5);
+   NB = d(1,6);
+   if size(d,2)>=7
+      STEPmax = d(1,2);
+      Tmax    = d(1,7);
+   else
+      STEPmax = 1e+15;
+   end
+
+   if 2*NB*NC+2 == size(d,1) 
+      c0max = d(2,3)*180/pi;
+      d     = d(3:end,:);
+   else
+      d  = d(2:end,:);
+   end
+
+   smin = reshape(d(:,1),NB,NC,2);
+   smax = reshape(d(:,2),NB,NC,2);
+   tmax = reshape(d(:,3),NB,NC,2);
+   send = reshape(d(:,4),NB,NC,2);
+   cend = reshape(d(:,5),NB,NC,2);
+   pend = reshape(d(:,6),NB,NC,2);
+   if size(d,2)>=7, iend = reshape(d(:,7),NB,NC,2); end
+
+   cend = cend - floor(cend/2/pi)*2*pi;
+   pend = pend - floor(pend/2/pi)*2*pi;
+
+   b = linspace(b0min,b0max,NB+2); b = b(2:end-1); b = [0 b];
+   c = linspace(0,c0max,NC+2);     c = c(2:end-1); c = [0 c 360]; 
+
+   if size(d,2)==6, Tmax=max(max(max(tmax))); end
+
+   %patch tmax data based on smax data
+   for k=1:2
+       if size(d,2)>=7 
+          [I,J]=find(smax(:,:,k)<0.999 | iend(:,:,k)>=STEPmax);
+       else
+          [I,J]=find(smax(:,:,k)<0.999);
+       end
+       for m=1:length(I)
+           tmax(I(m),J(m),k)=Tmax;
+       end
+   end 
+
+   RES_GLOBAL = zeros(2,2);
+
+   for k=1:2
+
+   if kplot_2D == 1
+   YY = tmax(:,:,k); 
+   A=YY(1,:); V=mean(A); A(1:end)=V; YY = [A; YY];
+   A=(YY(:,1)+YY(:,end))/2; YY = [A YY A];
+   hf = figure(k*10*Mac.plot_RE_2D+6);
+   pcolor(c,b(1:end),YY(:,1:end)), shading interp, hold on
+   ylabel('{\delta}B_p [G]','FontSize',16,'FontWeight','Bold')
+   xlabel('poloidal angle [deg]','FontSize',16,'FontWeight','Bold')
+   title('t_{max} [{\mu}s]','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   colorbar
+   caxis([0 Tmax])
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+6,[dirloc dirloc 'Scan2D_S-1_tMax_SC.jpg'],'-djpeg'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+6,[dirloc dirloc 'Scan2D_S+1_tMax_SC.jpg'],'-djpeg'); end 
+   end
+  
+   %REs location when hitting limiter surface
+   hf = figure(k*10*Mac.plot_RE_2D+7);
+   [I,J]=find(tmax(:,:,k)<Tmax);
+   res_loss = zeros(length(I),7);
+   b4 = linspace(b0min,b0max,NB+2); b4 = b4(2:end-1); 
+   c4 = linspace(0,c0max,NC+2);     c4 = c4(2:end-1); 
+   [c5,b5]=meshgrid(c4,b4);
+   for m=1:length(I)
+       plot(pend(I(m),J(m),k)*180/pi,cend(I(m),J(m),k)*180/pi,'b+','LineWidth',1,'MarkerSize',8), hold on  
+       res_loss(m,:) = [m I(m) J(m) c5(I(m),J(m)) b5(I(m),J(m))*pi/180 pend(I(m),J(m),k)*180/pi cend(I(m),J(m),k)*180/pi];
+   end
+   if k==2, save TEMP.txt res_loss -ascii, end
+   pa  = linspace(0,360,11);
+   ta1 = pa/2 + 0;
+   ta2 = pa/2 + 160; 
+   xlabel('{\phi}_{geom} [degree]','FontSize',18,'FontWeight','Bold')
+   ylabel('{\theta}_{eqac} [degree]','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   axis([0 360 0 360])
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+7,[dirloc dirloc 'Scan2D_S-1_Limiter.eps'],'-depsc'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+7,[dirloc dirloc 'Scan2D_S+1_Limiter.eps'],'-depsc'); end 
+
+   %get histogram of lost REs along poloidal angle, with data stored in res_loss
+   %plot distribution function along poloidal angle based on histogram
+   if size(res_loss,1) > 2
+   hn = 36;  hw=360/hn;
+   hx = [0:hn-1]*hw + hw/2;
+   hy = zeros(1,hn);
+   for m=1:size(res_loss,1)
+       y = res_loss(m,7);
+       hm = ceil(y/hw);
+       hy(hm) = hy(hm) + 1;
+   end
+   hy = hy/max(hy);
+   hxx = linspace(0,360,361);
+   hyy = pchip(hx,hy,hxx);
+   hf = figure(k*10*Mac.plot_RE_2D+8);
+   plot(hxx,hyy,SSL,'LineWidth',3), hold on
+   xlabel('{\theta}_{eqac} [degree]','FontSize',18,'FontWeight','Bold')
+   ylabel('RE loss distribution','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   axis([0 360 0 1])
+   RES_GLOBAL(k,1) = 1/mean(hyy);
+   end
+
+   %fraction of lost REs versus time
+   tt      = linspace(0,sqrt(Tmax)*0.999999,11).^2;
+   re_frac = tt*0; 
+   Ntot    = size(tmax,1)*size(tmax,2);
+   hf = figure(k*10*Mac.plot_RE_2D+9);
+   for m=2:length(tt)
+       [I,J]=find(tmax(:,:,k)<tt(m));
+       re_frac(m) = length(I);
+   end
+   re_frac = re_frac*100/Ntot;
+   x = linspace(0,tt(end),201);
+   y = pchip(tt,re_frac,x);
+   plot(x,y,SSL,'LineWidth',3), hold on  
+   xlabel('Time [{\mu}s]','FontSize',18,'FontWeight','Bold')
+   ylabel('loss fraction [%]','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   RES_GLOBAL(k,2) = re_frac(end);
+   if kplot_2D==1
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+9,[dirloc dirloc 'Scan2D_S-1_Fraction.eps'],'-depsc'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+9,[dirloc dirloc 'Scan2D_S+1_Fraction.eps'],'-depsc'); end 
+   end
+   end
+
+   save([dirloc dirloc 'RES_GLOBAL'],'RES_GLOBAL','-ascii')
+end
+   
+if kopt==12
+   p0max = 1;
+   l0max = 1;
+   Mac.plot_RE_2D=2;
+   %dirloc = '/home/liuy/Work/MAST-U/46943/Data/Case1/dBa500G/';
+   dirloc = '/home/liuy/Work/KSTAR/Data/30306.7850_gpec/';
+
+   dirloc2 = '';
+
+   SSL    = 'b-';
+   kprint = 0;
+   kEP    = 1; %=1 for EPs, otherwise for REs
+
+   SCASE1 = {''};
+   SCASE2 = {'PSI0.1', 'PSI0.3', 'PSI0.6', 'PSI0.9', 'PSI0.98'};
+   SCOL   = 'cgrbk';
+
+   %SCASE1 = {SCASE1{3}};
+   %SCASE2 = {SCASE2{1}};
+
+   %SCASE1 = {'60keV_dB100G'};
+   %SCASE2 = {'PSI0.98'};
+
+   if length(SCASE2)==1, SCOL='b'; end
+
+   for kcase1 = 1:length(SCASE1)
+   for kcase2 = 1:length(SCASE2)
+
+   %SCAE = '.OUT';
+   SCASE = ['_' SCASE1{kcase1} SCASE2{kcase2}];
+   d = load([dirloc dirloc2 'RE_LOSS' SCASE]);
+   %close all,
+
+   NS = d(1,5);  %=N_P0
+   NC = d(1,6);  %=N_LAMBDA0
+   if size(d,2)>=7
+      STEPmax = d(1,2);
+      Tmax    = d(1,7);
+   else
+      STEPmax = 1e+15;
+   end
+
+   if 2*NS*NC+2 == size(d,1) 
+      p0max = d(2,5);
+      l0max = d(2,6);
+      d     = d(3:end,:);
+   else
+      d  = d(2:end,:);
+   end
+
+   smin = reshape(d(:,1),NC,NS,2);
+   smax = reshape(d(:,2),NC,NS,2);
+   tmax = reshape(d(:,3),NC,NS,2);
+   send = reshape(d(:,4),NC,NS,2);
+   cend = reshape(d(:,5),NC,NS,2);
+   pend = reshape(d(:,6),NC,NS,2);
+   if size(d,2)==7, iend = reshape(d(:,7),NC,NS,2); end
+
+   cend = cend - floor(cend/2/pi)*2*pi;
+   pend = pend - floor(pend/2/pi)*2*pi;
+
+   s = linspace(0,p0max,NS+2); s = s(2:end-1); %s=p0
+   c = linspace(0,l0max,NC+2); c = c(2:end-1); %c=lambda0
+
+   %convert s=p0 to MeV for D-ions
+   if kEP==1
+      V_LIGHT = 2.99792E+8;
+      E_E     = 1.6021917E-19;
+      M_I     = 1.67261E-27;
+      s = 2*M_I*V_LIGHT^2*(sqrt(s.^2+1)-1)/(E_E*1e+6);
+   end
+
+   [ss,cc] = meshgrid(Mac.s(1:Mac.Ns),Mac.chi);
+   Rend     = interpn(ss',cc',R(1:Mac.Ns,:),send,cend);
+   Zend     = interpn(ss',cc',Z(1:Mac.Ns,:),send,cend);
+
+   if size(d,2)==6, Tmax=max(max(max(tmax))); end
+
+   %patch tmax data based on smax data
+   for k=1:2
+       if size(d,2)==7 
+          [I,J]=find(send(:,:,k)<1.005 | iend(:,:,k)>=STEPmax);
+       else
+          [I,J]=find(send(:,:,k)<1.005);
+       end
+       for m=1:length(I)
+           tmax(I(m),J(m),k)=Tmax;
+       end
+   end 
+
+   RES_GLOBAL = zeros(2,3);
+
+   for k=1:2
+
+   SMAXX = max(max(send(:,:,k)))
+
+   YY = tmax(:,:,k); 
+   hf = figure(k*10*Mac.plot_RE_2D+6);
+   %pcolor(s,c,YY/1000), shading interp, hold on
+   pcolor(s*1000,c,YY/1000), shading interp, hold on
+   if kEP==1
+      %xlabel('E [MeV]','FontSize',16,'FontWeight','Bold')
+      xlabel('E [keV]','FontSize',16,'FontWeight','Bold')
+   else
+      xlabel('p_0','FontSize',16,'FontWeight','Bold')
+   end
+   ylabel('\lambda_0','FontSize',16,'FontWeight','Bold')
+   title('t_{max} [ms]','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); 
+   set(ha,'FontSize',14)
+   %axis([0 60 0 1]), set(ha,'FontSize',14,'XTick',[0 20 40 60])
+   colorbar
+   caxis([0 Tmax/1000])
+
+   if k==2 & 1==0
+      [I,J] = find(YY<Tmax);
+      total_lost_re = length(I)
+      [ss,cc]=meshgrid(s,c);
+      figure(99)
+      for k9=1:length(I)
+          plot(ss(I(k9),J(k9)),cc(I(k9),J(k9)),'b+'), hold on
+      end
+      xlabel('\psi_p','FontSize',18,'FontWeight','Bold')
+      ylabel('\lambda_0','FontSize',18,'FontWeight','Bold')
+      ha = get(99,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+   end
+
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+6,[dirloc dirloc2 'Scan2D_S-1_tMax_PL' SCASE '.jpg'],'-djpeg'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+6,[dirloc dirloc2 'Scan2D_S+1_tMax_PL' SCASE '.jpg'],'-djpeg'); end 
+
+   %REs location when hitting limiter surface
+   hf = figure(k*10*Mac.plot_RE_2D+7);
+   [I,J]=find(tmax(:,:,k)<Tmax);
+   res_loss = zeros(length(I),7);
+   s4 = linspace(0,p0max,NS+2); s4 = s4(2:end-1); 
+   c4 = linspace(0,l0max,NC+2); c4 = c4(2:end-1); 
+   [s5,c5]=meshgrid(s4,c4);
+   for m=1:length(I)
+       plot(pend(I(m),J(m),k)*180/pi,cend(I(m),J(m),k)*180/pi,'b+','LineWidth',1,'MarkerSize',8), hold on  
+       res_loss(m,:) = [m I(m) J(m) s5(I(m),J(m)) c5(I(m),J(m)) pend(I(m),J(m),k)*180/pi cend(I(m),J(m),k)*180/pi];
+   end
+   pa  = linspace(0,360,11);
+   ta1 = pa/2 + 0;
+   ta2 = pa/2 + 160; 
+   xlabel('{\phi}_{geom} [degree]','FontSize',18,'FontWeight','Bold')
+   ylabel('{\theta}_{eqac} [degree]','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   axis([0 360 0 360])
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+7,[dirloc dirloc2 'Scan2D_S-1_Limiter' SCASE '.eps'],'-depsc'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+7,[dirloc dirloc2 'Scan2D_S+1_Limiter' SCASE '.eps'],'-depsc'); end 
+
+   %get histogram of lost REs along poloidal angle, with data stored in res_loss
+   %plot distribution function along poloidal angle based on histogram
+   if size(res_loss,1) > 2
+   hn = 36;  hw=360/hn;
+   hx = [0:hn-1]*hw + hw/2;
+   hy = zeros(1,hn);
+   for m=1:size(res_loss,1)
+       y = res_loss(m,7);
+       hm = ceil(y/hw);
+       hy(hm) = hy(hm) + 1;
+   end
+   histogram_max=max(hy)
+   hy = hy/max(hy);
+   hxx = linspace(0,360,361);
+   hyy = pchip(hx,hy,hxx);
+   hf = figure(k*10*Mac.plot_RE_2D+8);
+   plot(hxx,hyy,SSL,'LineWidth',3), hold on
+   xlabel('{\theta}_{eqac} [degree]','FontSize',18,'FontWeight','Bold')
+   ylabel('RE loss distribution','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   axis([0 360 0 1])
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+8,[dirloc dirloc2 'Scan2D_S-1_Distrib' SCASE '.eps'],'-depsc'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+8,[dirloc dirloc2 'Scan2D_S+1_Distrib' SCASE '.eps'],'-depsc'); end 
+
+   RES_GLOBAL(k,1) = 1/mean(hyy);
+   II = find(hyy>0);
+   WETTED_AREA = length(II)/360*100 %in poloidal angle fraction [%]
+   RES_GLOBAL(k,2) = WETTED_AREA;
+   end
+
+   %fraction of lost REs versus time
+   tt      = linspace(0,sqrt(Tmax)*0.999999,11).^2;
+   re_frac = tt*0; 
+   Ntot    = size(tmax,1)*size(tmax,2);
+   hf = figure(k*10*Mac.plot_RE_2D+9);
+   for m=2:length(tt)
+       [I,J]=find(tmax(:,:,k)<tt(m));
+       re_frac(m) = length(I);
+   end
+   re_frac = re_frac*100/Ntot;
+   x = linspace(0,tt(end),201);
+   y = pchip(tt,re_frac,x);
+   %plot(tt,re_frac,'bo','LineWidth',1,'MarkerSize',9), hold on 
+   SSL = SCOL(kcase2); 
+   plot(x/1000,y,SSL,'LineWidth',3), hold on  
+   xlabel('Time [ms]','FontSize',18,'FontWeight','Bold')
+   ylabel('loss fraction [%]','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   RES_GLOBAL(k,3) = re_frac(end);
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+9,[dirloc dirloc2 'Scan2D_S-1_Fraction' SCASE '.eps'],'-depsc'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+9,[dirloc dirloc2 'Scan2D_S+1_Fraction' SCASE '.eps'],'-depsc'); end 
+
+   %final location of particles on (R,Z)-plane
+   hf = figure(k*10*Mac.plot_RE_2D+5);
+   MacPlotLimiter(k*10*Mac.plot_RE_2D+5) 
+   %for IK=Mac.Ns1:Mac.Ns1+100
+        IK=Mac.Ns1;  
+        plot(R(IK,:)*Mac.R0EXP,Z(IK,:)*Mac.R0EXP,'r-','LineWidth',1)   
+   %end
+   plot(Rend(:,:,k)*Mac.R0EXP,Zend(:,:,k)*Mac.R0EXP,[SCOL(kcase2) '*']),  
+   %axis([0 2 -2.1 2.1])
+   axis([1 2.5 -1.5 1.5])
+   if k==1 & kprint>0, print(k*10*Mac.plot_RE_2D+5,[dirloc dirloc2 'Scan2D_S-1_LimRZ' SCASE '.eps'],'-depsc'); end 
+   if k==2 & kprint>0, print(k*10*Mac.plot_RE_2D+5,[dirloc dirloc2 'Scan2D_S+1_LimRZ' SCASE '.eps'],'-depsc'); end 
+
+   end
+
+   save([dirloc dirloc2 'RES_GLOBAL_' SCASE],'RES_GLOBAL','-ascii')
+   end
+   end
+
+   if 1==0
+   %single out individual particle
+   X = (Rend(:,:,1)*Mac.R0EXP-0.70661168).^2+(Zend(:,:,1)*Mac.R0EXP+1.554289805).^2;
+   [Y,II] = min(X); [Y,JJ]=min(Y);
+   s_target1 = s(JJ)   %=6.4516e-02
+   lamdba_target1 = c(II(JJ))  %=6.1290e-01
+   RZ_target1 = [Rend(II(JJ),JJ,1) Zend(II(JJ),JJ,1)]*Mac.R0EXP
+   
+   X = (Rend(:,:,2)*Mac.R0EXP-1.51501126).^2+(Zend(:,:,2)*Mac.R0EXP+0.0354532).^2;
+   [Y,II] = min(X); [Y,JJ]=min(Y);
+   s_target2 = s(JJ)  %=4.8387e-01
+   lamdba_target2 = c(II(JJ))  %=4.8387e-01
+   RZ_target2 = [Rend(II(JJ),JJ,2) Zend(II(JJ),JJ,2)]*Mac.R0EXP
+   end   
+end
+ 
+if kopt==13
+   %two ideas:
+   % - subtract 2D trajectory to avoid counting for confined particles ?
+   % - try different Tend values and take average to smooth curves
+   dirloc1  = '/home/liuy/Work/RE_transport/';
+   dirloc2  = '/cscratch/liuy/RE_transport/';
+
+   dirloc3 = '177040/';   
+   %dirloc3 = '184602/';     
+   %dirloc3 = '185604/';      
+   %dirloc3 = '68ms/';       
+   %dirloc3 = '76ms/';       
+   %dirloc3 = '86ms/';       
+
+   %two example cases: 
+   %DIII-D#177040, S0=0.7, P0=50, maxdB/B0=5%, Tend=2.2231
+   %ITER-DINA, S0=0.5, P0=50, maxdB/B=5%, Tend=340.4027
+
+   Mac.plot_RE_2D=1;
+   kconf = 0;  %0: do not exclude confined particles
+               %1: exclude confined particles at magnetic axis
+               %2: exclude confined particles due to magnetic islands
+               %3: exclude confined particles due to both above options 1 and 2
+
+   DSmax   = 0.05;  %criterion for confined particles
+   SSL     = 'b-';
+   kprint  = 0;
+
+   p0max = 360;
+
+   %plot RE loss pattern
+   d = load([dirloc2 dirloc3 'RE_LOSS.OUT']);
+   NC = d(1,5);
+   NP = d(1,6);
+   STEPmax = d(1,2);
+   Tmax    = d(1,7);
+   p0max   = d(2,4)*180/pi;
+
+   d       = d(3:end,:);
+  %d(32,:) = d(31,:);
+
+   NK = 1;
+   smin = reshape(d(:,1),NP,NC,NK);
+   smax = reshape(d(:,2),NP,NC,NK);
+   tmax = reshape(d(:,3),NP,NC,NK)/(Mac.TAUA*1e+6); %in MARS-F unit
+   send = reshape(d(:,4),NP,NC,NK);
+   cend = reshape(d(:,5),NP,NC,NK);
+   pend = reshape(d(:,6),NP,NC,NK);
+   iend = reshape(d(:,7),NP,NC,NK); 
+
+   cend = cend - floor(cend/2/pi)*2*pi;
+   pend = pend - floor(pend/2/pi)*2*pi;
+
+   p = linspace(0,p0max,NP+2);     p = p(2:end-1); 
+
+   if Mac.plot_RE_2D>0
+   for k=1:1
+
+   YY = tmax(:,:,k); 
+   hf = figure(k*10*Mac.plot_RE_2D+1);
+   plot([1:NP],YY,'b+'), hold on
+   xlabel('particle #','FontSize',16,'FontWeight','Bold')
+   ylabel('t_{max}','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+
+   YY = smax(:,:,k); 
+   hf = figure(k*10*Mac.plot_RE_2D+2);
+   plot([1:NP],YY,'b+',[1 NP],[1 1],'k-'), hold on
+   xlabel('particle #','FontSize',16,'FontWeight','Bold')
+   ylabel('s_{max}','FontSize',16,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+
+   %REs location when hitting limiter surface
+   Tmax = max(max(tmax(:,:,k)));
+   hf = figure(k*10*Mac.plot_RE_2D+3);
+   [I,J]=find(tmax(:,:,k)<Tmax);
+   res_loss = zeros(length(I),7);
+   for m=1:length(I)
+       plot(pend(I(m),J(m),k)*180/pi,cend(I(m),J(m),k)*180/pi,'b+','LineWidth',1,'MarkerSize',8), hold on  
+   end
+   xlabel('{\phi}_{geom} [degree]','FontSize',18,'FontWeight','Bold')
+   ylabel('{\theta}_{eqac} [degree]','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   axis([0 360 0 360])
+
+   end
+   end
+
+   %calculate diffusion-convection coefficients
+   N   = NC*NP;
+   DIF = zeros(2,1);
+   COV = zeros(2,1);
+   for k=1:1
+   if k==1, N1=1;   N2=N;   end
+   if k==2, N1=N+1; N2=N+N; end
+
+   Tend = max(max(tmax(:,:,k))); 
+
+   if 1==1
+   u  = {}; 
+   ui = 1;
+   IN = [];
+   for j=N1:N2
+       %if j==32
+       %sss = sprintf('%04i',31);
+       %else
+       sss = sprintf('%04i',j);
+       %end
+       d   = load([dirloc2 dirloc3 'RE_TRACE' sss '.OUT']);
+       t   = d(:,1);
+       s   = d(:,2);
+       c   = d(:,3);
+       p   = d(:,4);
+       [t,II] = unique(t);
+       s      = s(II);
+       c      = c(II);
+       p      = p(II);
+       if mod(j,100)==0, 
+          display(['read RE_TRACE data: j=' int2str(j)]), 
+       end
+       if kconf==1 | kconf==3
+       if max(s(end-10:end))>(Mac.s(4)+Mac.s(5))/2 
+          u{ui} =[t s c p]; ui=ui+1; IN=[IN j];
+       else
+          %disp(['remove particle # j=',int2str(j)])
+          figure(97)
+          plot(t,s), hold on
+       end
+       end
+       if kconf~=1 & kconf~=3
+          u{ui} =[t s c p]; ui=ui+1; IN=[IN j];
+       end
+   end
+   
+   N  = length(u);
+   FRAC_CONF_AXIS = 1-N/(N2-N1+1)
+
+   for j=1:N
+       if u{j}(end,1)<Tend, Tend = u{j}(end,1); end
+   end
+   %Tend = 3.9*Tend/8;
+   NTT = 1;
+   TTend = linspace(0,Tend,NTT+1);
+   TTend = TTend(2:end);
+   uss = zeros(N,NTT);
+   for kt=1:NTT
+   Tend = TTend(kt);
+   disp(['Tend =',num2str(Tend)]) 
+
+   us = zeros(N,1);
+   uc = zeros(N,1);
+   up = zeros(N,1);
+   for j=1:N
+   %for j=[40 41 42]
+       t   = u{j}(:,1);
+       s   = u{j}(:,2);
+       c   = u{j}(:,3);
+       p   = u{j}(:,4);
+
+       us(j) = pchip(t,s,Tend);       
+       uc(j) = pchip(t,c,Tend);
+       up(j) = pchip(t,p,Tend);
+       if mod(j,100)==0, 
+          display(['work on RE_TRACE data: j=' int2str(j)]), 
+          figure(99)
+          plot(t,s,'b-',Tend,us(j),'rx'), hold on
+       end
+   end
+
+   uss(:,kt) = us;
+   end
+
+   figure(98)
+   plot(IN,us,'bo'), hold on, 
+
+   uk = ones(N,1);
+   if kconf==2 | kconf==3
+      for j=2:N-1
+          if (abs(us(j)-us(j-1))+abs(uc(j)-uc(j-1))/2/pi<DSmax & abs(us(j)-us(j+1))+abs(uc(j)-uc(j+1))/2/pi<DSmax), uk(j)=0; end
+      end
+      if (abs(us(1)-us(N))+abs(uc(1)-uc(N))/2/pi<DSmax & abs(us(1)-us(2))+abs(uc(1)-uc(2))/2/pi<DSmax), uk(1)=0; end
+      if (abs(us(N)-us(N-1))+abs(uc(N)-uc(N-1))/2/pi<DSmax & abs(us(N)-us(1))+abs(uc(N)-uc(1))/2/pi<DSmax), uk(N)=0; end
+
+      II = find(uk==1);
+      us = us(II);
+      uc = uc(II);
+      ps = p(II);
+
+      FRAC_CONF_ISLANDS = 1-length(II)/(N2-N1)
+   end
+   
+   COV = 0;
+   DIF = 0;
+   if length(us)>0
+      um  = mean(us);
+      s0  = u{1}(1,2)  %initial radial location of all particles
+      COV = (um-s0)/Tend;
+      DIF = mean((us-um).^2)/2/Tend;
+
+      figure(80)
+      histogram((us-um).^2,20)
+      YDIF = mean((us-um).^2)
+   end
+
+   figure(81)
+   semilogy(TTend,(uss-mean(uss,2)).^2)
+   
+   RES_DIFF_CONV = [Tend DIF*Mac.R0EXP^2/Mac.TAUA COV*Mac.R0EXP/Mac.TAUA]  %last two in SI unit
+
+   %plotting
+   if 1==0
+   tt  = linspace(0,Tend,11);
+   cc  = linspace(0,1,length(tt));
+   usn = zeros(N,1);
+   ucn = zeros(N,1);
+   upn = zeros(N,1);
+   [s1,c1] = meshgrid(Mac.s,Mac.chi*180/pi);
+
+   for k1=1:length(tt)
+   k = length(tt)-k1+1;
+   t1=tt(k);
+   for j=1:N
+       usn(j) = pchip(u{j}(:,1),u{j}(:,2),t1);
+       ucn(j) = pchip(u{j}(:,1),u{j}(:,3),t1);
+       upn(j) = pchip(u{j}(:,1),u{j}(:,4),t1);
+   end
+   ucn = ucn - floor(ucn/2/pi)*2*pi;  
+   upn = upn - floor(upn/2/pi)*2*pi;  
+   II  = find(ucn>pi);  ucn(II) = ucn(II)-2*pi;
+   urn = griddata(s1,c1,transpose(R),usn,ucn)*Mac.R0EXP;
+   uzn = griddata(s1,c1,transpose(Z),usn,ucn)*Mac.R0EXP;
+   
+   col = [cc(k)^4 cc(k)*(1-cc(k))*3.9 (1-cc(k))^4];
+   if k==1, 
+      hf=figure(90);
+      plot(upn*180/pi,usn,'+','LineWidth',2,'MarkerSize',9,'Color',col), hold on
+      hf=figure(91);
+      hp=polarplot(upn,urn,'+'); hold on,  
+      set(hp,'Color',[cc(k) 0 1-cc(k)]) 
+      hf=figure(92);
+      plot(urn,uzn,'+','LineWidth',3,'MarkerSize',12,'Color',col), hold on
+      [Y,ISS] = min(abs(Mac.s-usn(1)));
+   elseif k==length(tt), 
+      hf=figure(90);
+      plot(upn*180/pi,usn,'o','LineWidth',2,'MarkerSize',9,'Color',col), hold on
+      hf=figure(91);
+      hp=polarplot(upn,urn,'o'); hold on,  
+      set(hp,'Color',col) 
+      hf=figure(92);
+      plot(urn,uzn,'o','LineWidth',2,'MarkerSize',9,'Color',col), hold on
+   else 
+      hf=figure(90);
+      plot(upn*180/pi,usn,'.','LineWidth',1,'MarkerSize',9,'Color',col), hold on
+      hf=figure(91);
+      hp=polarplot(upn,urn,'.'); hold on,  
+      set(hp,'Color',col) 
+      hf=figure(92);
+      plot(urn,uzn,'.','LineWidth',1,'MarkerSize',9,'Color',col), hold on
+   end
+
+   end
+
+   hf=figure(90);
+   xlabel('\phi [degree]','FontSize',18,'FontWeight','Bold')
+   ylabel('s','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   a=axis;
+   plot([a(1) a(2)],[1 1],'k-','LineWidth',3)
+
+   hf=figure(91);
+   pp = linspace(0,2*pi,101); 
+   II = floor(Mac.Nchi/2)+1;
+   ss = ones(1,101);
+   hp=polarplot(pp,R(1,II)*Mac.R0EXP*ss,'k--'); hold on
+   set(hp,'LineWidth',1)
+   hp=polarplot(pp,R(Mac.Ns1,II)*Mac.R0EXP*ss,'k-'); hold on
+   set(hp,'LineWidth',3)
+   hp=polarplot(pp,R(Mac.Ns1,1)*Mac.R0EXP*ss,'k-'); hold on
+   set(hp,'LineWidth',3)
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   ha=get(91,'CurrentAxes');
+   set(ha,'ThetaGrid','off','RGrid','off','ThetaTickLabel',[],'RTickLabel',[])
+   hf=figure(92);
+   xlabel('R [m]','FontSize',18,'FontWeight','Bold')
+   ylabel('Z [m]','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   plot(R(Mac.Ns1,:)*Mac.R0EXP,Z(Mac.Ns1,:)*Mac.R0EXP,'k-','LineWidth',3)
+   plot(R(ISS,:)*Mac.R0EXP,Z(ISS,:)*Mac.R0EXP,'k-.','LineWidth',1)
+   axis equal
+
+   end
+   end
+   end
+end
+   
+     
+if kopt==14
+   Mac.plot_RE_2D=2;
+   %dirloc = '/home/liuy/Work/MAST-U/46943/Data/Case1/dBa500G/';
+   %dirloc = '/home/liuy/Work/MAST-U/46943/Data/';
+   %dirloc = '/home/liuy/Work/KSTAR/Data/30306.7850_gpec/';
+   dirloc = '/home/liuy/Work/DIII-D/D3D177028/Data/';
+   %dirloc = '/home/liuy/Work/ITER/ITER_RE/DataAE_HALO/68ms/';
+
+   %dirloc2 = 'FIDIST_GC/';
+   %dirloc2 = 'FIDIST_FO/';
+   %dirloc2 = 'FIDIST_FO_E0.1/';
+   %dirloc2 = 'FIDIST_5D/';
+   dirloc2  = 'FIDIST/RootAR/RE_PERTURB0.01_G/';
+   %dirloc2 = 'FIDIST/Root-c/RE_PERTURB0.1/';
+   
+   PSS      = 'P10'; 
+
+   SSL    = 'b-';
+   kprint = 0;
+   kEP    = 0; %=1 for EPs in [eV], otherwise for REs
+   LossCriterion = 2;  %=1: lost according to time-criterion alone
+                       %=2: strict loss criterion
+		       %=3: even more strict: need to set send>slimiter
+   slimiter = 1.2;		       
+			   
+   %SCASE1 = {''};
+   %SCASE2 = {'PSIP0.1', 'PSIP0.3', 'PSIP0.6', 'PSIP0.9'};
+   %SCASE2 = {'FIDIST1', 'FIDIST2', 'FIDIST3', 'FIDIST4', 'FIDIST5'};
+   %SCASE2 = {'1N', '2N', '3N', '4N', '5N', '6N', '7N'};
+   SCOL   = 'b';
+
+   %SCASE1 = {SCASE1{3}};
+   %SCASE2 = {SCASE2{1}};
+
+   SCASE1 = {''};
+   %SCASE2 = {'P10_1_1'};
+   %SCASE2 = {'PLS_ALL_INI'};
+   %SCASE2 = {'PLS_NVG_OLD', 'PLS_NVG_NEW'};
+   %SCASE2 = {'PLS_CV'};
+   %SCASE2 = {'1_SPEC'};
+   SCASE2 = {'ALL'};
+
+   %E = load([dirloc dirloc2 'E_D.IN']);
+   %Emin = min(E);  %[eV]
+   %Emax = max(E);  %[eV]
+   Emin = 0;  %[eV]
+   Emax = 1e+7;  %[eV]
+   Erho = 0.04;     %radius of circile on (R,Z)-plane, normalized by R0EXP
+
+   d = [];
+   F = [];
+   T = [];  %initial conditions
+   k = 1;
+   for kcase1 = 1:length(SCASE1)
+   for kcase2 = 1:length(SCASE2)
+       SCASE = [SCASE1{kcase1} SCASE2{kcase2}];
+       d1 = load([dirloc dirloc2 'RE_LOSS_' SCASE],'-ascii');
+       F1 = load([dirloc dirloc2 'FIDIST_' PSS '_' SCASE],'-ascii');
+       %T1 = load([dirloc dirloc2 'RE_INIT_' SCASE]);
+       %T1 = load([dirloc dirloc2 'RE_LOSS_' SCASE]);
+
+       Tmax = d1(1,7);  %in [microsecond]
+       Imax = d1(1,2);  %max number of time steps
+       d1   = d1(3:end,:);
+       F1   = F1(2:end,:);
+       %T1   = T1(3:end,:);
+
+       d = [d; d1];
+       F = [F; F1];
+       %T = [T; T1];
+   end
+   end
+
+   T = d;
+
+   %F2 = load([dirloc dirloc2 'FIDIST_REST'],'-ascii');
+   
+   smin = d(:,1);
+   smax = d(:,2);
+   tmax = d(:,3); %in [microsecond]
+   send = d(:,4);
+   cend = d(:,5);
+   pend = d(:,6);
+   imax = d(:,7);
+   cend = cend - floor(cend/2/pi)*2*pi;
+   pend = pend - floor(pend/2/pi)*2*pi;
+
+   [ss,cc] = meshgrid(Mac.s(1:Mac.Ns),Mac.chi);
+   Rend    = interpn(ss',cc',R(1:Mac.Ns,:),send,cend);
+   Zend    = interpn(ss',cc',Z(1:Mac.Ns,:),send,cend);
+
+   Rini    = F(:,1)/Mac.R0EXP;
+   Zini    = F(:,2)/Mac.R0EXP;
+   Aini    = F(:,3);
+
+   Eini    = F(:,4); %[eV]
+   Cini    = (Eini-Emin)/(Emax-Emin)*Erho; %radius of energy-circle for given particle
+
+   Fini    = F(:,5);               %weighted by equilibrium distribution
+   %Fini    = ones(size(F(:,5)));  %just count marker numbers
+
+   %find particles with initial location inside plasma boundary
+   if 1==0
+      RP = R(Mac.Ns1,:);
+      ZP = Z(Mac.Ns1,:);
+      HH = Rini*0;
+      for j=1:length(RP)-1
+          H1 = (RP(j)-Rini).*(ZP(j+1)-Zini)-(RP(j+1)-Rini).*(ZP(j)-Zini);
+          A1 = sqrt((RP(j)-Rini).^2+(ZP(j)-Zini).^2);
+          A2 = sqrt((RP(j+1)-Rini).^2+(ZP(j+1)-Zini).^2);
+          H1 = asin(H1./A1./A2);
+          H2 = (RP(j+1)-RP(j))^2+(ZP(j+1)-ZP(j))^2;
+          H2 = A1.^2 + A2.^2 - H2;
+          II = find(H2<0);
+          H1(II) = sign(H1(II)).*(pi-abs(H1(II)));
+          HH = HH + H1;
+      end
+      IP = find(HH>pi);
+      size_IP = length(IP)
+
+      Rini = Rini(IP);
+      Zini = Zini(IP);
+      Fini = Fini(IP);
+      Aini = Aini(IP);
+      Eini = Eini(IP);
+      Cini = Cini(IP);
+      smin = smin(IP);
+      smax = smax(IP);
+      tmax = tmax(IP);
+      send = send(IP);
+      cend = cend(IP);
+      pend = pend(IP);
+      imax = imax(IP);
+      Rend = Rend(IP);  
+      Zend = Zend(IP);
+  
+      d    = d(IP,:); 
+      F    = F(IP,:); 
+      T    = T(IP,:); 
+   end
+
+   Fmax    = max(Fini);
+   Fini    = Fini/Fmax;
+   Fsum    = sum(Fini);
+   Fini    = Fini/Fsum;
+
+   Amin    = min(Aini);
+   Amax    = max(Aini);
+
+   Emin    = min(Eini);
+   Emax    = max(Eini);
+
+   LAMB    = T(:,9);  %particle pitch
+   PPHI    = T(:,12); %normalized toroidal canonical angular momentum
+
+   %patch tmax data based on smax data
+   [I]=find(send<1.005);
+   tmax(I)=Tmax;
+
+   if 1==0
+   %Rspec = [1.21 1.09   2.0988  1.216929 1.13497 1.09  1.08966 1.124];
+   %Zspec = [0.9  1.055 -0.43285 0.614725 0.58874 0.545 0.53089 0.4778];
+   Rspec = [2.14373];
+   Zspec = [-0.619079];
+        
+   RESmax = [Tmax Imax]
+   IIspec = [];
+   Fspec  = [];
+   Dspec  = [];
+   for kspec=1:length(Rspec)
+       [Y,Ispec]=min((Rend*Mac.R0EXP-Rspec(kspec)).^2+(Zend*Mac.R0EXP-Zspec(kspec)).^2);
+       hf = figure(k*10*Mac.plot_RE_2D+5);
+       plot(Rend(Ispec)*Mac.R0EXP,Zend(Ispec)*Mac.R0EXP,'bo','MarkerSize',12), hold on    
+       %RZini = [Rini(Ispec) Zini(Ispec)]*Mac.R0EXP
+       IIspec = [IIspec;Ispec];
+       Fspec = [Fspec; F(Ispec,:)];
+       Dspec = [Dspec; d(Ispec,:)];
+   end
+   format short e
+   RES_Ispec = IIspec
+   RES_Fspec = Fspec
+   RES_Dspec = Dspec
+
+   %imax(IIspec) = Imax;  
+   end
+
+   RES_GLOBAL = [];
+   [SMAXX,IMAXX] = max(send)
+
+   if 1==0
+   hf = figure(k*10*Mac.plot_RE_2D+0);
+   plot(Eini,'b+')
+   hf = figure(k*10*Mac.plot_RE_2D+1);
+   plot(Aini,'b+')
+   end
+
+   %plot initial distribution in real space
+   hf = figure(k*10*Mac.plot_RE_2D+1);
+   if 1==0
+   [s1,c1] = meshgrid(Mac.s(1:Mac.Ns1),Mac.chi*180/pi);
+   sini = griddata(R(1:Mac.Ns1,:)',Z(1:Mac.Ns1,:)',s1,Rini,Zini);
+   cini = griddata(R(1:Mac.Ns1,:)',Z(1:Mac.Ns1,:)',c1,Rini,Zini);
+   else
+   sini = send;
+   cini = cend*180/pi;
+   end
+   srow = linspace(0,1,5);
+   crow = linspace(0,360,10);
+   Fmat = zeros(length(crow)-1,length(srow)-1);
+   for ks=1:length(srow)-1
+   for kc=1:length(crow)-1
+       II = find(sini>=srow(ks) & sini<=srow(ks+1) & cini>=crow(kc) & cini<=crow(kc+1));
+       if length(II)>0, Fmat(kc,ks) = sum(Fini(II)); end
+   end
+   end
+   pcolor(srow(1:end-1)+(srow(2)-srow(1))/2,crow(1:end-1)+(crow(2)-crow(1))/2,Fmat*100), hold on
+   shading interp, colormap(jet), colorbar
+   xlabel('\psi_N^{1/2}','FontSize',18,'FontWeight','Bold')
+   ylabel('\theta [deg]','FontSize',18,'FontWeight','Bold')
+   title('number fraction [%]','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',16)
+
+   %plot initial distribution in phase space
+   hf = figure(k*10*Mac.plot_RE_2D+2);
+   Erow = linspace(Emin,Emax,10);
+   Arow = linspace(Amin,Amax,10);
+   Fmat = zeros(length(Arow)-1,length(Erow)-1);
+   for kE=1:length(Erow)-1
+   for kA=1:length(Arow)-1
+       II = find(Eini>=Erow(kE) & Eini<=Erow(kE+1) & Aini>=Arow(kA) & Aini<=Arow(kA+1));
+       Fmat(kA,kE) = sum(Fini(II));
+   end
+   end
+   pcolor((Erow(1:end-1)+(Erow(2)-Erow(1))/2)/1e+3,-(Arow(1:end-1)+(Arow(2)-Arow(1))/2),Fmat*100), hold on
+   shading interp, colormap(jet), colorbar
+   xlabel('E [keV]','FontSize',18,'FontWeight','Bold')
+   ylabel('v_{||}/v','FontSize',18,'FontWeight','Bold')
+   title('number fraction [%]','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',16)
+
+   %plot initial distribution in 4D-space
+   hf = figure(k*10*Mac.plot_RE_2D+6);
+   R1 = Rini + Cini.*cos(Aini*2*pi);
+   Z1 = Zini + Cini.*sin(Aini*2*pi);
+   ICP = find((tmax>=Tmax | imax>=Imax) & send<=1.0);  %confined within plasma
+   ICV = find((tmax>=Tmax | imax>=Imax) & send>1.0);   %confined outside plasma
+
+   if LossCriterion==3
+      ICV2 = find(tmax<Tmax & imax<Imax & send<slimiter); 
+      ICV  = [ICV; ICV2];
+   end
+
+   if LossCriterion==1
+      IL = find(tmax<Tmax); %lost according to time-criterion alone
+   elseif LossCriterion==2
+      IL = find(tmax<Tmax & imax<Imax); %strictly lost to limiter
+   elseif LossCriterion==3
+      IL = find(tmax<Tmax & imax<Imax & send>=slimiter); %strictly lost to limiter
+   end     
+
+   C = intersect(IL,ICV);
+   SIZE_C = length(C) 
+
+   imax2 = imax(ICV);
+   tmax2 = tmax(ICV);
+   ICV1=find(imax2~=Imax);  
+   
+   disp(['Total particle # = ',int2str(length(send))])
+   disp(['Confined-P particle # = ',int2str(length(ICP))])
+   disp(['Confined-V particle # = ',int2str(length(ICV))])
+   disp(['Confined-V particle # with t>Tmax = ',int2str(length(ICV1))])
+   disp(['Confined-V particle # with i>Imax = ',int2str(length(ICV)-length(ICV1))])
+   disp(['Lost particle # = ',int2str(length(IL))])
+   
+   plot(R1(ICP)*Mac.R0EXP,Z1(ICP)*Mac.R0EXP,'r.','MarkerSize',6), hold on
+   plot(R1(ICV)*Mac.R0EXP,Z1(ICV)*Mac.R0EXP,'k.','MarkerSize',6), hold on
+   plot(R1(IL)*Mac.R0EXP,Z1(IL)*Mac.R0EXP,'b+','MarkerSize',6), hold on
+   %MacPlotLimiter(k*10*Mac.plot_RE_2D+6) 
+   IK=Mac.Ns1;  
+   plot(R(IK,:)*Mac.R0EXP,Z(IK,:)*Mac.R0EXP,'k-','LineWidth',1)   
+   xlabel('R [m]','FontSize',18,'FontWeight','Bold')
+   ylabel('Z [m]','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',16)
+   axis equal
+   %axis([0 60 0 1]), set(ha,'FontSize',14,'XTick',[0 20 40 60])
+
+
+   %save and split data
+   if 1==0
+      ILL = F(IL,end);
+      RES = F(IL,:);
+      N   = size(RES,1);
+      M   = size(RES,2);
+      RES = [N*ones(1,M); RES]; 
+      save([dirloc dirloc2 '3D/FIDIST_LOSS.IN'],'RES','-ascii')
+  
+      for kcase1 = 1:length(SCASE1)
+      for kcase2 = 1:length(SCASE2)
+          SCASE = [SCASE1{kcase1} SCASE2{kcase2}];
+          d1 = load([dirloc dirloc2 '3D/RE_LOSS_' SCASE]);
+          F1 = load([dirloc dirloc2 'FIDIST_' SCASE '_SAVE.IN']);
+          F1 = F1(2:end,:);
+          [C,IA]=setdiff(F1(:,end),ILL);
+          N  = length(IA);
+          if length(IA)>0
+             RES = [N*ones(1,M); F1(IA,:)];
+             save([dirloc dirloc2 '3D/FIDIST_' SCASE 'N_SAVE.IN'],'RES','-ascii')
+             RES = [d1(1:2,:); d1(IA+2,:)];
+             RES(1,5) = N;
+             save([dirloc dirloc2 '3D/RE_LOSS_' SCASE 'N'],'RES','-ascii')
+          else
+             copyfile([dirloc dirloc2 'FIDIST_' SCASE '_SAVE.IN'],[dirloc dirloc2 '3D/FIDIST_' SCASE 'N_SAVE.IN'],'f')
+             copyfile([dirloc dirloc2 '3D/RE_LOSS_' SCASE],[dirloc dirloc2 '3D/RE_LOSS_' SCASE 'N'],'f')
+          end
+      end
+      end
+   end
+
+   if 1==0
+      %save([dirloc dirloc2 'FIDIST_PLS'],'F','-ascii')
+      %save([dirloc dirloc2 'RE_LOSS_PLS'],'d','-ascii')
+      %RES = F(IC,:); save([dirloc dirloc2 'FIDIST_PLS_CONF'],'RES','-ascii') 
+      %RES = d(IC,:); save([dirloc dirloc2 'RE_LOSS_PLS_CONF'],'RES','-ascii')
+      %RES = F(IL,:); save([dirloc dirloc2 'FIDIST_PLS_LOSS'],'RES','-ascii') 
+      %RES = d(IL,:); save([dirloc dirloc2 'RE_LOSS_PLS_LOSS'],'RES','-ascii')
+      %RES = F(IO,:); save([dirloc dirloc2 'FIDIST_PLS_CO'],'RES','-ascii') 
+      %RES = d(IO,:); save([dirloc dirloc2 'RE_LOSS_PLS_CO'],'RES','-ascii')
+      %RES = F(ICP,:); save([dirloc dirloc2 'FIDIST_PLS_OLD'],'RES','-ascii') 
+      %RES = d(ICP,:); save([dirloc dirloc2 'RE_LOSS_PLS_OLD'],'RES','-ascii')
+      %RES = [F(ICV,:); F(IL,:)]; save([dirloc dirloc2 'FIDIST_PLS_NEW'],'RES','-ascii') 
+
+      %RES = F(ILO,:); save([dirloc dirloc2 'FIDIST_PLS_LOSS_O'],'RES','-ascii') 
+      %RES = d(ILO,:); save([dirloc dirloc2 'RE_LOSS_PLS_LOSS_O'],'RES','-ascii')
+      %RES = F(ILN,:); save([dirloc dirloc2 'FIDIST_PLS_LOSS_N'],'RES','-ascii') 
+      %RES = d(ILN,:); save([dirloc dirloc2 'RE_LOSS_PLS_LOSS_N'],'RES','-ascii')
+
+      if 1==1
+         FL = [F(ICV,:); F(IL,:)]; 
+         %for II=0:10
+         %    KK = II*2000+[1:2000];
+         %    RES = [2000 2000 2000 2000 2000; FL(KK,:)]; save([dirloc dirloc2 'FIDIST_PLS_NEW_' int2str(II+1)],'RES','-ascii') 
+         %end
+         II=0;
+         KK = II*2000+[1:861];
+         RES = [861 861 861 861 861; FL(KK,:)]; save([dirloc dirloc2 'FIDIST_PLS_NEW_' int2str(II+1)],'RES','-ascii') 
+      end
+   end
+
+   if kprint>0, print(k*10*Mac.plot_RE_2D+6,[dirloc dirloc2 'InitRZ.jpg'],'-djpeg'); end 
+
+   %REs location when hitting limiter surface
+   hf = figure(k*10*Mac.plot_RE_2D+7);
+   plot(pend(IL)*180/pi,cend(IL)*180/pi,'b+','LineWidth',1,'MarkerSize',8), hold on  
+   xlabel('{\phi}_{geom} [degree]','FontSize',18,'FontWeight','Bold')
+   ylabel('{\theta}_{eqac} [degree]','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   axis([0 360 0 360])
+   if kprint>0, print(k*10*Mac.plot_RE_2D+7,[dirloc dirloc2 'LossLimiter.eps'],'-depsc'); end 
+
+   %fraction of lost REs versus time
+   tt      = linspace(0,sqrt(Tmax)*0.999999,21).^2;
+   re_frac = tt*0; 
+   hf = figure(k*10*Mac.plot_RE_2D+9);
+   for m=2:length(tt)
+       if LossCriterion==1
+          II=find(tmax<tt(m));            %lost according to time-criterion alone
+       elseif LossCriterion==2
+	  II=find(tmax<tt(m) & imax<Imax); %strictly lost
+       elseif LossCriterion==3
+	  II=find(tmax<tt(m) & imax<Imax & send>=slimiter); %strictly lost
+       end
+       re_frac(m) = sum(Fini(II));
+   end
+   re_frac = re_frac*100;
+   x = linspace(0,tt(end),201);
+   y = pchip(tt,re_frac,x);
+   plot(x/1000,y,SCOL(1),'LineWidth',3), hold on  
+   xlabel('Time [ms]','FontSize',18,'FontWeight','Bold')
+   ylabel('loss fraction [%]','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   RES_GLOBAL = [RES_GLOBAL re_frac(end)];
+   LOSS_FRAC = re_frac(end)
+   if kprint>0, print(k*10*Mac.plot_RE_2D+9,[dirloc dirloc2 'LossFrac.eps'],'-depsc'); end 
+
+   %final location of particles on (R,Z)-plane
+   hf = figure(k*10*Mac.plot_RE_2D+5);
+   MacPlotLimiter(k*10*Mac.plot_RE_2D+5) 
+   plot(Rend(ICP)*Mac.R0EXP,Zend(ICP)*Mac.R0EXP,'r.'), hold on  
+   plot(Rend(ICV)*Mac.R0EXP,Zend(ICV)*Mac.R0EXP,'y.'), hold on  
+   plot(Rend(IL)*Mac.R0EXP,Zend(IL)*Mac.R0EXP,'b+'), hold on 
+
+   IK=Mac.Ns1;  
+   plot(R(IK,:)*Mac.R0EXP,Z(IK,:)*Mac.R0EXP,'k-','LineWidth',1)   
+   %axis([1 2.5 -1.5 1.5])
+   if kprint>0, print(k*10*Mac.plot_RE_2D+5,[dirloc dirloc2 'FinalRZ.eps'],'-depsc'); end 
+
+   %final location of particles on (s,chi)-plane
+   hf = figure(k*10*Mac.plot_RE_2D+4);
+   plot(cend(ICP)*180/pi,send(ICP),'r.'), hold on  
+   plot(cend(ICV)*180/pi,send(ICV),'y.'), hold on  
+   plot(cend(IL)*180/pi,send(IL),'b+'), hold on  
+   %plot(cend(Ispec)*180/pi,send(Ispec),'bo','MarkerSize',12), hold on  
+   plot([0 360],[1 1],'k-','LineWidth',1)   
+
+   %Final RE location in particle phase space
+   hf = figure(k*10*Mac.plot_RE_2D+3);
+   plot(PPHI(ICP),LAMB(ICP),'r.','LineWidth',1,'MarkerSize',8), hold on  
+   plot(PPHI(ICV),LAMB(ICV),'y.','LineWidth',1,'MarkerSize',8), hold on  
+   plot(PPHI(IL),LAMB(IL),'b+','LineWidth',1,'MarkerSize',8), hold on  
+   xlabel('P_{\phi}/(Ze\psi_0)','FontSize',18,'FontWeight','Bold')
+   ylabel('{\mu}B_0/E','FontSize',18,'FontWeight','Bold')
+   ha = get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   legend('ConfP','ConfV','Lost')
+   if kprint>0, print(k*10*Mac.plot_RE_2D+3,[dirloc dirloc2 'LossLimiter.eps'],'-depsc'); end 
+
+   save([dirloc dirloc2 'RES_GLOBAL'],'RES_GLOBAL','-ascii')
+end
+end
+ 
+function [Y,I]=min2(A)
+B = A;
+[Y1,I1] = min(B);
+[Y2,I2] = max(B);
+B(I1) = Y2;
+
+[Y,I] = min(B)
+end
+
+function [Y,I]=min3(A)
+B = A;
+[Y2,I2] = max(B);
+
+[Y1,I1] = min(B);
+B(I1) = Y2;
+
+[Y1,I1] = min(B);
+B(I1) = Y2;
+
+[Y,I] = min(B)
+end
+
+function [Y,I]=min4(A)
+B = A;
+[Y2,I2] = max(B);
+
+[Y1,I1] = min(B);
+B(I1) = Y2;
+
+[Y1,I1] = min(B);
+B(I1) = Y2;
+
+[Y1,I1] = min(B);
+B(I1) = Y2;
+
+[Y,I] = min(B)
+end
+
+function [Y,I]=min5(A)
+B = A;
+[Y2,I2] = max(B);
+
+[Y1,I1] = min(B);
+B(I1) = Y2;
+
+[Y1,I1] = min(B);
+B(I1) = Y2;
+
+[Y1,I1] = min(B);
+B(I1) = Y2;
+
+[Y1,I1] = min(B);
+B(I1) = Y2;
+
+[Y,I] = min(B)
+end
+

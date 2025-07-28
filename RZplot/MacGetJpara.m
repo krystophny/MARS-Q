@@ -1,0 +1,485 @@
+function MacGetJpara(R,Z,dRds,dZds,dRdchi,dZdchi,jacobian,J1,J2,J3,JRE,JM1,JM2,JM3)
+
+global Mac
+global SDIR
+
+N = Mac.Ns1;
+
+TEQ    = Mac.TEQ;
+DPSIEQ = Mac.DPSIEQ;
+
+%calculate Jpara
+G12   = dRds(1:N,:).*dRdchi(1:N,:) + dZds(1:N,:).*dZdchi(1:N,:);
+G22   = dRdchi(1:N,:).^2 + dZdchi(1:N,:).^2;
+TEQN  = TEQ*ones(1,Mac.Nchi);  
+DPSN  = DPSIEQ*ones(1,Mac.Nchi);
+BEQ   = sqrt(DPSN.^2.*G22./jacobian(1:N,:).^2+TEQN.^2./R(1:N,:).^2);
+BEQ(1,:) = BEQ(2,:);
+
+%map J1 on half-integer grid to J1N on interger grid
+J1N = J1;
+if 1==1
+   II  = 2:(N-1);
+   h1  = (Mac.s(II)-Mac.s(II-1))/2*ones(1,Mac.Nchi);
+   h2  = (Mac.s(II+1)-Mac.s(II))/2*ones(1,Mac.Nchi);
+   J1N(II,:) = (h1.*J1(II,:)+h2.*J1(II-1,:))./(h1+h2);
+end
+
+Jpara = ( (G12.*J1N(1:N,:)+G22.*J2(1:N,:)).*DPSN./jacobian(1:N,:) + TEQN.*J3(1:N,:) )./BEQ./jacobian(1:N,:); 
+if isfield(Mac,'NRES')
+   NRES = Mac.NRES;
+else
+   NRES=6;
+end
+JREB = JRE(1:N,:)./BEQ(1:N,:);
+
+for k=1:NRES
+    Jpara(k,:) = Jpara(NRES+1,:);
+end
+
+
+%calculate equilibrium JEQ3
+DPSIM   = (Mac.DPSIEQ(1:N-1)+Mac.DPSIEQ(2:N))/2;
+DPDPSI  = diff(Mac.PEQ)./diff(Mac.s(1:N))./DPSIM;
+DTDPSI = diff(Mac.TEQ)./diff(Mac.s(1:N))./DPSIM;
+TM     = (Mac.TEQ(1:N-1)+Mac.TEQ(2:N))/2;
+TTM    = TM.*DTDPSI;
+JACM   = (jacobian(1:N-1,:)+jacobian(2:N,:))/2;
+REQM   = (R(1:N-1,:)+R(2:N,:))/2;
+ONEC   = ones(1,Mac.Nchi);
+JEQ3  = -JACM.*(DPDPSI*ONEC + TTM*ONEC./REQM.^2);
+
+%calculate parallel equilibrium current JEQP
+BEQM  = (BEQ(1:N-1,:)+BEQ(2:N,:))/2;
+JEQPM =-(BEQM.*(DTDPSI*ONEC)+((TM.*DPDPSI)*ONEC)./BEQM);
+JEQP  = zeros(N,Mac.Nchi);
+JEQP(1,:) = JEQPM(1,:);
+JEQP(2:N,:) = JEQPM;
+
+if 1==0
+  %surface averaged parallel equilibrium current density
+  %for CQL3D
+  tmp = [Mac.s(1:Mac.Ns1) mean(JEQP,2)];
+  save CQL3D_data2.txt tmp -ascii
+end
+
+
+expmchi = exp(-Mac.chi'*Mac.Mm'*i);
+JparaM = Jpara*expmchi*(Mac.chi(2)-Mac.chi(1))/2/pi;
+JEQ3M  = JEQ3*expmchi*(Mac.chi(2)-Mac.chi(1))/2/pi;
+JEQPM  = JEQP*expmchi*(Mac.chi(2)-Mac.chi(1))/2/pi;
+JREBM  = JREB*expmchi*(Mac.chi(2)-Mac.chi(1))/2/pi;
+
+%calculate surface averaged equilibrium Jpara
+II = 2:N;
+JparaS = Mac.s(1:N)*0;
+JparaS(II) = sum(JEQP(II,:).*jacobian(II,:),2)./sum(jacobian(II,:),2);
+JparaS(1)  = JparaS(2);
+
+SS    = 'b-+';
+sleft = 0.9;
+mleft = 0;
+plot_JM_EQ = Mac.plot_JM_EQ; 
+                %=1: plot equilibrium current density
+plot_JM_KD = Mac.plot_JM_KD; 
+%plot_JM_KD = 3;
+                %=1: 1-D plot along s for Fourier harmonics; 
+                %=2: 1-D plot along m for all s
+                %=3: 2-D plot in (m,s)-space
+                %=4: 2-D plot in (chi,s)-space
+                %=5: 2-D plot in (R,Z)-space
+kprint     = 0; %save figures into files
+ksvd       = Mac.kSVD; %SVD analysis of Jpara
+
+if plot_JM_KD==1
+   if plot_JM_EQ==1
+   hf=figure(10*Mac.plot_JM+5);
+   ssm = (Mac.s(1:Mac.Ns1-1)+Mac.s(2:Mac.Ns1))/2;
+   plot(ssm,-real(JEQ3M(:,:)),'--','LineWidth',1), hold on,
+   end
+
+   mm = Mac.mm_true;
+   hf=figure(10*Mac.plot_Jpara+1);
+   plot(Mac.s(1:Mac.Ns1),real(JparaM(1:Mac.Ns1,mm)),SS,'LineWidth',2), hold on,
+   xlabel('s','FontSize',18)
+   ylabel('Re({\delta}J_{||,mn})','FontSize',18)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   a=axis; axis([sleft 1 a(3) a(4)]);
+   for k=1:length(Mac.Iratsurf)
+       plot([Mac.s(Mac.Iratsurf(k)) Mac.s(Mac.Iratsurf(k))],[a(3) a(4)],'k--')
+   end
+
+   if plot_JM_EQ==1
+   hf=figure(10*Mac.plot_Jpara+1);
+   plot(Mac.s(1:Mac.Ns1),-real(JEQPM),'--','LineWidth',2), hold on,
+
+   hf=figure(10*Mac.plot_Jpara+3);
+   plot(Mac.s(1:Mac.Ns1),real(JEQPM),'r-','LineWidth',2), hold on,
+   plot(Mac.s(1:Mac.Ns1),real(JparaM(1:Mac.Ns1,:)+JEQPM),'b--','LineWidth',2), hold on,
+   xlabel('s','FontSize',18)
+   ylabel('J_{||}','FontSize',18)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   a=axis; axis([sleft 1 a(3) a(4)]);
+   end
+
+   hf=figure(10*Mac.plot_Jpara+2);
+   plot(Mac.s(1:Mac.Ns1),imag(JparaM(1:Mac.Ns1,mm)),SS,'LineWidth',2), hold on,
+   xlabel('s','FontSize',18)
+   ylabel('Im({\delta}J_{||,mn})','FontSize',18)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   a=axis; axis([sleft 1 a(3) a(4)]);
+   for k=1:length(Mac.Iratsurf)
+       plot([Mac.s(Mac.Iratsurf(k)) Mac.s(Mac.Iratsurf(k))],[a(3) a(4)],'k--')
+   end
+
+   JJ = Mac.mm_true;
+   hf=figure(10*Mac.plot_Jpara+3);
+   plot(Mac.s(1:Mac.Ns1),real(JREBM(1:Mac.Ns1,JJ)),SS,'LineWidth',2), hold on,
+   xlabel('s','FontSize',18)
+   ylabel('Re(J_{||}/B_{eq})','FontSize',18)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   a=axis; axis([sleft 1 a(3) a(4)]);
+   for k=1:length(Mac.Iratsurf)
+       plot([Mac.s(Mac.Iratsurf(k)) Mac.s(Mac.Iratsurf(k))],[a(3) a(4)],'k--')
+   end
+
+   hf=figure(10*Mac.plot_Jpara+4);
+   plot(Mac.s(1:Mac.Ns1),imag(JREBM(1:Mac.Ns1,JJ)),SS,'LineWidth',2), hold on,
+   xlabel('s','FontSize',18)
+   ylabel('Im(J_{||}/B_{eq})','FontSize',18)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   a=axis; axis([sleft 1 a(3) a(4)]);
+   for k=1:length(Mac.Iratsurf)
+       plot([Mac.s(Mac.Iratsurf(k)) Mac.s(Mac.Iratsurf(k))],[a(3) a(4)],'k--')
+   end
+end
+
+if plot_JM_KD==2
+   hf=figure(10*Mac.plot_Jpara+1);
+   plot(Mac.Mm,real(JparaM(1:Mac.Ns1,:)),SS,'LineWidth',2,'Color','c'), hold on,
+   xlabel('m','FontSize',18)
+   ylabel('Re(J^{||}_{mn})','FontSize',18)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   a=axis; axis([mleft a(2) a(3) a(4)]);
+
+   hf=figure(10*Mac.plot_Jpara+2);
+   plot(Mac.Mm,imag(JparaM(1:Mac.Ns1,:)),SS,'LineWidth',2,'Color','c'), hold on,
+   xlabel('m','FontSize',18)
+   ylabel('Im(J^{||}_{mn})','FontSize',18)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18)
+   a=axis; axis([mleft a(2) a(3) a(4)]);
+end
+
+if plot_JM_KD==3
+   if 1==0
+   hf=figure(10*Mac.plot_Jpara+1);
+   pcolor(Mac.Mm,Mac.s(1:Mac.Ns1).^2,abs(JparaM(1:Mac.Ns1,:))), colorbar, shading interp,
+   xlabel('m','FontSize',18,'FontWeight','Bold')
+   ylabel('\psi_p','FontSize',18,'FontWeight','Bold')
+   title('|{\delta}J^{||}_{mn}|','FontSize',14)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18,'FontWeight','Bold')
+   a=axis; axis([mleft a(2) sleft 1]); %colormap(hot)
+   if kprint>0, print(10*Mac.plot_Jpara+1,'-djpeg',[SDIR 'JparaSMre']); end
+   end
+
+   if Mac.kRAW > 0
+      Mac.RAW_Jpara = JparaM;
+   end
+
+   if Mac.kSVD > 0
+      [U,S,V] = svd(JparaM); 
+      S_Jpara = diag(S);
+      k_Jpara = Mac.kSVDeigen;
+      ks      = int2str(k_Jpara);
+      SSC     = Mac.SS(1);
+      SSU     = S_Jpara(k_Jpara);
+      kplot   = 1;
+
+      if kplot==1
+      hf=figure(10*Mac.plot_Jpara+3); hold on
+      plot(S_Jpara/S_Jpara(1),[SSC '-o'],'LineWidth',2,'MarkerSize',9)
+      xlabel('SVD mode #','FontSize',18,'FontWeight','Bold')
+      ylabel('S/S_1','FontSize',18,'FontWeight','Bold')
+      ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18,'FontWeight','Bold')
+      a=axis; axis([0 10 a(3) a(4)]);
+
+      hf=figure(10*Mac.plot_Jpara+4);
+      plot(Mac.s(1:Mac.Ns1).^2,real(U(:,k_Jpara))*SSU,[SSC '-'],'LineWidth',2), hold on
+      plot(Mac.s(1:Mac.Ns1).^2,imag(U(:,k_Jpara))*SSU,[SSC '--'],'LineWidth',2), hold on
+      xlabel('\psi_p','FontSize',18,'FontWeight','Bold')
+      ylabel(['U_' ks '*S_', ks],'FontSize',18,'FontWeight','Bold')
+      ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18,'FontWeight','Bold')
+      %legend('Re[U(1)]','Im[U(1)]','Re[U(2)]','Im[U(2)]')
+
+      hf=figure(10*Mac.plot_Jpara+5);
+      plot(Mac.Mm,real(V(:,k_Jpara)),[SSC '-'],'LineWidth',2), hold on
+      plot(Mac.Mm,-imag(V(:,k_Jpara)),[SSC '--'],'LineWidth',2), hold on
+      xlabel('m','FontSize',18,'FontWeight','Bold')
+      ylabel(['V_' ks],'FontSize',18,'FontWeight','Bold')
+      ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18,'FontWeight','Bold')
+      a=axis; axis([-33 33 a(3) a(4)])
+      %legend('Re[V(1)]','Im[V(1)]','Re[V(2)]','Im[V(2)]')
+      end
+
+      JparaN = JparaM*0;
+      for k=1:Mac.kSVDsum
+          JparaN = JparaN + U(:,k)*transpose(conj(V(:,k)))*S(k,k);
+      end
+      S_Jpara = S_Jpara(1:15)
+
+      %JparaN in real space
+      expmchi = exp(Mac.Mm*Mac.chi*i);
+      JparaR = JparaN*expmchi;
+
+      if Mac.kSVDreconst == 1
+      %map JparaR to new J3, assuming J1 and J2 unchanged
+      J3R = ( JparaR.*BEQ.*jacobian(1:N,:) - (G12.*J1N(1:N,:)+G22.*J2(1:N,:)).*DPSN./jacobian(1:N,:) )./TEQN; 
+      
+      %Fourier-decompose J3R to J3N
+      expmchi = exp(-Mac.chi'*Mac.Mm'*i);
+      J3N = J3R*expmchi*(Mac.chi(2)-Mac.chi(1))/2/pi;
+
+      %save (J1M,J2M,J3N) to new JPLASMA.OUT file
+      JPLASMA = zeros(Mac.Nm1+1+Mac.Ns*Mac.Nm1,6);
+      JPLASMA(1,1) = Mac.Nm1;
+      JPLASMA(1,2) = Mac.Ns;
+      JN3 = [J3N; JM3(N+1:end,:)];
+      RES = [real(JM1(:)) imag(JM1(:)) real(JM2(:)) imag(JM2(:)) real(JN3(:)) imag(JN3(:))];
+      JPLASMA(1+Mac.Nm1+1:end,:) = RES;
+      save JPLASMA_NEW.OUT JPLASMA -ascii -double
+      movefile('JPLASMA_NEW.OUT',[SDIR 'JPLASMA_NEW.OUT'])
+      end
+      
+      %relative error between Jpara and JparaR
+      RE_JparaR = max(max(abs(Jpara-JparaR)))/max(max(abs(Jpara)))
+
+      %relative error between JparaM and JparaN
+      RE_Jpara = max(max(abs(JparaM-JparaN)))/max(max(abs(JparaM)))
+      if 1==0
+      JparaE = JparaM-JparaN;
+      DS = diff(transpose(Mac.s(1:Mac.Ns1)));
+      DM = transpose(abs(Mac.Mm)+1);
+      REE = sum(abs(DS*diff(JparaE,1,1))./DM);
+      REM = sum(abs(DS*diff(JparaM,1,1))./DM);
+      RE_Jpara = REE/REM
+      end
+
+      %save MoR data
+      if 1==1
+         Mac.SVD_JU  = U(:,1:Mac.kSVDsum);
+         Mac.SVD_JV  = V(:,1:Mac.kSVDsum);
+         Mac.SVD_JS  = S_Jpara(1:Mac.kSVDsum);
+         Mac.SVD_JRE = RE_Jpara; 
+         Mac.SVD_JRER= RE_JparaR; 
+      end
+
+      if kplot==1
+      hf=figure(10*Mac.plot_Jpara+6);
+      pcolor(Mac.Mm,Mac.s(1:Mac.Ns1).^2,real(JparaM(1:Mac.Ns1,:))), colorbar, shading interp,
+      xlabel('m','FontSize',18,'FontWeight','Bold')
+      ylabel('\psi_p','FontSize',18,'FontWeight','Bold')
+      title('Re({\delta}J^{||}_{mn})','FontSize',14)
+      ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18,'FontWeight','Bold')
+      a=axis; axis([mleft a(2) sleft 1]); %colormap(hot)
+
+      hf=figure(10*Mac.plot_Jpara+7);
+      pcolor(Mac.Mm,Mac.s(1:Mac.Ns1).^2,imag(JparaM(1:Mac.Ns1,:))), colorbar, shading interp,
+      xlabel('m','FontSize',18,'FontWeight','Bold')
+      ylabel('\psi_p','FontSize',18,'FontWeight','Bold')
+      title('Im({\delta}J^{||}_{mn})','FontSize',14)
+      ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18,'FontWeight','Bold')
+      a=axis; axis([mleft a(2) sleft 1]); %colormap(hot)
+
+      hf=figure(10*Mac.plot_Jpara+8);
+      pcolor(Mac.Mm,Mac.s(1:Mac.Ns1).^2,real(JparaN(1:Mac.Ns1,:)-JparaM(1:Mac.Ns1,:))), colorbar, shading interp,
+      xlabel('m','FontSize',18,'FontWeight','Bold')
+      ylabel('\psi_p','FontSize',18,'FontWeight','Bold')
+      title('Re({\delta}J^{||}_{mn})','FontSize',14)
+      ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18,'FontWeight','Bold')
+      a=axis; axis([mleft a(2) sleft 1]); %colormap(hot)
+
+      hf=figure(10*Mac.plot_Jpara+9);
+      pcolor(Mac.Mm,Mac.s(1:Mac.Ns1).^2,imag(JparaN(1:Mac.Ns1,:)-JparaM(1:Mac.Ns1,:))), colorbar, shading interp,
+      xlabel('m','FontSize',18,'FontWeight','Bold')
+      ylabel('\psi_p','FontSize',18,'FontWeight','Bold')
+      title('Im({\delta}J^{||}_{mn})','FontSize',14)
+      ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18,'FontWeight','Bold')
+      a=axis; axis([mleft a(2) sleft 1]); %colormap(hot)
+
+      if 1==0
+      hf=figure(10*Mac.plot_Jpara+7);
+      pcolor(Mac.chi*180/pi,Mac.s(1:Mac.Ns1).^2,abs(Jpara(1:Mac.Ns1,:))), colorbar, shading interp,
+      xlabel('poloidal angle [degree]','FontSize',16)
+      ylabel('\psi_p','FontSize',16)
+      title('|{\delta}J_{||}|','FontSize',14)
+      ha=get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+      a=axis; axis([a(1) a(2) sleft 1]); 
+      colormap(jet)
+
+      hf=figure(10*Mac.plot_Jpara+8);
+      pcolor(Mac.chi*180/pi,Mac.s(1:Mac.Ns1).^2,abs(JparaR(1:Mac.Ns1,:))), colorbar, shading interp,
+      xlabel('poloidal angle [degree]','FontSize',16)
+      ylabel('\psi_p','FontSize',16)
+      title('|{\delta}J_{||}|','FontSize',14)
+      ha=get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+      a=axis; axis([a(1) a(2) sleft 1]); 
+      colormap(jet)
+      end
+     end
+   end
+end
+
+if plot_JM_KD==4
+   hf=figure(10*Mac.plot_Jpara+1);
+   pcolor(Mac.chi*180/pi,Mac.s(1:Mac.Ns1).^2,real(Jpara(1:Mac.Ns1,:))), colorbar, shading interp,
+   xlabel('poloidal angle [degree]','FontSize',16)
+   ylabel('\psi_p','FontSize',16)
+   title('Re({\delta}J_{||}) [MA/m^2]','FontSize',14)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   a=axis; axis([a(1) a(2) sleft 1]); 
+   colormap(jet)
+   if kprint>0, print(10*Mac.plot_Jpara+1,'-djpeg',[SDIR 'JparaSCHIre']); end
+
+   hf=figure(10*Mac.plot_Jpara+2);
+   pcolor(Mac.chi*180/pi,Mac.s(1:Mac.Ns1).^2,imag(Jpara(1:Mac.Ns1,:))), colorbar, shading interp,
+   xlabel('poloidal angle [degree]','FontSize',16)
+   ylabel('\psi_p','FontSize',16)
+   title('Im({\delta}J_{||}) [MA/m^2]','FontSize',14)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   a=axis; axis([a(1) a(2) sleft 1]); 
+   colormap(jet)
+   if kprint>0, print(10*Mac.plot_Jpara+2,'-djpeg',[SDIR 'JparaSCHim']); end
+end
+
+if plot_JM_KD==5
+   fac_J = Mac.B0EXP/Mac.R0EXP/(4e-7*pi)/1e+6;
+
+   hf=figure(10*Mac.plot_Jpara+1);
+   pcolor(R(1:Mac.Ns1,:)*Mac.R0EXP,Z(1:Mac.Ns1,:)*Mac.R0EXP,real(Jpara(1:Mac.Ns1,:))*fac_J), colorbar, shading interp,
+     xlabel('R [m]','FontSize',18,'FontWeight','Bold')
+   ylabel('Z [m]','FontSize',18,'FontWeight','Bold')
+   title('{\delta}J^{||} [MA/m^2]','FontSize',14)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16)
+   axis equal, colormap(jet)
+   %a=axis; axis([a(1) a(2) sleft 1]); %colormap(hot)
+   if kprint>0, print(10*Mac.plot_Jpara+1,'-djpeg',[SDIR 'JparaRZre']); end
+
+   hf=figure(10*Mac.plot_Jpara+2);
+   pcolor(R(1:Mac.Ns1,:)*Mac.R0EXP,Z(1:Mac.Ns1,:)*Mac.R0EXP,imag(Jpara(1:Mac.Ns1,:))*fac_J), colorbar, shading interp,
+   xlabel('R [m]','FontSize',16)
+   ylabel('Z [m]','FontSize',16)
+   title('Im({\delta}J_{||}) [MA/m^2]','FontSize',14)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   axis equal, colormap(jet)
+   %a=axis; axis([a(1) a(2) sleft 1]); %colormap(hot)
+   if kprint>0, print(10*Mac.plot_Jpara+2,'-djpeg',[SDIR 'JparaRZim']); end
+ 
+   if plot_JM_EQ>0
+   hf=figure(10*Mac.plot_Jpara+3);
+   %RE_E0=-1579198505.291888;
+   %ETA = Mac.RESIST*ones(1,Mac.Nchi);
+   pcolor(R(1:Mac.Ns1,:)*Mac.R0EXP,Z(1:Mac.Ns1,:)*Mac.R0EXP,real(JEQP(1:Mac.Ns1,:))*fac_J), colorbar, shading interp,
+   xlabel('R [m]','FontSize',18,'FontWeight','Bold')
+   ylabel('Z [m]','FontSize',18,'FontWeight','Bold')
+   title('J_{eq}^{||} [MA/m^2]','FontSize',14)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16)
+   axis equal, colormap(jet)
+ 
+   hf=figure(10*Mac.plot_Jpara+4);
+   pcolor(R(1:Mac.Ns1,:)*Mac.R0EXP,Z(1:Mac.Ns1,:)*Mac.R0EXP,imag(JEQP(1:Mac.Ns1,:))*fac_J), colorbar, shading interp,
+   xlabel('R [m]','FontSize',16)
+   ylabel('Z [m]','FontSize',16)
+   title('Im[J_{eq,||}] [MA/m^2]','FontSize',14)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   axis equal, colormap(jet)
+
+   hf=figure(10*Mac.plot_Jpara+5);
+   pcolor(R(1:Mac.Ns1,:)*Mac.R0EXP,Z(1:Mac.Ns1,:)*Mac.R0EXP,real((JEQP(1:Mac.Ns1,:)+Jpara(1:Mac.Ns1,:)))*fac_J), colorbar, shading interp, hold on
+   
+   xlabel('R [m]','FontSize',18,'FontWeight','Bold')
+   ylabel('Z [m]','FontSize',18,'FontWeight','Bold')
+   title('J_{eq}^{||}+{\delta}J^{||} [MA/m^2]','FontSize',14)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16)
+   axis equal, colormap(jet)
+ 
+   hf=figure(10*Mac.plot_Jpara+6);
+   pcolor(R(1:Mac.Ns1,:)*Mac.R0EXP,Z(1:Mac.Ns1,:)*Mac.R0EXP,imag((JEQP(1:Mac.Ns1,:)+Jpara(1:Mac.Ns1,:)))*fac_J), colorbar, shading interp,
+   xlabel('R [m]','FontSize',16)
+   ylabel('Z [m]','FontSize',16)
+   title('Im[J_{eq,||}+{\delta}J_{||}] [MA/m^2]','FontSize',14)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',14)
+   axis equal, colormap(jet)
+ 
+   %plot surface averaged equilibrium Jpara
+   hf=figure(10*Mac.plot_Jpara+7);
+   plot(Mac.s(1:N),JparaS*fac_J,Mac.SS,'LineWidth',3), hold on
+   xlabel('\psi_p^{1/2}','FontSize',18,'FontWeight','Bold')
+   ylabel('<J_{||}> [MA/m^2]','FontSize',18,'FontWeight','Bold')
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+   res = [Mac.s(1:N) JparaS];
+   save JparaSurfEQ.txt res -ascii
+
+   %generate FIDIST.IN according to RE equilibrium distribution
+   %Model-2 (IF0TYPE=6), on uniform 4D-mesh (psi,chi,xi=v_||/v,p)
+   if 1==1
+      Fpsi = linspace(0,1,12);    Fpsi=Fpsi(2:end-1);
+      Fchi = linspace(-pi,pi,11); Fchi=Fchi(1:end-1);
+      Fxi  = linspace(-1,1,12);   Fxi=Fxi(2:end-1);
+      Fp   = linspace(1,20,21);
+
+      NS      = Mac.Ns1;
+      [ss,cc] = meshgrid(Mac.s(1:NS),Mac.chi);
+      [s2,c2] = meshgrid(sqrt(Fpsi),Fchi);
+      FR = Mac.R0EXP*griddata(ss,cc,R(1:NS,:)',s2,c2)';
+      FZ = Mac.R0EXP*griddata(ss,cc,Z(1:NS,:)',s2,c2)';
+
+      V_LIGHT = 2.99792E+8;
+      E_E     = 1.6021917E-19;
+      M_E     = 9.1095E-31;
+      RE_PMAX = 29.85;
+
+      Fg = sqrt(Fp.^2+1);
+      FE = (Fg-1)*M_E*V_LIGHT^2/E_E;
+      FC = spline(Mac.s(1:N),JparaS,sqrt(Fpsi));
+
+      N1 = length(Fpsi);
+      N2 = length(Fchi);
+      N3 = length(Fxi);
+      N4 = length(FE);
+      NN = N1*N2*N3*N4;
+
+      FD = zeros(NN,6);
+      k  = 0;
+      for k1=1:N1
+      disp(['Generating FIDIST.IN: k1/N1=' int2str(k1) '/' int2str(N1)]);
+      for k2=1:N2
+      for k3=1:N3
+      for k4=1:N4
+          k = k+1;
+	  FD(k,1) = FR(k1);
+	  FD(k,2) = FZ(k2);
+	  FD(k,3) = Fxi(k3);
+	  FD(k,4) = FE(k4);
+	  
+	  F01     = FC(k1);
+	  F02     = exp((Fxi(k3)-1)*Fp(k4)^2/Fg(k4)/2.5);
+	  F03     = exp(-(Fp(k4)-RE_PMAX)^2/12.5);
+	  FD(k,5) = F01*F02*F03;
+	  FD(k,6) = k;
+       end
+       end
+       end
+       end
+
+       FD = [NN*ones(1,6); FD];
+       save FIDIST.IN FD -ascii
+   end
+     
+   end
+end
+
+%MacFitJpara
+
+
+
+

@@ -1,0 +1,147 @@
+#!/bin/sh
+
+cp ../Equi/OUT*MAR .
+
+cp ../Data/PROFDEN_EXAMPLE.IN PROFDEN.IN
+
+cat >RUN.IN <<'EOF'
+&BASIC
+ NCASE  = 1,
+ TALPHA1= (0.60000E-02, 0.00000E-10),
+ NITMAX = 100,
+ NSWEEP = 1,
+ GAMMA  = 1.66667,
+ RNTOR  = -1.,
+ M1     =-9,
+ M2     = 33,
+ NPROFN = 4,
+ NPROFIE= 0,
+ NPROFT = 3,
+ ETA    = 0.0e-00,
+ NV     = 160, 
+ NWALL  = 0,
+ TAUW   = 1.0e+4, 
+ IWALL  = 42,
+ IWO    = 1,
+ IVISC  = 0,
+ PVISC  = 1.5,
+ NPROFR = 0,
+ ROTE   = 0.00e-00,
+ NPROFWE= 0,
+ ROTWE0 = 0.00e-00,
+ FRACPTH = 1.0,
+&END
+
+&FEEDBACK
+ INCFEED= 0,    
+ NCOIL  = 2,   
+ FCCHI  = 0.34219,-0.405470, 
+ FWCHI  = 0.12187, 0.089063,
+ SCCHI  = 0.0,
+ SWCHI  = 0.05,
+ BTCHI  = 0.05,
+ FEEDI  = (0.0,-1.2046e-3),(0.0,-1.3217e-3),
+ IFEED  = 3,
+ ISENS  = 3,
+ NSENS  = 0,
+ KKF    =-1, 
+ KREADECA = 0,
+&END
+
+&KINETIC
+ INCKIN = 0,
+ ATAU   = (1.00000E-04, 0.0000e-00),
+ ALTAU  = 0.5,    
+ ALPHAP = 0.5,
+ ALPHAD = 1.0,
+ OMEGACI0 = 3.8056e+01, 
+ IPERTURB = 2,
+ KFASTRUN = 0,
+ KENORM   = 2,
+ NSPECIES = 2,
+ IFOWPSI0 = 1,
+ ISPECIES_F0   = 0,0,3,
+ KNBI   = 0,
+ DZETA0 = 1.0E+0,
+ S0TYPE4= 0.5,
+ R0TYPE4= 1.5,
+ HHTYPE4C = 0.5,
+ ESPECIES_M    = 2.0,5.4463e-04,2.00,
+ ESPECIES_Z    = 1.0,-1.0, 1.0,
+ PSPECIES_AP   = 0.0, 0.0, 1.0,
+ PSPECIES_AT   = 0.0, 0.0, 0.0,
+ PSPECIES_NP   = 0.0, 0.0, 0.0,
+ PSPECIES_NTB  = 0.0, 0.0, 0.0,
+ PSPECIES_NTD  = 0.0, 0.0, 0.0,
+ PSPECIES_FOWP = 0.0, 0.0, 1.0,
+ PSPECIES_FOWT = 0.0, 0.0, 0.0,
+ NPROFK   = 0,
+ INUTYPE  = 0,
+ NPROFUI  = 0,
+ NUEFFIA  = 0.00000e-4,
+ NPROFUE  = 0,
+ NUEFFEA  = 0.00000e-4,
+&END
+
+&QLIN
+ TALPHA2= 1.0,    
+ TALPHA3= 1.0,    
+ TALPHA6= 1.0,    
+ TALPHA8= 0.9,    
+ TDELTAMIN = 0.04,
+ TDELTAMAX = 0.08,
+ TDELTALIM = 100.,
+ TDELTALOW = 2.,
+ CTJXB  = 1.0,
+ CTNTV  = 1.0,
+ CTREY  = 1.0,
+ ITSATURAT = 2,
+ NPROFVD= 3,
+ TCHIM0 = 8.4571e-07,
+ NPROFVP= 0,
+ TVPINCH0 = 0.,
+ CTEDGE   = 0.995,
+ KSOLSAVE = 0,
+ KSOLREAD = 0,
+&END
+
+&NUMERIC
+ PTRAPI = 1.00,
+ PTRAPH = 0.90,
+ NRES   = 7,
+ NFIT   = 3,
+ NTORQ  = 5,
+ IPDIVB = 1,
+ NCONVB1= 0,
+ NCONVCS= 1,
+ IOMPNUM= 1,
+ NVACJ  = 0,
+ V2XKEY = 2,
+&END
+
+&OUTOPT
+ DPLOLP(1) = .T.,.F.,.F., .F.,.F.,.F., .F.,.F.,.F., .F.,.F.,.F.,.F.,.F.,.F.,.F.,.F.,
+ JSOUT    = 50,
+ ORMIN    = 0.0,
+ ORMAX    = 2.0,
+ OZMIN    =-2.0,
+ OZMAX    = 2.0,
+ NORR     = 0,
+ NOZZ     = 0,
+&END
+EOF
+
+rm *.OUT
+time ../../MarsQ/marsf.x > log_mars
+rm OUT*MAR
+cat RESULT.OUT
+
+exit
+
+
+
+
+
+
+
+

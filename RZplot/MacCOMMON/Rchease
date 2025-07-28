@@ -1,0 +1,45 @@
+#!/bin/sh
+
+#cp ~/Work/D3D166439/Expt/g166439.03300 EXPEQ
+
+cat >datain <<'EOF'
+***                                                                             
+***    D3D157376@2034                                                           
+***                                                                             
+***                                                                             
+ &EQDATA                                                                        
+   NBLOPT = 0, CFBAL=1.00000, NEQDSK=0,                            
+   AT=0.150, 0.8, 1.00, 8.00, 0.0, 0.15, 0., 0., 0.85, -1.,                 
+   AT2=0.4, 0.7, 1.0, 0.3, 2.0, 0.0, -3.0, 0.6, 0.2, 1.0,                   
+   AP=-0.800, 0.80,  1.50,  0.75, 0.500, 0.30 ,-0.000,                      
+   NQMIN=0, QSPEC =1.140, CSSPEC=0.000, CPRESS=1.00, PSISCL=1.00,               
+   NSTTP=2, NPP=1, NIPR=1, NSOUR=2,                                             
+   NS=60, NT=60, NPSI=280, NCHI= 200, NISO=240,                                 
+   NMESHA=3, ROTE=0.0000, NDIFPS=1, NSMOOTH=0, NTOR=1,
+   NPOIDQ=1, SOLPDA=0.5, QWIDTH0=0.4, NPPFUN=4, NFUNC = 4, NPROPT = 2,
+   QPLACE=1.9980, 2.9961, 3.9975, 5.0023,
+   QWIDTH=0.0100, 0.0080, 0.0100, 0.0040,
+   NDIFT=1,                                                                     
+   ASPCT = .37, ELONG  = 1.73, TRIANG = 0.745, CETA = .1,                       
+   NSYM=0, NTCASE=0, NSURF=6,                                                   
+   NV=200, NVEXP=8, REXT=5.0, R0W=0.9, RZ0W=0.,
+   NIDEAL = 0, NRSCAL=0, NTMF0=0,                                               
+   NCSCAL = 4, CURRT = 0.4650,                                                  
+   NEGP=-1, NER=1,                                                              
+   EPSLON=1.0E-10, GAMMA=1.6666666667,                     
+   MSMAX=40, NINMAP=20, NINSCA=50,                                              
+   NTURN=10, NBLC0=1, NPPR=30,                                                  
+   NOPT = 0, NPLOT = 0, NBAL=0,                                                 
+   NMESHD = 0, SOLPDD = 0.7, NPOIDD = 1, DPLACE = -1.9, DWIDTH = -0.2           
+   B0EXP=1.9000, R0EXP=1.6955,                                                
+ &END                                                                           
+EOF
+
+rm OUT*MAR
+/home/liuy/IRIS/mars-code/CheaseMerge/chease.x < datain  > log_chease
+
+rm datain EQU0? ETAVAC INP1* JACOB_F JSOLVER NDES NGA NOUT NSAVE RZPEEL 
+
+echo "Finished CHEASE run."
+
+exit

@@ -1,0 +1,4 @@
+#! /bin/csh
+
+./Rchease
+./RmarsQ

@@ -1,0 +1,392 @@
+% linear superposition of response data from 3 rows of RMP coils
+% for BPLASMA and XPLASMA
+% 1. extract b1res and xi_X from individual row response
+%    b1res is defined as dimensionless quantity without the q-factor
+% 2. 2D scan of coil phasing based upon FOMs from 1
+%    specify target FOM values, and scale current amplitude to obtain robust optimium
+%    KirkNF15 => b1res_crit=0.5e-4 and xi_X=1.5 mm 
+%    ITER 15MA/5.3T case, JOREK==>60kAt for ELM suppression with n=3 ==> xi_X=10mm
+% 3. identify best/worst coil phasing from 2, and combine BPLASMA/XPLASMA to plot best/worst response
+%    use best/worst coil phasing to also plot corresponding vacuum field
+% 4. plot overall optimal results
+%
+% krot = 0:vac; 1:1e-3; 2:1e-2; 3:5e-2
+% kmod = 1:fld; 2:kin
+
+global SDIR n_GLOBAL FIN_RES_b1res FIN_RES_xinX 
+
+SDIR1 = '/home/liuy/Work/STEP-P/Case5/DataN/';
+SCOIL = 'UML';
+AA    = 1;
+R0EXP = [3.6e+3 3.6e+3 3.6e+3 3.6e+3 4.3e+3]; %[mm]
+kdb   = 1; %plot threshold database from present devices, valid for krun=4
+
+%SCASE = 'vac';
+SCASE = 'rot_5e-2_fld';
+n     = 1;
+krun  = 4; %see the four steps described above
+kbest = 1; %1-best, 0-worst; in action when krun=3
+
+if strcmp(SCASE(1:3),'vac') 
+   krot = 0;
+   kmod = 1;
+else
+   if strcmp(SCASE(5:8),'1e-3'), krot=1; end
+   if strcmp(SCASE(5:8),'1e-2'), krot=2; end
+   if strcmp(SCASE(5:8),'5e-2'), krot=3; end
+
+   if strcmp(SCASE(10:12),'fld'), kmod=1; end
+   if strcmp(SCASE(10:12),'kin'), kmod=2; end
+end
+
+if krun==1, AA=1;  end
+if krun==2, AA=10; end
+
+%result from krun=1
+%assume coil current amplitude AA=1kAt
+data_b1res=[
+%n krot kmod U                          M                          L
+ 1 1    1  -8.1928e-07 - 5.4935e-08i   9.6879e-07 - 1.8559e-07i  -7.1885e-07 + 3.1453e-07i
+ 2 1    1  -1.8842e-07 + 2.1683e-07i   4.4036e-07 - 1.9327e-07i  -2.8772e-07 + 7.8735e-09i
+ 3 1    1  -1.1817e-08 + 4.4442e-09i   3.0208e-08 + 8.7710e-09i   3.5736e-09 - 1.0422e-08i
+ 4 1    1  -8.2098e-09 + 1.2867e-08i   3.9424e-08 + 2.3715e-09i  -5.6392e-09 - 1.1638e-08i
+ 1 2    1  -7.3246e-07 + 5.8846e-07i   5.3792e-07 - 9.6931e-07i  -2.1209e-07 + 7.4082e-07i 
+ 2 2    1   1.2769e-07 + 3.5608e-07i   4.9714e-08 - 5.8547e-07i  -1.5333e-07 + 3.2856e-07i
+ 3 2    1  -4.0007e-09 + 9.1714e-09i   2.1442e-08 - 4.7981e-09i  -7.8054e-09 - 8.2329e-09i
+ 4 2    1  -7.3259e-09 + 1.0373e-08i   3.6593e-08 + 3.0878e-09i  -6.7213e-09 - 1.2076e-08i
+ 1 3    1  -1.1308e-07 + 5.2084e-07i  -2.0992e-07 - 6.1484e-07i   2.1969e-07 + 2.9436e-07i
+ 2 3    1   1.4708e-07 + 2.1603e-07i  -7.8163e-08 - 3.9208e-07i  -3.9816e-08 + 2.5055e-07i
+ 3 3    1  -7.3765e-09 + 1.3349e-08i   2.8446e-08 - 6.0691e-10i  -7.3943e-09 - 1.3025e-08i
+ 4 3    1  -5.2807e-09 + 1.0886e-08i   3.3812e-08 + 4.7091e-09i  -4.5173e-09 - 1.3170e-08i
+];
+data_xin_x=[
+%n krot kmod  U                          M                          L
+ 1 1    1    4.3853e+00 - 1.0084e+01i  -1.3824e+01 + 1.8903e+01i  -1.6962e+00 - 2.2862e+01i
+ 2 1    1   -1.8842e-07 + 2.1683e-07i   4.4036e-07 - 1.9327e-07i  -2.8772e-07 + 7.8735e-09i
+ 3 1    1   -6.1835e-01 - 6.1960e-01i  -3.9978e-01 + 7.2912e-01i   7.5192e-01 + 2.5286e-01i
+ 4 1    1   -2.5379e-01 - 2.4255e-01i  -2.7862e-01 - 1.2263e-02i  -1.9542e-01 + 3.1697e-01i 
+ 1 2    1    1.4638e+00 + 2.1182e+00i  -3.5527e+00 - 1.1482e+00i   1.8503e+00 - 3.4024e-01i
+ 2 2    1   -1.4415e+00 - 5.1041e-01i   1.5975e+00 + 1.4524e+00i  -4.9748e-01 - 1.2063e+00i 
+ 3 2    1   -8.6930e-02 + 2.7470e-02i   1.0845e-01 + 8.2557e-02i   3.1300e-02 - 6.3836e-02i 
+ 4 2    1   -2.5531e-02 - 2.0056e-02i  -1.7213e-02 + 1.3726e-02i  -1.1460e-02 + 2.2509e-02i 
+ 1 3    1    2.2750e+00 + 9.6959e-02i  -2.6058e+00 + 1.4883e+00i   9.5987e-01 - 1.3518e+00i
+ 2 3    1   -4.6451e-01 + 4.4353e-01i   8.5276e-01 - 4.6987e-01i  -5.1924e-01 + 8.4478e-02i 
+ 3 3    1   -8.9302e-02 + 2.9814e-02i   1.0735e-01 + 1.0868e-01i   3.8906e-02 - 7.6688e-02i 
+ 4 3    1   -8.6930e-03 - 6.5295e-03i  -5.6435e-03 + 1.3651e-02i   3.7959e-04 + 2.8563e-03i 
+];
+
+%result from krun=2
+%assume coil current amplitude AA=10kAt
+%assume PM=0
+data_b1max = [
+%n krot kmod PUmax        PLmax           b1max     PUmin        PLmin           b1min
+ 1 1    1    1.6560e+02   1.9440e+02   2.5920e-05   3.6000e+01   3.2040e+02   1.8722e-07
+ 2 1    1    2.0520e+02   1.5840e+02   1.0560e-05   3.5280e+02   1.0800e+01   3.5694e-08
+ 3 1    1    2.1600e+02   8.6400e+01   5.5097e-07   3.6000e+01   2.6640e+02   7.8229e-08
+ 4 1    1    2.4120e+02   1.1880e+02   6.7690e-07   6.1200e+01   2.9880e+02   1.1301e-07
+ 1 2    1    1.5840e+02   1.9440e+02   2.8186e-05   2.1600e+01   3.1680e+02   9.7690e-08
+ 2 2    1    2.0520e+02   1.5840e+02   1.3283e-05   6.1200e+01   3.0240e+02   6.5528e-08
+ 3 2    1    2.3400e+02   1.2240e+02   4.3320e-07   5.7600e+01   2.9880e+02   6.9768e-09
+ 4 2    1    2.3760e+02   1.2240e+02   6.3235e-07   6.1200e+01   3.0240e+02   1.0213e-07
+ 1 3    1    1.4760e+02   1.9800e+02   1.5499e-05   3.6000e+00   3.2400e+02   8.3505e-08
+ 2 3    1    2.0160e+02   1.5840e+02   9.1477e-06   6.1200e+01   2.9880e+02   5.1555e-08
+ 3 3    1    2.4120e+02   1.1880e+02   5.8679e-07   7.9200e+01   2.7720e+02   3.6666e-09
+ 4 3    1    2.5200e+02   1.1520e+02   6.0156e-07   7.2000e+01   2.9520e+02   8.1324e-08
+];
+data_ximax = [
+%n krot kmod PUmax        PLmax        ximax        PUmin        PLmin        ximin
+ 1 1    1    1.9080e+02   2.1960e+02   5.7335e+02   2.9880e+02   6.8400e+01   2.2526e+00
+ 2 1    1    2.0520e+02   1.5840e+02   1.0560e-05   3.5280e+02   1.0800e+01   3.5694e-08
+ 3 1    1    2.5560e+02   1.0080e+02   2.4999e+01   1.8000e+01   3.4560e+02   8.4810e-02
+ 4 1    1    3.2040e+02   6.1200e+01   1.0022e+01   2.0880e+02   1.7640e+02   6.4059e-02
+ 1 2    1    1.4400e+02   2.0880e+02   8.1893e+01   2.9520e+02   6.8400e+01   2.8755e-01
+ 3 2    1    2.0160e+02   1.5480e+02   4.9929e+01   3.4560e+02   1.8000e+01   3.0291e-01
+ 2 2    1    2.3400e+02   1.0080e+02   2.9856e+00   8.2800e+01   2.4480e+02   1.5931e-02
+ 4 2    1    2.8440e+02   2.5200e+01   7.9738e-01   1.5480e+02   1.1880e+02   2.5214e-03
+ 1 3    1    1.4760e+02   2.0520e+02   6.9358e+01   2.9520e+02   7.2000e+01   4.7077e-01
+ 2 3    1    1.9440e+02   1.6200e+02   2.1418e+01   3.4560e+02   1.8000e+01   8.3510e-02
+ 3 3    1    2.4480e+02   1.0800e+02   3.3288e+00   9.3600e+01   2.5560e+02   1.1960e-02
+ 4 3    1    2.5560e+02   2.8800e+01   2.8524e-01   7.5600e+01   2.0880e+02   1.0201e-02
+];
+
+
+SDIR2 = [SDIR1 SCASE '/'];
+SN    = int2str(n);
+SDIR  = SDIR1;
+n_GLOBAL = n;
+
+if strcmp(SCASE(1:3),'vac'), SPV='VAC'; end
+if strcmp(SCASE(1:3),'rot'), SPV='PLS'; end
+
+
+b1res = zeros(1,3);  %b1res defoned without q-factor
+xin_x = zeros(1,3);  %Xin-X near lower X-point
+
+% 1. extract b1res and xi_X from individual row response
+% set CheckErgos=3 and n=n_GLOBAL in MacRfaCtBn2.m
+if krun==1
+for k=1:length(SCOIL)
+    copyfile([SDIR1 'RMZM_F_n' SN '_EQAC'],[SDIR1 'RMZM_F_EQAC'],'f');
+    copyfile([SDIR1 'RMZM_F_n' SN '_PEST'],[SDIR1 'RMZM_F_PEST'],'f');
+    copyfile([SDIR1 'PROFEQ_n' SN],        [SDIR1 'PROFEQ.OUT'],'f');
+    copyfile([SDIR2 'BPLASMA_n' SN '_' SPV '_' SCOIL(k)],[SDIR1 'BPLASMA.OUT'],'f');
+
+    run MacRfaCtBn2.m
+    b1res(k) = FIN_RES_b1res;
+
+    if strcmp(SCASE(1:3),'rot')
+    copyfile([SDIR1 'RMZM_F_n' SN '_EQAC'],[SDIR1 'RMZM_F.OUT'],'f');
+    copyfile([SDIR1 'PROFEQ_n' SN],        [SDIR1 'PROFEQ.OUT'],'f');
+    copyfile([SDIR2 'XPLASMA_n' SN '_PLS_' SCOIL(k)],[SDIR1 'XPLASMA.OUT'],'f');
+
+    run MacMainKSTAR_X.m
+    xin_x(k) = FIN_RES_xinX;
+    end
+end
+data_b1res=b1res
+data_xin_x=xin_x
+end
+
+% 2. 2D scan of coil phasing based upon FOMs from 1
+% set CheckErgos=3 in MacRfaCtBn2.m
+if krun==2
+NU    = 101;
+NL    = 101;
+kB    = find(data_b1res(:,1)==n & data_b1res(:,2)==krot & data_b1res(:,3)==kmod);
+kX    = find(data_xin_x(:,1)==n & data_xin_x(:,2)==krot & data_xin_x(:,3)==kmod);
+
+BU = data_b1res(kB,4);
+BM = data_b1res(kB,5);
+BL = data_b1res(kB,6);
+
+XU = data_xin_x(kX,4);
+XM = data_xin_x(kX,5);
+XL = data_xin_x(kX,6);
+
+PU = linspace(0,360,NU);
+PL = linspace(0,360,NL);
+
+ePU = exp(i*PU*pi/180);
+ePL = exp(i*PL*pi/180);
+
+b1res = zeros(NL,NU);
+xin_x = zeros(NL,NU);
+for ku=1:NU
+for kl=1:NL
+    b1res(kl,ku) = AA*(BU*ePU(ku) + BM + BL*ePL(kl));
+    xin_x(kl,ku) = AA*(XU*ePU(ku) + XM + XL*ePL(kl));
+end
+end
+
+B = abs(b1res);
+X = abs(xin_x);
+
+[Y1,II] = max(B,[],1);
+[Y2,JJ] = max(Y1);
+IB1 = II(JJ);
+JB1 = JJ;
+YB1 = Y2;
+
+[Y1,II] = min(B,[],1);
+[Y2,JJ] = min(Y1);
+IB2 = II(JJ);
+JB2 = JJ;
+YB2 = Y2;
+
+[Y1,II] = max(X,[],1);
+[Y2,JJ] = max(Y1);
+IX1 = II(JJ);
+JX1 = JJ;
+YX1 = Y2;
+
+[Y1,II] = min(X,[],1);
+[Y2,JJ] = min(Y1);
+IX2 = II(JJ);
+JX2 = JJ;
+YX2 = Y2;
+
+data_b1max = [PU(JB1) PL(IB1) YB1 PU(JB2) PL(IB2) YB2]
+data_ximax = [PU(JX1) PL(IX1) YX1 PU(JX2) PL(IX2) YX2] 
+
+%add q-factor back to b1res when plotting
+  d = load([SDIR1 'PROFEQ_n' SN],'-ascii');
+q = d(:,2);
+m = floor(max(q)*n);
+qres = m/n*1e+4;
+
+hf=figure(1);
+pcolor(PU,PL,B*qres), colorbar, hold on, shading interp
+plot(PU(JB1),PL(IB1),'b+','LineWidth',2,'MarkerSize',12)
+plot(PU(JB2),PL(IB2),'wx','LineWidth',2,'MarkerSize',12)
+%contour(PU,PL,[1e-4 1e-4],'k-'), hold on,
+axis([0 360 0 360]), 
+xlabel('\Phi_U-\Phi_M [degree]','FontSize',18,'FontWeight','Bold')
+ylabel('\Phi_L-\Phi_M [degree]','FontSize',18,'FontWeight','Bold')
+title('|b^1_{res}|x10^4','FontSize',14)
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16)
+colormap(hot)
+
+hf=figure(2);
+pcolor(PU,PL,X), colorbar, hold on, shading interp
+plot(PU(JX1),PL(IX1),'b+','LineWidth',2,'MarkerSize',12)
+plot(PU(JX2),PL(IX2),'wx','LineWidth',2,'MarkerSize',12)
+%contour(PU,PL,[1e-4 1e-4],'k-'), hold on,
+axis([0 360 0 360]), 
+xlabel('\Phi_U-\Phi_M [degree]','FontSize',18,'FontWeight','Bold')
+ylabel('\Phi_L-\Phi_M [degree]','FontSize',18,'FontWeight','Bold')
+title('|\xi_{n,X}| [mm]','FontSize',14)
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16)
+colormap(hot)
+end
+
+% 3. identify best/worst coil phasing from 2, and combine BPLASMA/XPLASMA to plot best/worst response
+% set CheckErgos=0 in MacRfaCtBn2.m
+if krun==3
+BU = load([SDIR2 'BPLASMA_n' SN '_' SPV '_U']);
+BM = load([SDIR2 'BPLASMA_n' SN '_' SPV '_M']);
+BL = load([SDIR2 'BPLASMA_n' SN '_' SPV '_L']);
+
+M   = round(BU(1,1));
+II  = [0:2]*2;
+BUU = (BU(M+2:end,II+1)+BU(M+2:end,II+2)*i);
+BMM = (BM(M+2:end,II+1)+BM(M+2:end,II+2)*i);
+BLL = (BL(M+2:end,II+1)+BL(M+2:end,II+2)*i);
+
+kB  = find(data_b1max(:,1)==n & data_b1max(:,2)==krot & data_b1max(:,3)==kmod);
+if kbest==1
+   PUB = data_b1max(kB,4);
+   PLB = data_b1max(kB,5);
+   %PUB = data_ximax(kB,4);
+   %PLB = data_ximax(kB,5);
+else
+   PUB = data_b1max(kB,7);
+   PLB = data_b1max(kB,8);
+   %PUB = data_ximax(kB,7);
+   %PLB = data_ximax(kB,8);
+end
+BNN = AA*(BUU*exp(i*PUB*pi/180) + BMM + BLL*exp(i*PLB*pi/180));
+BN  = [BU(1:M+1,:); real(BNN(:,1)) imag(BNN(:,1)) ...
+                    real(BNN(:,2)) imag(BNN(:,2)) ...
+                    real(BNN(:,3)) imag(BNN(:,3))];
+
+save([SDIR1 'BPLASMA.OUT'],'BN','-ascii');
+
+copyfile([SDIR1 'RMZM_F_n' SN '_EQAC'],[SDIR1 'RMZM_F_EQAC'],'f');
+copyfile([SDIR1 'RMZM_F_n' SN '_PEST'],[SDIR1 'RMZM_F_PEST'],'f');
+copyfile([SDIR1 'PROFEQ_n' SN],        [SDIR1 'PROFEQ.OUT'],'f');
+
+run MacRfaCtBn2.m
+b1res = abs(FIN_RES_b1res)
+
+if strcmp(SCASE(1:3),'rot')
+XU = load([SDIR2 'XPLASMA_n' SN '_PLS_U']);
+XM = load([SDIR2 'XPLASMA_n' SN '_PLS_M']);
+XL = load([SDIR2 'XPLASMA_n' SN '_PLS_L']);
+
+M   = round(XU(1,1));
+N   = round(XU(1,2));
+II  = [0:2]*2;
+XUU = (XU(M+N+2:end,II+1)+XU(M+N+2:end,II+2)*i);
+XMM = (XM(M+N+2:end,II+1)+XM(M+N+2:end,II+2)*i);
+XLL = (XL(M+N+2:end,II+1)+XL(M+N+2:end,II+2)*i);
+
+kX  = find(data_ximax(:,1)==n & data_ximax(:,2)==krot & data_ximax(:,3)==kmod);
+if kbest==1
+   PUX = data_ximax(kX,4);
+   PLX = data_ximax(kX,5);
+else
+   PUX = data_ximax(kX,7);
+   PLX = data_ximax(kX,8);
+end
+XNN = AA*(XUU*exp(i*PUX*pi/180) + XMM + XLL*exp(i*PLX*pi/180));
+XN  = [XU(1:M+N+1,:); real(XNN(:,1)) imag(XNN(:,1)) ...
+                      real(XNN(:,2)) imag(XNN(:,2)) ...  
+                      real(XNN(:,3)) imag(XNN(:,3))];
+save([SDIR1 'XPLASMA.OUT'],'XN','-ascii');
+
+copyfile([SDIR1 'RMZM_F_n' SN '_EQAC'],[SDIR1 'RMZM_F.OUT'],'f');
+copyfile([SDIR1 'PROFEQ_n' SN],        [SDIR1 'PROFEQ.OUT'],'f');
+
+run MacMainKSTAR_X.m
+xin_x = abs(FIN_RES_xinX)
+end
+
+end
+
+if krun==4
+%need to add q-factor back to recover CheckErgos=0 
+if kdb==1
+   run /home/liuy/Work/RMPthreshold/Work/drawPhysThreshold.m
+end
+
+run /home/liuy/Work/STEP-P/Work/drawMemo.m
+ccol = 'rbkgy';
+
+for kk=1:5
+eval(['data_b1max=data_b1max_case' int2str(kk) ';']);
+eval(['data_ximax=data_ximax_case' int2str(kk) ';']);
+
+if kdb==0, cc = ccol(kk); end
+SS = 'x+s';
+SL = [3 1];
+for n=[1 2 3 4]
+    %get qres-factor at last rational surface
+    qa = data0(2*kk,9);
+    m  = floor(qa*n);
+    qres = m/n;
+
+    II = find(data_b1max(:,1)==n & data_b1max(:,2)~=0);
+    db = data_b1max(II,:); 
+    II = find(data_ximax(:,1)==n & data_ximax(:,2)~=0);
+    dx = data_ximax(II,:); 
+    hf1 = figure(10*n+1);
+    if kdb==0 
+       hf2 = figure(10*n+2);
+    elseif kdb==1 
+       hf2 = 1; cc=ccol(n); 
+    end
+    for k=1:size(db,1)
+        krot = db(k,2);
+        kmod = db(k,3);
+        figure(hf1);
+        %if krot>1
+        %plot(db(k,4),db(k,5),['b' SS(krot)],'LineWidth',SL(kmod),'MarkerSize',9), hold on,
+        plot(db(k,4),db(k,5),[cc SS(krot)],'LineWidth',SL(kmod),'MarkerSize',9), hold on,
+        %end 
+
+        krot = dx(k,2);
+        kmod = dx(k,3);
+        %if krot==3
+        %plot(dx(k,4),dx(k,5),['g' SS(krot)],'LineWidth',SL(kmod),'MarkerSize',9), hold on,
+        plot(dx(k,4),dx(k,5),[cc SS(krot)],'LineWidth',SL(kmod),'MarkerSize',9), hold on,
+        %end
+
+        figure(hf2);
+        %if krot>1
+        if kdb==0
+	  loglog(dx(k,6)/R0EXP(kk),db(k,6)*qres,[cc SS(krot)],'LineWidth',SL(kmod),'MarkerSize',9), hold on,
+        elseif kdb==1
+	  loglog(dx(k,6)/R0EXP(kk),db(k,6)*qres,[cc 'o'],'LineWidth',SL(kmod),'MarkerSize',9,'MarkerFaceColor',cc), hold on,
+        end
+        %end
+    end
+    figure(hf1);
+    xlabel('\Phi_U-\Phi_M [degree]','FontSize',18,'FontWeight','Bold')
+    ylabel('\Phi_L-\Phi_M [degree]','FontSize',18,'FontWeight','Bold')
+    ha=get(hf1,'CurrentAxes'); set(ha,'FontSize',16)
+    axis([0 360 0 360])
+    %if n==4, axis([0 380 -10 360]), end
+
+    figure(hf2);
+    xlabel('\xi_n/R_0 ','FontSize',18,'FontWeight','Bold')
+    ylabel('b^1_{res}','FontSize',18,'FontWeight','Bold')
+    ha=get(hf2,'CurrentAxes'); set(ha,'FontSize',16)
+end
+end
+
+if kdb==1, figure(hf2), legend('DIII-D','EAST','KSTAR','AUG','STEP'), end
+end
+
+
+
+

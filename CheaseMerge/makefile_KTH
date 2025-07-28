@@ -1,0 +1,51 @@
+PROG =	chease.x
+
+SRCS =   chease.f 
+
+
+INCS =	       COMBND.inc  COMINT.inc  COMPLO.inc  DECLAR.inc	QUAQDQ.inc \
+               COMCON.inc  COMIOD.inc  COMRCH.inc  HERMIT.inc	QUAQQQ.inc \
+               BNDIND.inc  COMDAT.inc  COMISO.inc  COMSOL.inc           \
+               COMDIM.inc  COMLAB.inc  COMSUR.inc  SOLOV.inc            \
+               COMEQD.inc  COMMAP.inc  COMVAC.inc  NEWRUN.inc	        \
+               COMERA.inc  COMNUM.inc  COMVEV.inc                       \
+               COMBAL.inc  COMESH.inc  COMOPT.inc  CUCCCC.inc           \
+               COMBLA.inc     COMETA.inc  COMPHY.inc  CUCDCD.inc  PROCESS.inc
+MODS = 
+
+.PRECIOUS:	$(SRCS) $(INCS) $(MODS)
+
+OBJS =	$(SRCS:.f=.o)
+
+#LIBS2 =	 -L/u/chum/lohan2/nag -lnag
+#LIBS = -L/u/ferron/gato/tv80 -L/u2/chum/lohan1/baloo/bal1.5/sourcel -ltv80 -lncarg -lncarg_gks \
+#       -lncarg_c -L/usr/X11R6/lib -lX11
+#LIBS1 = -L/sur/local/lf9562/lib -llapackmt -lblasmt
+
+#F95 = lf95
+#F95 = efc
+F95 = ifort
+
+#F95DBFLAGS = --ap --chk --co  --f95 -g --lst --pca --sav --trace --warn --xref \
+#            --dbl --long -staticlink -tpp 
+#F95FLAGS =  -O --dbl --long -staticlink -tpp 
+#F95FLAGS =  -O -ff90 -malign-double -w
+#F95FLAGS =  -O --dbl  --staticlink --tpp 
+F95FLAGS =  -O -r8 -cm -w 
+LDFLAGS = $(F95FLAGS) -i_dynamic
+
+all: $(PROG)
+
+$(PROG): $(OBJS)
+	$(F95) $(LDFLAGS) -o $@ $(OBJS) $(LIBS) $(LIBS2) $(LIBS1)
+
+clean:
+	rm -f $(PROG) $(OBJS) *.d work.*
+
+tar:
+	gtar zcvf ../$(PROG).tar.gz $(SRCS) $(INCS) $(MODS) makefile
+
+.SUFFIXES: $(SUFFIXES) .f
+
+.f.o:
+	$(F95) $(F95FLAGS) -c $<

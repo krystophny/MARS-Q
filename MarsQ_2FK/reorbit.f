@@ -1,0 +1,3599 @@
+C$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+C RE ORBIT TRACING BASED ON MARS-Q COMPUTED E- AND B-FIELD             $
+C USING LSODE FOR TIME ADVANCING BOTH PARTICLE (S,CHI,PHI) POSITION    $
+C AND MOMENTS (P,LAMBDA)
+C Y.Q.LIU, 10/12/2018                                                  $
+C$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+      SUBROUTINE RE_TRACING    
+C     ==========================================================
+      USE DIMENSIM
+      USE GLOBALM
+      USE REORBITM
+      USE MPIENV
+
+      IMPLICIT NONE
+      INCLUDE 'mpif.h'
+      INCLUDE 'comioc.inc'
+
+      INTEGER NEQ2,L,K,I,M,BUFFER_SIZE
+      REAL*8,DIMENSION(:,:),ALLOCATABLE::YRE
+      REAL*8,DIMENSION(:),ALLOCATABLE::YRELOC
+      COMPLEX*16,DIMENSION(:,:,:),ALLOCATABLE::BUFFER_SOL
+
+C     THE VARIABLES FOR MPI COMPUTATION      
+      INTEGER TAG(5),KLOC,INDEX,SLAVENUM
+      INTEGER TOTTASK,TASKNUM
+      INTEGER STAT(MPI_STATUS_SIZE) 
+
+C     USE LSODE TO PERFORM TIME ADVANCE
+C     FOR NREORBIT-NUMBER OF RE PARTICLES
+C     YRE=[(S_I,CHI_I,PHI_I,P_I,LAMBDA_I),I=1,NREORBIT;
+C          (EPARA_I,B_I,MU_I,SIGMA_I,LOSS_TIME,S_MIN,S_MAX,
+C           MAX_STEP,RE_PERTURB_I,P_PHI_I,YREDOT(1:3),PII),I=1,NREORBIT]
+C         WHERE SIGMA_I STORES RELATIVE DIRECTION OF TRAPPED PARTICLE
+C         LOSS_TIME STORES LOSS TIME OF RE, OR FINAL TIME IF NO LOSS
+C         S_MIN STORES MIN(S) OVER TIME
+C         S_MAX STORES MAX(S) OVER TIME
+C         P_PHI IS PARTICLE'S CANONICAL TOROIDAL MOMENTUM
+C     TRE=TIME (IN TAUA UNIT)
+      NEQ2= NREEQ + NREEQ2   
+      BUFFER_SIZE = NTP1*MSMAX*9    
+ 
+      IF (ISMPIRUN.EQ.0.OR.RANK.EQ.ROOT) THEN
+         IF (.NOT.ALLOCATED(YRE)) ALLOCATE(YRE(NEQ2,NREORBIT))
+      ENDIF
+      ALLOCATE(YRELOC(NEQ2))
+      ALLOCATE(BUFFER_SOL(NTP1,MSMAX,9))
+
+      IF (ISMPIRUN.EQ.0.OR.RANK.EQ.ROOT) YRE  = 0.
+
+C     SET UP INITIAL CONDITIONS
+      IF (TOTTIME.EQ.0..AND.(ISMPIRUN.EQ.0.OR.RANK.EQ.ROOT)) 
+     &   CALL RE_INIT_COND(YRE)       
+         
+      IF (ISMPIRUN.EQ.2.OR.ISMPIRUN.EQ.3) THEN
+C     PARALLEL VERSION
+
+      TAG(1) = 1
+      TAG(2) = 6
+      TAG(3) = 7
+      TAG(4) = 8
+      TAG(5) = 9
+
+      IF (RANK.EQ.ROOT) THEN
+C     MASTER PROCESS
+
+C     CALCULATE SOME BASIC PARAMETERS
+      CALL GET_RE_CONST
+
+      TOTTASK  = NREORBIT
+      TASKNUM  = TOTTASK
+
+      DO I=1,NTP1
+      DO M=1,MSMAX
+         BUFFER_SOL(I,M,1) = B1U(I,M)
+         BUFFER_SOL(I,M,2) = B2U(I,M)
+         BUFFER_SOL(I,M,3) = B3U(I,M)
+      ENDDO
+      ENDDO
+      DO I=1,NRP1
+      DO M=1,MSMAX
+         BUFFER_SOL(I,M,4) = J1U(I,M)
+         BUFFER_SOL(I,M,5) = J2U(I,M)
+         BUFFER_SOL(I,M,6) = J3U(I,M)
+         BUFFER_SOL(I,M,7) = V1U(I,M)
+         BUFFER_SOL(I,M,8) = V2U(I,M)
+         BUFFER_SOL(I,M,9) = V3U(I,M)
+      ENDDO
+      ENDDO
+
+      SLAVENUM = WORLDSIZE-1   
+      IF (SLAVENUM.GT.TOTTASK) SLAVENUM = TOTTASK
+
+      K = 1
+      DO INDEX=1,SLAVENUM
+         DO L=1,NEQ2
+            YRELOC(L) = YRE(L,K)
+         ENDDO
+
+         CALL MPI_SSEND(K,1,MPI_INTEGER,INDEX,
+     &                  TAG(1),MPI_COMM_WORLD,STAT,IERP)
+         CALL CHECK_MPI_ERROR()
+         CALL MPI_SSEND(YRELOC,NEQ2,MPI_DOUBLE_PRECISION,INDEX,
+     &                  TAG(2),MPI_COMM_WORLD,STAT,IERP)
+         CALL CHECK_MPI_ERROR()
+         CALL MPI_SSEND(BUFFER_SOL,BUFFER_SIZE,MPI_DOUBLE_COMPLEX,INDEX,
+     &                  TAG(3),MPI_COMM_WORLD,STAT,IERP)
+         CALL CHECK_MPI_ERROR()
+         CALL MPI_SSEND(KRE_STEP_TOT,1,MPI_INTEGER,INDEX,
+     &                  TAG(4),MPI_COMM_WORLD,STAT,IERP)
+         CALL CHECK_MPI_ERROR()
+         CALL MPI_SSEND(RE_TIME_TOT,1,MPI_DOUBLE_PRECISION,INDEX,
+     &                  TAG(5),MPI_COMM_WORLD,STAT,IERP)
+         CALL CHECK_MPI_ERROR()
+
+         WRITE(*,*) 'REORBIT SEND TASK: K,PROCESS=',K,INDEX
+
+         K = K + 1
+      ENDDO
+
+      DO WHILE (TASKNUM.GT.0)
+         CALL MPI_RECV(KLOC,1,MPI_INTEGER,MPI_ANY_SOURCE,
+     &                 TAG(1),MPI_COMM_WORLD,STAT,IERP)
+         CALL CHECK_MPI_ERROR()
+
+         INDEX = STAT(MPI_SOURCE)
+
+         CALL MPI_RECV(YRELOC,NEQ2,MPI_DOUBLE_PRECISION,INDEX,
+     &                 TAG(2),MPI_COMM_WORLD,STAT,IERP)
+         CALL CHECK_MPI_ERROR()
+
+         DO L=1,NEQ2
+            YRE(L,KLOC) = YRELOC(L)
+         ENDDO
+
+C        WRITE(*,*) 'REORBIT RECEIVE RESULT: INDEX,K,TASKNUM=',
+C    &              INDEX,KLOC,TASKNUM
+         
+         TASKNUM = TASKNUM - 1
+
+         IF (K.LE.TOTTASK) THEN
+            DO L=1,NEQ2
+               YRELOC(L) = YRE(L,K)
+            ENDDO
+            CALL MPI_SSEND(K,1,MPI_INTEGER,INDEX,
+     &                     TAG(1),MPI_COMM_WORLD,STAT,IERP)
+            CALL CHECK_MPI_ERROR()
+            CALL MPI_SSEND(YRELOC,NEQ2,MPI_DOUBLE_PRECISION,
+     &                     INDEX,TAG(2),MPI_COMM_WORLD,STAT,IERP)
+            CALL CHECK_MPI_ERROR()
+            CALL MPI_SSEND(BUFFER_SOL,BUFFER_SIZE,MPI_DOUBLE_COMPLEX,
+     &                     INDEX,TAG(3),MPI_COMM_WORLD,STAT,IERP)
+            CALL CHECK_MPI_ERROR()
+            CALL MPI_SSEND(KRE_STEP_TOT,1,MPI_INTEGER,INDEX,
+     &                     TAG(4),MPI_COMM_WORLD,STAT,IERP)
+            CALL CHECK_MPI_ERROR()
+            CALL MPI_SSEND(RE_TIME_TOT,1,MPI_DOUBLE_PRECISION,
+     &                     INDEX,TAG(5),MPI_COMM_WORLD,STAT,IERP)
+            CALL CHECK_MPI_ERROR()
+
+            WRITE(*,*) 'REORBIT SEND TASK: K,PROCESS=',K,INDEX
+
+            K = K + 1
+         ENDIF
+      ENDDO
+      IF (TASKNUM.EQ.0) THEN
+         K=-1
+         DO INDEX=1,SLAVENUM
+            CALL MPI_SSEND(K,1,MPI_INTEGER,INDEX,
+     &                     TAG(1),MPI_COMM_WORLD,STAT,IERP)
+            CALL CHECK_MPI_ERROR()
+         ENDDO
+      ENDIF
+
+      ELSE
+C     SLAVE PROCESS
+
+      DO WHILE (1.EQ.1) 
+      CALL MPI_OPEN_FILE(RANK)
+      WRITE(CHMPI,*) 'START RECEIVING TASK: RANK=',RANK
+      CALL MPI_CLOSE_FILE(RANK) 
+
+      CALL MPI_RECV(KLOC,1,MPI_INTEGER,ROOT,
+     &              TAG(1),MPI_COMM_WORLD,STAT,IERP)
+      CALL CHECK_MPI_ERROR()
+
+      IF (KLOC.EQ.-1) THEN
+         DEALLOCATE(BUFFER_SOL,YRELOC)
+         CALL MPI_OPEN_FILE(RANK)
+         WRITE(CHMPI,*) 'STOP RANK=',RANK
+         CALL MPI_CLOSE_FILE(RANK)
+         CALL MPI_FINALIZE(IERP)
+         STOP
+      ENDIF 
+
+      CALL MPI_RECV(YRELOC,NEQ2,MPI_DOUBLE_PRECISION,ROOT,
+     &              TAG(2),MPI_COMM_WORLD,STAT,IERP)
+      CALL CHECK_MPI_ERROR()
+
+      CALL MPI_RECV(BUFFER_SOL,BUFFER_SIZE,MPI_DOUBLE_COMPLEX,ROOT,
+     &              TAG(3),MPI_COMM_WORLD,STAT,IERP)
+      CALL CHECK_MPI_ERROR()
+      CALL MPI_RECV(KRE_STEP_TOT,1,MPI_INTEGER,ROOT,
+     &              TAG(4),MPI_COMM_WORLD,STAT,IERP)
+      CALL CHECK_MPI_ERROR()
+      CALL MPI_RECV(RE_TIME_TOT,1,MPI_DOUBLE_PRECISION,ROOT,
+     &              TAG(5),MPI_COMM_WORLD,STAT,IERP)
+      CALL CHECK_MPI_ERROR()
+
+      CALL MPI_OPEN_FILE(RANK)
+      WRITE(CHMPI,*) 'FINISH RECEIVING TASK: RANK=',RANK
+      CALL MPI_CLOSE_FILE(RANK) 
+
+C     PREPARE FIELD-RELATED QUANTITIES IN 3D (S,CHI,PHI) MESH
+      DO I=1,NTP1
+      DO M=1,MSMAX
+         B1U(I,M) = BUFFER_SOL(I,M,1)
+         B2U(I,M) = BUFFER_SOL(I,M,2)
+         B3U(I,M) = BUFFER_SOL(I,M,3)
+      ENDDO
+      ENDDO
+      DO I=1,NRP1
+      DO M=1,MSMAX
+         J1U(I,M) = BUFFER_SOL(I,M,4)
+         J2U(I,M) = BUFFER_SOL(I,M,5)
+         J3U(I,M) = BUFFER_SOL(I,M,6)
+         V1U(I,M) = BUFFER_SOL(I,M,7)
+         V2U(I,M) = BUFFER_SOL(I,M,8)
+         V3U(I,M) = BUFFER_SOL(I,M,9)
+      ENDDO
+      ENDDO
+
+      CALL RE_FIELD_DATA
+ 
+      CALL RE_TRACING_CORE(KLOC,YRELOC)   
+
+      CALL MPI_SSEND(KLOC,1,MPI_INTEGER,ROOT,
+     &               TAG(1),MPI_COMM_WORLD,STAT,IERP)
+      CALL CHECK_MPI_ERROR()
+      CALL MPI_SSEND(YRELOC,NREEQ+NREEQ2,MPI_DOUBLE_PRECISION,ROOT,
+     &               TAG(2),MPI_COMM_WORLD,STAT,IERP)
+      CALL CHECK_MPI_ERROR()
+
+      CALL MPI_OPEN_FILE(RANK)
+      WRITE(CHMPI,*) 'REORBIT SEND RESULT TO ROOT: RANK,K=',RANK,KLOC
+      WRITE(CHMPI,105) KLOC,YRELOC(NREEQ+6),YRELOC(NREEQ+7),
+     &YRELOC(NREEQ+5),YRELOC(1),YRELOC(2),YRELOC(3),YRELOC(NREEQ+8),
+     &YRELOC(4),YRELOC(5),YRELOC(NREEQ+4),YRELOC(NREEQ+9),
+     &YRELOC(NREEQ+10),YRELOC(NREEQ+14) 
+      CALL MPI_CLOSE_FILE(RANK)  
+
+      ENDDO
+      ENDIF
+
+      ELSE
+C     SERIAL VERSION
+
+C     PREPARE FIELD-RELATED QUANTITIES IN 3D (S,CHI,PHI) MESH
+
+      CALL RE_FIELD_DATA
+ 
+      DO K=1,NREORBIT
+         DO L=1,NEQ2
+            YRELOC(L) = YRE(L,K)
+         ENDDO
+
+         CALL RE_TRACING_CORE(K,YRELOC)   
+
+         DO L=1,NEQ2
+            YRE(L,K) = YRELOC(L)
+         ENDDO
+      ENDDO
+
+      ENDIF      
+
+C     OUTPUT RESULTS
+      IF (ISMPIRUN.EQ.0.OR.RANK.EQ.ROOT) THEN
+      OPEN(CHOUTP,FILE='RE_LOSS.OUT')
+      WRITE(CHOUTP,103) KRE_INIT,KRE_STEP_MAX+KRE_STEP_TOT,KRE1,KRE2,
+     &                  NRE1,NRE2,RE_TIME_TOT+RE_TIME*RE_TFAC,0,0,0,0,
+     &                  0,0 
+      WRITE(CHOUTP,104) KRE_VAC,RE_S0,RE_CHI0,RE_PHI0,RE_P0,RE_LAMBDA0,
+     &                  ABS(RE_PERTURB(1)),RE_S0MIN,RE_S0MAX,RE_SP,0,0,0
+      DO K=1,NREORBIT
+         WRITE(CHOUTP,102) YRE(NREEQ+6,K),YRE(NREEQ+7,K),YRE(NREEQ+5,K)
+     &                    ,YRE(1,K),YRE(2,K),YRE(3,K),YRE(NREEQ+8,K)
+     &                    ,YRE(4,K),YRE(5,K),YRE(NREEQ+4,K)
+     &                    ,YRE(NREEQ+9,K),YRE(NREEQ+10,K)
+     &                    ,YRE(NREEQ+14,K)
+      ENDDO
+ 102  FORMAT(13(1X,E12.5E2))
+ 103  FORMAT(6(1X,I10),1X,E12.5E2,6(1X,I2))
+ 104  FORMAT(1X,I10,9(1X,E12.5E2),3(1X,I2))
+ 105  FORMAT('RECORD: ',I10,13(1X,E12.5E2))
+      CLOSE(CHOUTP)   
+      ENDIF
+
+      RETURN
+      END
+
+      SUBROUTINE RE_TRACING_CORE(KLOC,YRELOC)    
+C     ==========================================================
+      USE GLOBALM
+      USE REORBITM
+      USE MPIENV
+
+      IMPLICIT NONE
+      INCLUDE 'comioc.inc'
+
+      EXTERNAL RE_RHS
+      INTEGER KLOC,ISTEP,L,JAC,MF,IOPT,ISTATE,ITASK,ITOL,LIW,LRW,
+     &        ISTEP_LOC,KRE_SOLVER
+      INTEGER,ALLOCATABLE :: IWORK(:)
+      REAL*8  ATOL,RTOL,TRE0,TRE1,TOUT,RPHIM1,RPHI0,RCHIM1,RCHI0,
+     &        TRE00,TRED,DTRE(10),DTREMAX
+      REAL*8,ALLOCATABLE:: RWORK(:)
+      REAL*8,DIMENSION(NREEQ+NREEQ2)::YRELOC
+      REAL*8,DIMENSION(:),ALLOCATABLE::YRESAV
+      CHARACTER(LEN=1024) FILENAME
+
+      IF (YRELOC(NREEQ+5).LT.RE_TIME_TOT.AND.
+     &    YRELOC(NREEQ+8).LT.KRE_STEP_TOT) RETURN
+
+      ALLOCATE(YRESAV(NREEQ+NREEQ2))
+
+C     SET UP PARAMETERS FOR LSODE CALL
+      ITOL  = 1
+      ATOL  = RE_ATOL
+      RTOL  = 0.    
+      MF    = 10
+      LIW   = 20
+      LRW   = 20 + 16*NREEQ
+      ITASK = 5
+      IOPT  = 0
+      JAC   = 0
+      TRE1  = RE_TIME + RE_TIME_TOT/RE_TFAC
+
+      ALLOCATE (IWORK(LIW),RWORK(LRW))
+
+      IWORK    = 0
+      RWORK    = 0.0
+      RWORK(1) = TRE1
+      TOUT     = TRE1
+      TRE0     = YRELOC(NREEQ+5)/RE_TFAC
+      ISTATE   = 1
+      KREBT    = 1
+      TREBT    = 0.
+      RESBT    = 0.
+      RECBT    = 0.
+      REFBT    = 0.
+      RE_TRELAX = TRE0
+      DTRE     = 0.
+      DTREMAX  = RE_TSTEP !INTRODUCE DTREMAX TO AVOID LSODE GETTING STUCK
+      KUTODEMAX= 0
+
+      IF (KRE_TRACE.LE.NREORBIT.AND.KLOC.LE.KRE_TRACE.AND.
+     &    MOD(KLOC,NRE2).EQ.FLOOR(NRE2/2.)
+     &    .OR.KRE_TRACE.GT.NREORBIT) THEN
+         IF (KRE_STEP.GE.-1.OR.KRE_STEP.EQ.-3) THEN
+            WRITE(FILENAME,"(A8,I0.4,A4)") "RE_TRACE",KLOC,".OUT"
+         ELSE
+            WRITE(FILENAME,"(A7,I0.4,A4)") "RE_LOSS",KLOC,".OUT"
+         ENDIF
+         OPEN(CHTIMERE,FILE=TRIM(FILENAME),POSITION='APPEND')
+      ENDIF
+
+C     SAVE (S,CHI)-VALUES FOR SUBSEQUENT TWO STEPS, IN ORDER TO BETTER
+C     TREAT TIME ADVANCE NEAR BANANA TIPS FOR TRAPPED PARTICLES 
+      ISTEP    = YRELOC(NREEQ+8)
+      ISTEP_LOC= 0
+      IF (KRE_TRACE.LE.NREORBIT.AND.KLOC.LE.KRE_TRACE.AND.
+     &    MOD(KLOC,NRE2).EQ.FLOOR(NRE2/2.)
+     &    .OR.KRE_TRACE.GT.NREORBIT) THEN
+         IF (KRE_STEP.GT.0.AND.MOD(ISTEP,KRE_STEP).EQ.0) 
+     &      WRITE(CHTIMERE,101) TRE0,(YRELOC(L),L=1,NREEQ+NREEQ2)
+         IF (KRE_STEP.LE.-1) 
+     &      WRITE(CHTIMERE,101) TRE0,(YRELOC(L),L=1,NREEQ+NREEQ2)
+      ENDIF
+            
+      IF (KRE_ODE.EQ.1) KRE_SOLVER = 1
+      IF (KRE_ODE.EQ.2) KRE_SOLVER = 4
+
+      DO
+         YRESAV = YRELOC
+         IF (KRE_SOLVER.EQ.1) THEN
+            KREBT = 1
+            TRE00 = TRE0
+
+            CALL LSODE(RE_RHS,NREEQ,YRELOC,TRE0,TOUT,ITOL,RTOL,ATOL,
+     &                 ITASK,ISTATE,IOPT,RWORK,LRW,IWORK,LIW,JAC,MF)
+            TRED = TRE0 - TRE00
+        
+            IF (ISTEP_LOC.LT.10) THEN
+               DTRE(ISTEP_LOC+1) = TRED
+               DTREMAX           = RE_TSTEP
+            ELSE
+               DTRE(1:9) = DTRE(2:10)
+               DTRE(10)  = TRED
+               DTREMAX   = MAXVAL(DTRE)
+            ENDIF
+     
+            IF (ISTATE.LE.0.OR.DTREMAX.LT.RE_TSTEP*1.0E-3) THEN
+               IF (ISMPIRUN.EQ.0.OR.RANK.EQ.ROOT) THEN
+                  WRITE(*,*) 'ISTEP,ISTATE,KREBT,DTREMAX=',
+     &                        ISTEP,ISTATE,KREBT,DTREMAX
+               ELSE
+                  CALL MPI_OPEN_FILE(RANK)
+                  WRITE(CHMPI,*) 'RANK,KLOC,ISTEP,ISTATE=',RANK,KLOC,
+     &                           ISTEP,ISTATE
+                  CALL MPI_CLOSE_FILE(RANK)  
+               ENDIF
+               ISTATE = 2
+C              YRELOC = YRESAV
+               ISTEP  = KRE_STEP_MAX+KRE_STEP_TOT-1
+C              TRED   = 0.
+               KREBT  =-3
+            ENDIF
+
+            IF (KREBT.EQ.-1) THEN
+               TRE0      = TREBT
+               YRELOC(1) = RESBT
+               YRELOC(2) = RECBT
+               YRELOC(3) = REFBT
+C              YRELOC(NREEQ+4) = -YRELOC(NREEQ+4)
+               KRE_SOLVER      = 2
+               IF (ISMPIRUN.EQ.0.OR.RANK.EQ.ROOT) 
+     &            WRITE(*,*) 'SWITCH TO UTODE(KREBT=-1),TRE=',TRE0
+            ENDIF
+
+            IF (KREBT.EQ.-6) THEN
+               KRE_SOLVER = 2
+               DTREMAX    = RE_TSTEP
+               KUTODEMAX  = 0
+               IF (ISMPIRUN.EQ.0.OR.RANK.EQ.ROOT) 
+     &            WRITE(*,*) 'SWITCH TO UTODE(KREBT=-6),TRE=',TRE0
+            ENDIF
+
+            IF (KREBT.EQ.-3.AND.KRE_SOLVER.EQ.-1) THEN
+               KRE_SOLVER = 2
+               DTREMAX    = RE_TSTEP
+               IF (ISMPIRUN.EQ.0.OR.RANK.EQ.ROOT) 
+     &            WRITE(*,*) 'SWITCH TO UTODE(KREBT=-3),TRE=',TRE0
+            ENDIF
+         ENDIF
+
+         IF (KRE_SOLVER.EQ.2) THEN 
+            KREBT = 2
+            CALL UTODE(RE_RHS,NREEQ,YRELOC,TRE0)
+            TRED = RE_TSTEP
+
+            IF (KREBT.EQ.-2) THEN
+               KRE_SOLVER = 1
+               ISTATE    = 1
+               IOPT      = 0
+               JAC       = 0
+               IWORK     = 0
+               RWORK     = 0.0
+               RWORK(1)  = TRE1
+               IF (ISMPIRUN.EQ.0.OR.RANK.EQ.ROOT) 
+     &            WRITE(*,*) 'SWITCH TO LSODE(KREBT=-2),TRE=',TRE0
+            ENDIF
+         ENDIF
+
+         IF (KRE_SOLVER.EQ.4) THEN 
+            KREBT = 4
+            CALL RKODE(RE_RHS,NREEQ,YRELOC,TRE0)
+            TRED = RE_TSTEP
+         ENDIF
+
+         IF (KREBT.GT.0) THEN
+
+         IF (KRE_STAR.EQ.4.OR.KRE_STAR.EQ.5) CALL RE_WIENER(TRED,YRELOC)
+
+         ISTEP     = ISTEP + 1
+         ISTEP_LOC = ISTEP_LOC + 1
+
+         IF (ISTEP_LOC.EQ.1) THEN
+            TREM4 = TRE0
+            REYM4 = 1.0-YRELOC(5)*YRELOC(NREEQ+2)
+            RESM4 = YRELOC(1)
+            RECM4 = YRELOC(2)
+         ELSEIF (ISTEP_LOC.EQ.2) THEN
+            TREM3 = TRE0
+            REYM3 = 1.0-YRELOC(5)*YRELOC(NREEQ+2)
+            RESM3 = YRELOC(1)
+            RECM3 = YRELOC(2)
+            REFM3 = YRELOC(3)
+         ELSEIF (ISTEP_LOC.EQ.3) THEN
+            TREM2 = TRE0
+            REYM2 = 1.0-YRELOC(5)*YRELOC(NREEQ+2)
+            RESM2 = YRELOC(1)
+            RECM2 = YRELOC(2)
+            REFM2 = YRELOC(3)
+         ELSEIF (ISTEP_LOC.EQ.4) THEN
+            TREM1 = TRE0
+            REYM1 = 1.0-YRELOC(5)*YRELOC(NREEQ+2)
+            RESM1 = YRELOC(1)
+            RECM1 = YRELOC(2)
+            REFM1 = YRELOC(3)
+         ENDIF
+
+         YRELOC(NREEQ+6) = MIN(YRELOC(NREEQ+6),YRELOC(1))
+         YRELOC(NREEQ+7) = MAX(YRELOC(NREEQ+7),YRELOC(1))
+         YRELOC(NREEQ+8) = DFLOAT(ISTEP)
+
+      IF (KRE_TRACE.LE.NREORBIT.AND.KLOC.LE.KRE_TRACE.AND.
+     &    MOD(KLOC,NRE2).EQ.FLOOR(NRE2/2.)
+     &    .OR.KRE_TRACE.GT.NREORBIT) THEN
+            IF (KRE_STEP.GT.0) THEN
+               IF (MOD(ISTEP,KRE_STEP).EQ.0.OR.TRE0.GE.TRE1.OR.
+     &             ISTEP.GE.(KRE_STEP_MAX+KRE_STEP_TOT).OR.
+     &             DTREMAX.LT.RE_TSTEP*1.0E-3)
+     &            WRITE(CHTIMERE,101) TRE0,(YRELOC(L),L=1,NREEQ+NREEQ2)
+            ENDIF
+            IF (KRE_STEP.EQ.-1) THEN
+               RPHI0   = YRELOC(3)
+               RPHI0   = RPHI0 - FLOOR(RPHI0/2./PI)*2.*PI
+               RPHIM1  = REFM1 - FLOOR(REFM1/2./PI)*2.*PI
+               IF (ABS(RPHIM1-RPHI0).GT.PI) THEN
+                  WRITE(CHTIMERE,101) TRE0,(YRELOC(L),L=1,NREEQ+NREEQ2)
+               ENDIF
+            ENDIF
+            IF (KRE_STEP.EQ.-3) THEN
+               RCHI0   = YRELOC(2)
+               RCHI0   = RCHI0 - FLOOR(RCHI0/2./PI)*2.*PI
+               RCHIM1  = RECM1 - FLOOR(RECM1/2./PI)*2.*PI
+C              IF (ABS(RCHIM1-RCHI0).GT.PI) THEN
+               IF ((RCHIM1-RE_CHI0)*(RCHI0-RE_CHI0).LE.0.0) THEN
+                  WRITE(CHTIMERE,101) TRE0,(YRELOC(L),L=1,NREEQ+NREEQ2)
+               ENDIF
+            ENDIF
+            CLOSE(CHTIMERE)
+            WRITE(FILENAME,"(A8,I0.4,A4)") "RE_TRACE",KLOC,".OUT"
+            OPEN(CHTIMERE,FILE=TRIM(FILENAME),POSITION='APPEND')
+         ENDIF
+               
+         IF (ISTEP_LOC.GT.4) THEN
+            TREM4 = TREM3
+            REYM4 = REYM3
+            RESM4 = RESM3
+            RECM4 = RECM3
+            REFM4 = REFM3
+            TREM3 = TREM2
+            REYM3 = REYM2
+            RESM3 = RESM2
+            RECM3 = RECM2
+            REFM3 = REFM2
+            TREM2 = TREM1
+            REYM2 = REYM1
+            RESM2 = RESM1
+            RECM2 = RECM1
+            REFM2 = REFM1
+            TREM1 = TRE0
+            REYM1 = 1.0-YRELOC(5)*YRELOC(NREEQ+2)
+            RESM1 = YRELOC(1)
+            RECM1 = YRELOC(2)
+            REFM1 = YRELOC(3)
+         ENDIF
+
+         ENDIF
+
+         IF (TRE0.GE.TRE1.OR.ISTEP.GE.(KRE_STEP_MAX+KRE_STEP_TOT)
+     &       .OR.KREBT.EQ.-3) THEN
+            WRITE(*,*) 'STOP:',KLOC,TRE0,ISTEP,KREBT
+            EXIT
+         ENDIF
+      ENDDO
+ 101  FORMAT(30(1X,E16.8E3))
+
+      IF (KRE_TRACE.LE.NREORBIT.AND.KLOC.LE.KRE_TRACE.AND.
+     &    MOD(KLOC,NRE2).EQ.FLOOR(NRE2/2.)
+     &    .OR.KRE_TRACE.GT.NREORBIT) THEN
+         IF (KRE_STEP.EQ.-2) 
+     &      WRITE(CHTIMERE,101) TRE0,(YRELOC(L),L=1,NREEQ+NREEQ2)
+         CLOSE(CHTIMERE)
+      ENDIF
+ 
+C     CLEANING
+      DEALLOCATE(IWORK,RWORK,YRESAV)
+
+      RETURN
+      END
+      
+C     EULER TIME ADVANCE WITH UNIFORM TIME STEP
+      SUBROUTINE UTODE(RE_RHS,NEQ,YRELOC,TRE0)    
+C     ==========================================================
+      USE GLOBALM
+      USE REORBITM
+      USE MPIENV
+
+      IMPLICIT NONE
+
+      EXTERNAL RE_RHS
+      INTEGER NEQ
+      REAL*8  TRE0,RECC
+      REAL*8,DIMENSION(NREEQ+NREEQ2)::YRELOC
+      REAL*8,DIMENSION(:),ALLOCATABLE::YREDOT
+
+      IF (.NOT.ALLOCATED(YREDOT)) ALLOCATE(YREDOT(NEQ))
+
+C     IMPORTANT TO CALL RE_RHS() FIRST BEFORE USING YREDOT
+C     OTHERWISE YREDOT FROM PREVIOUS TIME STEP MAY OR MAY NOT AVAILABLE
+C     DEPENDING ON COMPILER 
+      CALL RE_RHS(NEQ,TRE0,YRELOC,YREDOT)
+
+      YRELOC(1:NEQ) = YRELOC(1:NEQ) + RE_TSTEP*YREDOT
+
+      RECC = YRELOC(2)
+C     RECC  = RECC - FLOOR(RECC/2./PI)*2.*PI
+C     IF (RECC.GT.PI) RECC=RECC-2.*PI
+      YRELOC(2) = RECC
+
+      TRE0 = TRE0 + RE_TSTEP
+
+      RETURN
+      END
+
+C     FOURTH-ORDER RUNGE-KUTTA  
+      SUBROUTINE RKODE(RE_RHS,NEQ,YRELOC,TRE0)    
+C     ==========================================================
+      USE GLOBALM
+      USE REORBITM
+      USE MPIENV
+
+      IMPLICIT NONE
+
+      EXTERNAL RE_RHS
+      INTEGER NEQ
+      REAL*8  TRE0,RECC
+      REAL*8,DIMENSION(NREEQ+NREEQ2)::YRELOC
+      REAL*8,DIMENSION(:),ALLOCATABLE::YREDOT,K1DOT,K2DOT,K3DOT,K4DOT,
+     &                                 YRETMP
+
+      IF (.NOT.ALLOCATED(YREDOT)) ALLOCATE(YREDOT(NEQ), K1DOT(NEQ),
+     &                            K2DOT(NEQ), K3DOT(NEQ), K4DOT(NEQ),
+     &                            YRETMP(NEQ))
+
+      YRETMP = YRELOC(1:NEQ)
+
+      CALL RE_RHS(NEQ,TRE0,YRELOC,YREDOT)
+      IF (KREBT.NE.4) RETURN
+      K1DOT = YREDOT
+
+      TRE0 = TRE0 + RE_TSTEP*0.5
+      YRELOC(1:NEQ) = YRETMP + K1DOT*RE_TSTEP*0.5
+      RECC = YRELOC(2)
+C     RECC  = RECC - FLOOR(RECC/2./PI)*2.*PI
+C     IF (RECC.GT.PI) RECC=RECC-2.*PI
+      YRELOC(2) = RECC
+      CALL RE_RHS(NEQ,TRE0,YRELOC,YREDOT)
+      IF (KREBT.NE.4) RETURN
+      K2DOT = YREDOT
+      
+      YRELOC(1:NEQ) = YRETMP(1:NEQ) + K2DOT*RE_TSTEP*0.5
+      RECC = YRELOC(2)
+C     RECC  = RECC - FLOOR(RECC/2./PI)*2.*PI
+C     IF (RECC.GT.PI) RECC=RECC-2.*PI
+      YRELOC(2) = RECC
+      CALL RE_RHS(NEQ,TRE0,YRELOC,YREDOT)
+      IF (KREBT.NE.4) RETURN
+      K3DOT = YREDOT
+
+      TRE0 = TRE0 + RE_TSTEP*0.5
+      YRELOC(1:NEQ) = YRETMP + K3DOT*RE_TSTEP
+      RECC = YRELOC(2)
+C     RECC  = RECC - FLOOR(RECC/2./PI)*2.*PI
+C     IF (RECC.GT.PI) RECC=RECC-2.*PI
+      YRELOC(2) = RECC
+      CALL RE_RHS(NEQ,TRE0,YRELOC,YREDOT)
+      IF (KREBT.NE.4) RETURN
+      K4DOT = YREDOT
+
+      YRELOC(1:NEQ) = YRETMP + (K1DOT+2*K2DOT+2*K3DOT+K4DOT)*RE_TSTEP/6
+      RECC = YRELOC(2)
+C     RECC  = RECC - FLOOR(RECC/2./PI)*2.*PI
+C     IF (RECC.GT.PI) RECC=RECC-2.*PI
+      YRELOC(2) = RECC
+
+      RETURN
+      END
+
+      SUBROUTINE RE_RHS(NEQ,TRE,YRELOC,YREDOT)    
+C     ==========================================================
+      USE DIMENSIM
+      USE GLOBALM
+      USE RCOMDM
+      USE GVACUUMM
+      USE REORBITM
+      USE MPIENV
+
+      IMPLICIT NONE
+
+      INTEGER NEQ,M,I,J,K,LIMSECT,I2,N2,I3,N3,I4,N4,NGYRO,NCHIP1
+      REAL*8  TRE,RESS,HSS,RECC,HCC,REFF,REPP,RELL,REPERTURB
+      REAL*8  RTMP1,RTMP2,RTMP3,RTMP4,RTMP5,RTMP6,RTMP7,
+     &        TREM0,RESM0,RECM0,REFM0
+      REAL*8  REQJAC,REQG11,REQG12,REQG22
+      REAL*8,DIMENSION(NREEQ+NREEQ2)::YRELOC
+      REAL*8,DIMENSION(NEQ)::YREDOT
+      REAL*8 REQETA,REB,REQREQ2,REBSTAR2,REBDOTJ,REBDOTV,REEPARA,
+     &       REBGRAD(3),REJGRAD(3),REVGRAD(3),REJBGRAD(3),REBBGRAD(3),
+     &       REBGRADV(3)
+      REAL*8 RE_GAMMA,RE_M,RE_MU,RE_PPARA,RE_Z
+      REAL*8 H1,H2,HH,RERR,REZZ,RER0,REZ0,RGYRO,REAA,RESFO,RECFO,
+     &       RE_EFIELD2,RE_SYNCH2,RE_SAC2,RE_BREMS2
+      COMPLEX*16 CTMP1,CTMP2,CTMP3
+
+      YREDOT = 0.
+      HSS    = MIN(MINVAL(CSH(2:NR)),MINVAL(CSH(NRP1+1:NTOT)))*0.2
+      HCC    = 2.*PI/DFLOAT(NCHI)*0.2
+
+      RESS = YRELOC(1)
+      RECC = YRELOC(2)
+      RECC = RECC - FLOOR(RECC/2./PI)*2.*PI
+      REFF = YRELOC(3)
+      REPP = YRELOC(4)
+      RELL = YRELOC(5)
+      REPERTURB = YRELOC(NREEQ+9)
+
+      IF (REPP.LT.0.) THEN
+         REPP = 1.0E-3
+C        STOP 'RE_RHS: REPP<0'
+      ENDIF
+
+      IF (RELL.LT.0.) THEN
+         RELL = 0.0
+C        STOP 'RE_RHS: RELL<0'
+      ENDIF
+
+C     CHECK WHETHER THE CURRENT PARTICLE LOCATION (RESS,RECC) INTERSECTS
+C     LIMITER
+      LIMSECT = 0
+      NCHIP1  = NCHI + 1
+      IF (KRE_VAC.GT.0.AND.NLIMIT.GT.1.AND.RESS.GT.1.) THEN
+C        COMPUTE (R,Z) FOR CURRENT LOCATION OF PARTICLE
+         CALL SPLINE2DT(REQREQ2,RESS,RECC, 1,   1,   1,
+     &        VPREQ2, VCS, RECHI,NVG,NVG,NCHIP1,VCREQ2)
+         CALL SPLINE2DT(REZZ,RESS,RECC, 1,   1,   1,
+     &        VPZEQ, VCS, RECHI,NVG,NVG,NCHIP1,VCZEQ)
+         RERR = SQRT(REQREQ2)
+            
+C        METHOD-I: CHECK INTERSECTION, NOT ROBUST
+         IF (1.EQ.0) THEN
+C           COMPUTE GEOMETRIC ANGLE OF POINT Y=(RERR,REZZ)
+            REAA = DATAN2(REZZ-ZEQ(1,1),RERR-REQ(1,1))
+            IF (REAA.LT.0.) REAA = REAA + 2.*PI
+            
+C           FIND WHICH SEGMENT OF LIMITER SURFACE INTERSECTS WITH A LINE
+C           ALIGNED WITH OY
+            K =-1
+            DO I=1,NLIMIT-1
+               IF ((REAA-ALIMIT(I))*(REAA-ALIMIT(I+1)).LE.0..AND.
+     &             (ABS(ALIMIT(I+1)-ALIMIT(I)).LT.1.9*PI)) K = I
+               IF (ABS(ALIMIT(I+1)-ALIMIT(I)).GE.PI.AND.
+     &             (REAA.LE.MIN(ALIMIT(I),ALIMIT(I+1)).OR.
+     &              REAA.GE.MAX(ALIMIT(I),ALIMIT(I+1)))) K = I
+            ENDDO
+            
+C           FIND WHETHER PARTICLE INTERSECTS WITH LIMITER
+            IF (K.GT.0) THEN
+               H1 = SQRT((RERR-REQ(1,1))**2+(REZZ-ZEQ(1,1))**2)
+               H2 = SQRT((RXLIM(K)-REQ(1,1))**2+(ZXLIM(K)-ZEQ(1,1))**2)
+               HH = H2/COS(AXLIM(K)-REAA)
+               IF (H1.GE.HH) LIMSECT = 1
+            ENDIF
+         ENDIF
+
+C        METHOD-II: CHECK SUM OF ANGLES, ROBUST
+         IF (1.EQ.1) THEN
+            
+C           RECOVER PARTICLE FULL ORBIT BY ADDING GYRO-MOTION TO
+C           GC-ORBIT. COMPUTE GYRO-RADIUS IN MARS-F UNIT
+C           RGYRO=(M/M_P)*(M_P*C/E)*SQRT(RELL/REB)*REPP/(R0EXB*B0EXP)
+C           (M_P*C/E)=H1=3.129682279093069
+            RTMP1 = YRELOC(NREEQ+11) 
+            RTMP2 = YRELOC(NREEQ+12) 
+            RTMP3 = YRELOC(NREEQ+13) 
+            IF (KRE_FO.GT.0.AND.ABS(RTMP3).GT.0.0) THEN
+               H1    = 3.129682279093069
+               REB   = YRELOC(NREEQ+2)
+               RGYRO = RE_AN*H1*SQRT(RELL/REB)*REPP/(R0EXP*B0EXP)
+               RER0  = RERR
+               REZ0  = REZZ
+               NGYRO = 64
+
+               CALL SPLINE2DT(REQJAC, RESS,RECC, 1,   1,   1,
+     &              VPJAC,  VCS, RECHI,NVG,NVG,NCHIP1,VCJAC )
+               CALL SPLINE2DT(REQG11, RESS,RECC, 1,   1,   1,
+     &              VPG11,  VCS, RECHI,NVG,NVG,NCHIP1,VCG11 )
+               CALL SPLINE2DT(REQG12, RESS,RECC, 1,   1,   1,
+     &              VPG12,  VCS, RECHI,NVG,NVG,NCHIP1,VCG12 )
+               CALL SPLINE2DT(REQG22, RESS,RECC, 1,   1,   1,
+     &              VPG22,  VCS, RECHI,NVG,NVG,NCHIP1,VCG22 )
+
+               RTMP4 = (RER0/REQJAC)**2*REQG22
+               RTMP5 =-(RER0/REQJAC)**2*REQG12
+               RTMP6 = (RER0/REQJAC)**2*REQG11
+            ELSE
+               RER0  = RERR
+               REZ0  = REZZ
+               RGYRO = 0.0
+               NGYRO = 1
+            ENDIF
+
+            DO I2=1,NGYRO
+            IF (NGYRO.GT.1) THEN
+            H1 = 2.0*PI*(I2-1)/NGYRO
+            H2 = (RTMP4+(RTMP1/RTMP3/RER0)**2)*COS(H1)**2 + 
+     &           2*(RTMP5+RTMP1*RTMP2/(RTMP3*RER0)**2)*COS(H1)*SIN(H1)+
+     &           (RTMP6+(RTMP2/RTMP3/RER0)**2)*SIN(H1)**2
+            HH = 1.0/SQRT(H2)
+
+            RESFO = RESS + RGYRO*HH*(COS(H1)*RTMP4+SIN(H1)*RTMP5)
+            RECFO = RECC + RGYRO*HH*(COS(H1)*RTMP5+SIN(H1)*RTMP6)
+            RECFO = RECFO - FLOOR(RECFO/2./PI)*2.*PI
+
+            IF (RESFO.GT.1.0) THEN
+               CALL SPLINE2DT(REQREQ2,RESFO,RECFO, 1,   1,   1,
+     &              VPREQ2, VCS, RECHI,NVG,NVG,NCHIP1,VCREQ2)
+               CALL SPLINE2DT(REZZ,RESFO,RECFO, 1,   1,   1,
+     &              VPZEQ, VCS, RECHI,NVG,NVG,NCHIP1,VCZEQ)
+               RERR = SQRT(REQREQ2)
+            ENDIF
+            ENDIF
+           
+            IF ((NGYRO.GT.1.AND.RESFO.GT.1.0).OR.NGYRO.EQ.1) THEN
+            DO I=1,NLIMIT
+               ALIMIT(I) = SQRT((ZLIMIT(I)-REZZ)**2+(RLIMIT(I)-RERR)**2)
+            ENDDO
+
+            HH = 0.0
+            DO I=1,NLIMIT-1
+               H1 = (RLIMIT(I)-RERR)*(ZLIMIT(I+1)-REZZ) - 
+     &              (RLIMIT(I+1)-RERR)*(ZLIMIT(I)-REZZ)
+               H1 = ASIN(H1/ALIMIT(I)/ALIMIT(I+1))
+               H2 = (RLIMIT(I+1)-RLIMIT(I))**2 + 
+     &              (ZLIMIT(I+1)-ZLIMIT(I))**2
+               H2 = ALIMIT(I)**2+ALIMIT(I+1)**2-H2
+               IF (H2.LT.0.0) THEN
+                  RTMP7 = PI - ABS(H1)
+                  IF (H1.LT.0.0) RTMP7 =-RTMP7 
+                  H1 = RTMP7
+               ENDIF
+               HH = HH + H1
+            ENDDO
+            IF (ABS(HH).LT.PI) THEN
+               LIMSECT = 1 
+C              WRITE(*,*) 'TEST 001:',TRE,RESS,RECC,RERR,REZZ,HH
+C              DO I=1,NLIMIT
+C                 WRITE(*,*) RLIMIT(I),ZLIMIT(I)
+C              ENDDO 
+               EXIT
+            ENDIF
+            ENDIF
+            ENDDO
+         ENDIF
+      ENDIF
+               
+      IF (LIMSECT.EQ.1) THEN
+C        WRITE(*,*) 'TEST 002:',TRE,RESS,RECC
+         KREBT =-3
+      ENDIF
+      IF (LIMSECT.EQ.0.AND.(RESS+HSS).GE.CS(NTRE)) THEN
+C        WRITE(*,*) 'TEST 003:',TRE,RESS,RECC,HSS,CS(NTRE)
+         KREBT =-3
+      ENDIF
+
+      IF ((KRE_VAC.EQ.0.AND.(RESS-HSS).GT.0..AND.(RESS+HSS).LT.1.).OR.
+     &    (KRE_VAC.GT.0.AND.(RESS-HSS).GT.0..AND.(RESS+HSS).LT.CS(NTRE)
+     &     .AND.LIMSECT.EQ.0)) THEN 
+
+      CALL RE_RHS_CORE(TRE,RESS,HSS,RECC,HCC,REFF,REPERTURB,
+     &                 REB,REQREQ2,REQETA,REBDOTJ,REBDOTV,REEPARA,
+     &                 REBGRAD,REJGRAD,REVGRAD,REJBGRAD,REBBGRAD,
+     &                 REBGRADV)
+      
+      IF (KREBT.EQ.2) THEN
+         KUTODE = KUTODE + 1
+C        WRITE(*,*) 'UTODE TEST07:',KUTODE,TRE,RESS,1.0-RELL*REB
+         IF (KUTODEMAX.GT.0.AND.KUTODE.GT.KUTODEMAX) KREBT = -2
+         IF (KUTODEMAX.EQ.-1) THEN 
+            RTMP1 = MIN(CS(NRP1-1),0.9995)
+            RTMP2 = MAX(CS(NRP1+1),1.0005)
+            IF (RESS.LT.RTMP1.OR.RESS.GT.RTMP2)      KREBT = -2
+         ENDIF
+      ENDIF
+
+C     SPECIAL TREATMENT NEAR BANANA TIPS
+      IF (RELL*REB.GT.1..AND.KREBT.EQ.1) THEN
+C        WRITE(*,*) 'LSODE TEST01:',TRE,KREBT,RESS,RELL*REB
+C        YRELOC(NREEQ+4) = -YRELOC(NREEQ+4)
+         KREBT           =-10
+         KUTODE          = 0
+         TREBT = TREM2
+         RESBT = RESM2
+         RECBT = RECM2
+         REFBT = REFM2
+
+         CALL RE_RHS_CORE(TREBT,RESBT,HSS,RECBT,HCC,REFBT,REPERTURB,
+     &                    REB,REQREQ2,REQETA,REBDOTJ,REBDOTV,REEPARA,
+     &                    REBGRAD,REJGRAD,REVGRAD,REJBGRAD,REBBGRAD,
+     &                    REBGRADV)
+
+         YREDOT = 0.0
+C        WRITE(*,*) 'LSODE TEST02:',TREBT,KREBT,RESBT,RELL*REB
+
+         KUTODEMAX = FLOOR((TRE-TREM2)/RE_TSTEP) + 10
+C        WRITE(*,*) 'LSODE TEST03: KUTODEMAX=',KUTODEMAX,TREM2
+      ENDIF
+
+      IF (RELL*REB.GT.1..AND.(KREBT.EQ.2.OR.KREBT.EQ.4)) THEN
+C        WRITE(*,*) 'UTODE TEST01:',TRE,KREBT,RESS,REYM2,REYM1,RELL*REB
+         TREM0 = TRE + RE_TSTEP
+         IF (REYM1.GT.0..AND.REYM1.LT.REYM2.AND.TREM3.LT.TREM2) THEN
+            RTMP1 = SQRT(REYM2/REYM1)
+            TREM0 = (TREM3-RTMP1*TREM2)/(1.-RTMP1)
+            
+            RTMP2 = (RESM3-RESM2)/(TREM3-TREM2)
+            RESM0 = RESM2 - RTMP2*(TREM2-TREM0)
+            RESS  = RESM0 + RTMP2*(TRE-TREM0)
+
+            RTMP3 = (TREM3-TREM0)**2-(TREM2-TREM0)**2
+            RTMP2 = (RECM3-RECM2)/RTMP3
+            RECM0 = RECM2 - RTMP2*(TREM2-TREM0)**2
+            RECC  = RECM0 + RTMP2*(TRE-TREM0)**2
+
+            RTMP2 = (REFM3-REFM2)/RTMP3
+            REFM0 = REFM2 - RTMP2*(TREM2-TREM0)**2
+            REFF  = REFM0 + RTMP2*(TRE-TREM0)**2
+
+C           WRITE(*,*) 'UTODE TEST09:',TREM3,TREM2,TREM0,TRE,
+C    &                 RESM3,RESM2,RESM0,RESS
+         ENDIF
+
+         IF (TREM0.LT.TRE)
+     &   YRELOC(NREEQ+4) = -YRELOC(NREEQ+4)
+         YRELOC(1)  = RESS
+         YRELOC(2)  = RECC
+         YRELOC(3)  = REFF
+
+         CALL RE_RHS_CORE(TRE,RESS,HSS,RECC,HCC,REFF,REPERTURB,
+     &                    REB,REQREQ2,REQETA,REBDOTJ,REBDOTV,REEPARA,
+     &                    REBGRAD,REJGRAD,REVGRAD,REJBGRAD,REBBGRAD,
+     &                    REBGRADV)
+
+C        WRITE(*,*) 'UTODE TEST02:',TRE,KREBT,RESS,RELL*REB
+
+         IF (RELL*REB.GT.1.0) THEN
+C           WRITE(*,*) 'UTODE TEST02b:',TRE,KREBT,RESS,RELL*REB
+
+C           LIUYQ: ADD A DOUBLE LOOP HERE TO SCAN AROUND (RESS,RECC) 
+            RTMP1 = 1.0E-6
+            RTMP4 = -1.0
+            N2    = 50
+            N3    = 8
+            DO I2=1,N2
+            DO I3=0,N3
+               N4 = FLOOR(2**(I3-1)-0.5)
+               DO I4=0,N4
+               RTMP5 = PI*(2*I4+1)/2**I3
+               IF (RTMP4.LT.0.0) THEN
+               RTMP3 = RESS - SIN(RTMP5)*RTMP1*I2 
+               RTMP6 = RECC - COS(RTMP5)*RTMP1*I2*10 
+               CALL RE_RHS_CORE(TRE,RTMP3,HSS,RTMP6,HCC,REFF,REPERTURB,
+     &                    REB,REQREQ2,REQETA,REBDOTJ,REBDOTV,REEPARA,
+     &                    REBGRAD,REJGRAD,REVGRAD,REJBGRAD,REBBGRAD,
+     &                    REBGRADV)
+C              WRITE(*,*) 'UTODE TEST03:',I2,I3,RELL*REB
+               IF (RELL*REB.LT.1.0) THEN
+                  RTMP4 = 1.0
+                  YRELOC(1)  = RTMP3
+                  YRELOC(2)  = RTMP6
+                  RESBT      = RTMP3
+                  RECBT      = RTMP6
+                  EXIT
+               ENDIF
+               ENDIF
+
+               RTMP5 = RTMP5 + PI
+               IF (RTMP4.LT.0.0) THEN
+               RTMP3 = RESS - SIN(RTMP5)*RTMP1*I2 
+               RTMP6 = RECC - COS(RTMP5)*RTMP1*I2*10 
+               CALL RE_RHS_CORE(TRE,RTMP3,HSS,RTMP6,HCC,REFF,REPERTURB,
+     &                    REB,REQREQ2,REQETA,REBDOTJ,REBDOTV,REEPARA,
+     &                    REBGRAD,REJGRAD,REVGRAD,REJBGRAD,REBBGRAD,
+     &                    REBGRADV)
+C              WRITE(*,*) 'UTODE TEST03:',I2,I3,RELL*REB
+               IF (RELL*REB.LT.1.0) THEN
+                  RTMP4 = 1.0
+                  YRELOC(1)  = RTMP3
+                  YRELOC(2)  = RTMP6
+                  RESBT      = RTMP3
+                  RECBT      = RTMP6
+                  EXIT
+               ENDIF
+               ENDIF
+            ENDDO
+            IF (RTMP4.GT.0.0) EXIT
+            ENDDO
+            IF (RTMP4.GT.0.0) EXIT
+            ENDDO
+
+            IF (RTMP4.LT.1.0) THEN
+               WRITE(*,*) 'REORBIT WARNING: KREBT=-3'
+               KREBT = -3
+            ENDIF
+         ENDIF
+      ENDIF
+
+      IF (KREBT.GT.0) THEN
+C     ASSEMBLE ALL TERMS
+      RE_GAMMA = SQRT(1+REPP**2)
+      RE_M     = RELL*REPP**2/2.
+      RE_MU    = YRELOC(NREEQ+4)*SQRT(ABS(1.-RELL*REB))
+      RE_PPARA = RE_MU*REPP
+      RE_Z     = RE_CONST(3)
+
+      REBSTAR2 = REB**2
+      IF (KRE_STAR.EQ.1.OR.KRE_STAR.EQ.3.OR.KRE_STAR.EQ.5) 
+     &   REBSTAR2 = REB**2-RE_CSTAR*RE_PPARA*REBDOTJ
+
+      RE_EFIELD2= RE_EFIELD
+C     IF (RE_AN.GE.1.) RE_EFIELD2 = 0.0
+
+C     REJGRAD = 0.0
+C     REBDOTJ = 0.0
+C     REBGRAD = 0.0
+C     REBBGRAD = 0.0
+      DO M=1,3
+         YREDOT(M)=RE_EFIELD2*(REVGRAD(M)*REB**2+REQETA*REJBGRAD(M)
+     &                         -REBDOTV*REBGRAD(M))/REBSTAR2- 
+     &             RE_CM*RE_PPARA**2/RE_GAMMA/REBSTAR2*REJGRAD(M)+
+     &             (C_VA+RE_CM*RE_PPARA/REB/REBSTAR2*REBDOTJ)*
+     &             RE_PPARA/RE_GAMMA/REB*REBGRAD(M)-
+     &             (REB*RE_M+RE_PPARA**2)*RE_CM/RE_GAMMA/REB/REBSTAR2*
+     &             REBBGRAD(M)
+
+         IF (KRE_STAR.EQ.2.OR.KRE_STAR.EQ.3.OR.KRE_STAR.EQ.5) 
+     &      YREDOT(M)=YREDOT(M)+RE_CSTAR*RE_PPARA/REBSTAR2*REBGRADV(M)
+      ENDDO
+
+      RE_EFIELD2= RE_EFIELD
+      RE_SYNCH2 = RE_SYNCH
+      RE_SAC2   = RE_SAC
+      RE_BREMS2 = RE_BREMS
+      IF (RESS.GT.1.0) THEN
+         RE_SAC2   = 0.0
+         RE_BREMS2 = 0.0
+      ENDIF
+      IF (RE_AN.GE.1.) THEN
+C        RE_EFIELD2= 0.0
+         RE_SYNCH2 = 0.0
+         RE_SAC2   = 0.0
+         RE_BREMS2 = 0.0
+      ENDIF
+
+      YREDOT(4)=(RE_EFIELD2*RE_MU*RE_E0*REEPARA -
+     &           RE_SAC2   *(1.+1./REPP**2) -
+     &           RE_SYNCH2 *RELL*REPP*RE_GAMMA*REB/RE_TAU -
+     &           RE_BREMS2 *RE_GAMMA*(LOG(2.*RE_GAMMA)+11./18.)*
+     &                      RE_Z*(1.+RE_Z)*RE_CONST(4)/
+     &                      (137.04*PI*RE_CONST(2)))*RE_T0
+
+      YREDOT(5)=(-RE_EFIELD2*2.*RE_MU*RELL*RE_E0*REEPARA/REPP +
+     &            RE_SAC2   *2.*RE_MU**2*RE_GAMMA*(1.+RE_Z)/
+     &                       (REB*REPP**3) -
+     &            RE_SYNCH2 *2.*RELL*RE_MU**2/RE_TAU/RE_GAMMA)*
+     &          RE_T0
+
+      YRELOC(NREEQ+1) = REEPARA
+      YRELOC(NREEQ+2) = REB  
+      YRELOC(NREEQ+3) = RE_MU
+      YRELOC(NREEQ+5) = TRE*RE_TFAC  
+C     NORMALIZED TOROIDAL CANONICAL MOMENTUM
+      YRELOC(NREEQ+10)= RESS**2 - RE_GAMMA*
+     &                  REQREQ2*OMEGA_ALFVEN/(-OMEGA_CE)*2./DPSIDS(NRP1)
+     &                  *YREDOT(3)    
+      YRELOC(NREEQ+11)= YREDOT(1)
+      YRELOC(NREEQ+12)= YREDOT(2)
+      YRELOC(NREEQ+13)= YREDOT(3)
+
+C     IF (TRE.GT.300.AND.RESS.GT.CS(NRP1-3).AND.RESS.LT.CS(NRP1+1)) THEN
+C        WRITE(*,2230) TRE,RESS,YREDOT(1),
+C    &                 REB,REJGRAD(1),
+C    &                 REBDOTJ,REBGRAD(1),REBBGRAD(1)
+C2230    FORMAT(8E17.9)
+C     ENDIF
+
+      ENDIF 
+
+      IF (RESS.LT.CS(2).AND.YREDOT(1).LT.0.0) YREDOT(1) = 0.0
+
+      IF (KRE_VAC.EQ.2.AND.KREBT.EQ.1) THEN 
+         RTMP1 = MIN(CS(NRP1-1),0.9995)
+         RTMP2 = MAX(CS(NRP1+1),1.0005)
+         IF (RESS.GT.RTMP1.AND.RESS.LT.RTMP2) THEN
+            KREBT =-1 
+            TREBT = TRE
+            RESBT = YRELOC(1)
+            RECBT = YRELOC(2)
+            REFBT = YRELOC(3)
+            KUTODE    = 0
+            KUTODEMAX =-1
+         ENDIF
+      ENDIF
+
+      ENDIF
+
+      RETURN
+      END
+
+      SUBROUTINE RE_RHS_CORE(TRE,RESS,HSS,RECC,HCC,REFF,REPERTURBR,
+     &                       REB,REQREQ2,REQETA,REBDOTJ,REBDOTV,REEPARA,
+     &                       REBGRAD,REJGRAD,REVGRAD,REJBGRAD,REBBGRAD,
+     &                       REBGRADV)
+C     ==========================================================
+      USE DIMENSIM
+      USE GLOBALM
+      USE RCOMDM
+      USE GVACUUMM
+      USE REORBITM
+      USE MPIENV
+
+      IMPLICIT NONE
+      INCLUDE 'compam.inc'
+
+      INTEGER NCHIP1,I,M,J   
+      REAL*8 TRE,RESS,RECC,REFF,REPERTURBR
+      REAL*8 H,HSS,HCC,RESS1,RESS2,RECC1,RECC2,RECCS
+      REAL*8 REQPSIP,REQT,REQPP,REQTP,REQROT,REQRHOU,REQETA,
+     &       REQPSIP1,REQPSIP2,REQT1,REQT2,REQETAS1,REQETAS2,
+     &       REQTP1,REQTP2,REQROT1,REQROT2,REQPP1,REQPP2,
+     &       REQRHOU1,REQRHOU2
+      REAL*8 REQJAC,REQREQ2,REQBEQ2,REQG11,REQG12,REQG22,
+     &       REQBV1,REQBV2,REQBV3,
+     &       REQJACS1,REQJACS2,REQJACC1,REQJACC2,
+     &       REQREQ2S1,REQREQ2S2,REQREQ2C1,REQREQ2C2,
+     &       REQBEQ2S1,REQBEQ2S2,REQBEQ2C1,REQBEQ2C2,
+     &       REQG11S1,REQG11S2,REQG11C1,REQG11C2,
+     &       REQG12S1,REQG12S2,REQG12C1,REQG12C2,
+     &       REQG22S1,REQG22S2,REQG22C1,REQG22C2,
+     &       REQBV1S1,REQBV1S2,REQBV1C1,REQBV1C2, 
+     &       REQBV2S1,REQBV2S2,REQBV2C1,REQBV2C2, 
+     &       REQBV3S1,REQBV3S2,REQBV3C1,REQBV3C2  
+      REAL*8,DIMENSION(:),ALLOCATABLE::
+     &       RB1UR,RB1UI,RB2UR,RB2UI,RB3UR,RB3UI,
+     &       RJ1UR,RJ1UI,RJ2UR,RJ2UI,RJ3UR,RJ3UI,
+     &       RV1UR,RV1UI,RV2UR,RV2UI,RV3UR,RV3UI,
+     &       RB1UR1,RB1UI1,RB2UR1,RB2UI1,RB3UR1,RB3UI1,
+     &       RB1UR2,RB1UI2,RB2UR2,RB2UI2,RB3UR2,RB3UI2,
+     &       RJ1UR1,RJ1UI1,RJ2UR1,RJ2UI1,RJ3UR1,RJ3UI1,
+     &       RJ1UR2,RJ1UI2,RJ2UR2,RJ2UI2,RJ3UR2,RJ3UI2,
+     &       RV1UR1,RV1UI1,RV2UR1,RV2UI1,RV3UR1,RV3UI1,
+     &       RV1UR2,RV1UI2,RV2UR2,RV2UI2,RV3UR2,RV3UI2
+      COMPLEX*16 RB1U,RB2U,RB3U,
+     &           RJ1U,RJ2U,RJ3U,
+     &           RV1U,RV2U,RV3U,
+     &           RB1US1,RB1UC1,RB1US2,RB1UC2,RB1UF,
+     &           RB2US1,RB2UC1,RB2US2,RB2UC2,RB2UF,
+     &           RB3US1,RB3UC1,RB3US2,RB3UC2,RB3UF,
+     &           RJ1US1,RJ1UC1,RJ1US2,RJ1UC2,RJ1UF,
+     &           RJ2US1,RJ2UC1,RJ2US2,RJ2UC2,RJ2UF,
+     &           RJ3US1,RJ3UC1,RJ3US2,RJ3UC2,RJ3UF,
+     &           RV1US1,RV1UC1,RV1US2,RV1UC2,RV1UF,
+     &           RV2US1,RV2UC1,RV2US2,RV2UC2,RV2UF,
+     &           RV3US1,RV3UC1,RV3US2,RV3UC2,RV3UF
+      REAL*8,DIMENSION(:,:),ALLOCATABLE::
+     &       RB1AR,RB1AI,RB2AR,RB2AI,RB3AR,RB3AI,
+     &       RJ1AR,RJ1AI,RJ2AR,RJ2AI,RJ3AR,RJ3AI,
+     &       RV1AR,RV1AI,RV2AR,RV2AI,RV3AR,RV3AI,
+     &       RB1AR1,RB1AI1,RB2AR1,RB2AI1,RB3AR1,RB3AI1,
+     &       RB1AR2,RB1AI2,RB2AR2,RB2AI2,RB3AR2,RB3AI2,
+     &       RJ1AR1,RJ1AI1,RJ2AR1,RJ2AI1,RJ3AR1,RJ3AI1,
+     &       RJ1AR2,RJ1AI2,RJ2AR2,RJ2AI2,RJ3AR2,RJ3AI2,
+     &       RV1AR1,RV1AI1,RV2AR1,RV2AI1,RV3AR1,RV3AI1,
+     &       RV1AR2,RV1AI2,RV2AR2,RV2AI2,RV3AR2,RV3AI2
+      COMPLEX*16 CEXPC,CEXPC1,CEXPC2,CEXPF,EXPGT,
+     &           REPERTURB,REPERTURJ
+      REAL*8 HB1,HB2,HB3,HJ1,HJ2,HJ3,HV1,HV2,HV3,
+     &       HB1S1,HB1S2,HB1C1,HB1C2,HB1F, 
+     &       HB2S1,HB2S2,HB2C1,HB2C2,HB2F, 
+     &       HB3S1,HB3S2,HB3C1,HB3C2,HB3F  
+      REAL*8 REB,REBS1,REBS2,REBC1,REBC2,REBS,REBC,REBF,
+     &       REBDOTJ,REBDOTV,REEPARA,
+     &       REBGRAD(3),REJGRAD(3),REVGRAD(3),REJBGRAD(3),REBBGRAD(3),
+     &       REBGRADV(3)
+      REAL*8,DIMENSION(:),ALLOCATABLE::CA,CAM,VCA,VCAM
+      COMPLEX*16,DIMENSION(:,:),ALLOCATABLE::B1X,B2X,B3X
+      REAL*8 HB1L,HB2L,HB3L,HF1,HF2,HF3,HH1,HH2,HH3,
+     &       HE1C1,HE1C2,HE2S1,HE2S2,HE3S1,HE3S2,HE3C1,HE3C2,
+     &       HE1F,HE2F,HJ1F,HJ2F,HJ3F,HV1F,HV2F,HV3F,
+     &       REVGRAD2F,REVGRAD3F,
+     &       HJ1S1,HJ1C1,HJ2S1,HJ2C1,HJ3S1,HJ3C1,
+     &       HJ1S2,HJ1C2,HJ2S2,HJ2C2,HJ3S2,HJ3C2,
+     &       HV1S1,HV1C1,HV2S1,HV2C1,HV3S1,HV3C1,
+     &       HV1S2,HV1C2,HV2S2,HV2C2,HV3S2,HV3C2,
+     &       REVGRAD2S1,REVGRAD2C1,REVGRAD3S1,REVGRAD3C1,
+     &       REVGRAD2S2,REVGRAD2C2,REVGRAD3S2,REVGRAD3C2
+
+      IF (.NOT.ALLOCATED(RB1UR)) ALLOCATE(
+     &   RB1UR(MSMAX), RB2UR(MSMAX), RB3UR(MSMAX),
+     &   RB1UI(MSMAX), RB2UI(MSMAX), RB3UI(MSMAX),
+     &   RJ1UR(MSMAX), RJ2UR(MSMAX), RJ3UR(MSMAX),
+     &   RJ1UI(MSMAX), RJ2UI(MSMAX), RJ3UI(MSMAX),
+     &   RV1UR(MSMAX), RV2UR(MSMAX), RV3UR(MSMAX),
+     &   RV1UI(MSMAX), RV2UI(MSMAX), RV3UI(MSMAX),
+     &   RB1UR1(MSMAX),RB2UR1(MSMAX),RB3UR1(MSMAX),
+     &   RB1UI1(MSMAX),RB2UI1(MSMAX),RB3UI1(MSMAX),
+     &   RB1UR2(MSMAX),RB2UR2(MSMAX),RB3UR2(MSMAX),
+     &   RB1UI2(MSMAX),RB2UI2(MSMAX),RB3UI2(MSMAX),
+     &   RJ1UR1(MSMAX),RJ2UR1(MSMAX),RJ3UR1(MSMAX),
+     &   RJ1UI1(MSMAX),RJ2UI1(MSMAX),RJ3UI1(MSMAX),
+     &   RJ1UR2(MSMAX),RJ2UR2(MSMAX),RJ3UR2(MSMAX),
+     &   RJ1UI2(MSMAX),RJ2UI2(MSMAX),RJ3UI2(MSMAX),
+     &   RV1UR1(MSMAX),RV2UR1(MSMAX),RV3UR1(MSMAX),
+     &   RV1UI1(MSMAX),RV2UI1(MSMAX),RV3UI1(MSMAX),
+     &   RV1UR2(MSMAX),RV2UR2(MSMAX),RV3UR2(MSMAX),
+     &   RV1UI2(MSMAX),RV2UI2(MSMAX),RV3UI2(MSMAX))
+
+      IF (KRE_NMAX.GT.0.AND.(.NOT.ALLOCATED(RB1AR))) ALLOCATE(
+     &RB1AR(MSMAX,KRE_NMAX),RB2AR(MSMAX,KRE_NMAX),RB3AR(MSMAX,KRE_NMAX),
+     &RB1AI(MSMAX,KRE_NMAX),RB2AI(MSMAX,KRE_NMAX),RB3AI(MSMAX,KRE_NMAX),
+     &RJ1AR(MSMAX,KRE_NMAX),RJ2AR(MSMAX,KRE_NMAX),RJ3AR(MSMAX,KRE_NMAX),
+     &RJ1AI(MSMAX,KRE_NMAX),RJ2AI(MSMAX,KRE_NMAX),RJ3AI(MSMAX,KRE_NMAX),
+     &RV1AR(MSMAX,KRE_NMAX),RV2AR(MSMAX,KRE_NMAX),RV3AR(MSMAX,KRE_NMAX),
+     &RV1AI(MSMAX,KRE_NMAX),RV2AI(MSMAX,KRE_NMAX),RV3AI(MSMAX,KRE_NMAX),
+     &RB1AR1(MSMAX,KRE_NMAX),RB2AR1(MSMAX,KRE_NMAX),
+     &RB3AR1(MSMAX,KRE_NMAX),RB1AI1(MSMAX,KRE_NMAX),
+     &RB2AI1(MSMAX,KRE_NMAX),RB3AI1(MSMAX,KRE_NMAX),
+     &RB1AR2(MSMAX,KRE_NMAX),RB2AR2(MSMAX,KRE_NMAX),
+     &RB3AR2(MSMAX,KRE_NMAX),RB1AI2(MSMAX,KRE_NMAX),
+     &RB2AI2(MSMAX,KRE_NMAX),RB3AI2(MSMAX,KRE_NMAX),
+     &RJ1AR1(MSMAX,KRE_NMAX),RJ2AR1(MSMAX,KRE_NMAX),
+     &RJ3AR1(MSMAX,KRE_NMAX),RJ1AI1(MSMAX,KRE_NMAX),
+     &RJ2AI1(MSMAX,KRE_NMAX),RJ3AI1(MSMAX,KRE_NMAX),
+     &RJ1AR2(MSMAX,KRE_NMAX),RJ2AR2(MSMAX,KRE_NMAX),
+     &RJ3AR2(MSMAX,KRE_NMAX),RJ1AI2(MSMAX,KRE_NMAX),
+     &RJ2AI2(MSMAX,KRE_NMAX),RJ3AI2(MSMAX,KRE_NMAX),
+     &RV1AR1(MSMAX,KRE_NMAX),RV2AR1(MSMAX,KRE_NMAX),
+     &RV3AR1(MSMAX,KRE_NMAX),RV1AI1(MSMAX,KRE_NMAX),
+     &RV2AI1(MSMAX,KRE_NMAX),RV3AI1(MSMAX,KRE_NMAX),
+     &RV1AR2(MSMAX,KRE_NMAX),RV2AR2(MSMAX,KRE_NMAX),
+     &RV3AR2(MSMAX,KRE_NMAX),RV1AI2(MSMAX,KRE_NMAX),
+     &RV2AI2(MSMAX,KRE_NMAX),RV3AI2(MSMAX,KRE_NMAX))
+
+      ALLOCATE(B1X(NVG,MSMAX),B2X(NVG,MSMAX),B3X(NVG,MSMAX))  
+      IF (KRE_NMAX.GT.0) ALLOCATE(CA(NRP1),CAM(NRP1),VCA(NVG),VCAM(NVG))
+
+      REPERTURB = RE_PERTURB(1)
+      REPERTURJ = REPERTURB
+C     IF (RESS.GT.CS(NRP1-5)) REPERTURJ = 0.0
+
+      REQPSIP     = 0.
+      REQPSIP1    = 0.
+      REQPSIP2    = 0.
+      REQT        = 0.
+      REQT1       = 0.
+      REQT2       = 0.
+      REQPP       = 0.
+      REQPP1      = 0.
+      REQPP2      = 0.
+      REQTP       = 0.
+      REQTP1      = 0.
+      REQTP2      = 0.
+      REQROT      = 0.
+      REQROT1     = 0.
+      REQROT2     = 0.
+      REQRHOU     = 0.
+      REQRHOU1    = 0.
+      REQRHOU2    = 0.
+      REQETA      = 0.
+      REQETAS1    = 0.
+      REQETAS2    = 0.
+
+      RJ1UR     = 0.
+      RJ1UI     = 0.
+      RJ2UR     = 0.
+      RJ2UI     = 0.
+      RJ3UR     = 0.
+      RJ3UI     = 0.
+
+      RJ1UR1     = 0.
+      RJ1UI1     = 0.
+      RJ2UR1     = 0.
+      RJ2UI1     = 0.
+      RJ3UR1     = 0.
+      RJ3UI1     = 0.
+
+      RJ1UR2     = 0.
+      RJ1UI2     = 0.
+      RJ2UR2     = 0.
+      RJ2UI2     = 0.
+      RJ3UR2     = 0.
+      RJ3UI2     = 0.
+ 
+      RV1UR     = 0.
+      RV1UI     = 0.
+      RV2UR     = 0.
+      RV2UI     = 0.
+      RV3UR     = 0.
+      RV3UI     = 0.
+
+      RV1UR1     = 0.
+      RV1UI1     = 0.
+      RV2UR1     = 0.
+      RV2UI1     = 0.
+      RV3UR1     = 0.
+      RV3UI1     = 0.
+
+      RV1UR2     = 0.
+      RV1UI2     = 0.
+      RV2UR2     = 0.
+      RV2UI2     = 0.
+      RV3UR2     = 0.
+      RV3UI2     = 0.
+
+      IF (KRE_NMAX.GT.0) THEN
+      RJ1AR     = 0.
+      RJ1AI     = 0.
+      RJ2AR     = 0.
+      RJ2AI     = 0.
+      RJ3AR     = 0.
+      RJ3AI     = 0.
+ 
+      RJ1AR1     = 0.
+      RJ1AI1     = 0.
+      RJ2AR1     = 0.
+      RJ2AI1     = 0.
+      RJ3AR1     = 0.
+      RJ3AI1     = 0.
+ 
+      RJ1AR2     = 0.
+      RJ1AI2     = 0.
+      RJ2AR2     = 0.
+      RJ2AI2     = 0.
+      RJ3AR2     = 0.
+      RJ3AI2     = 0.
+ 
+      RV1AR     = 0.
+      RV1AI     = 0.
+      RV2AR     = 0.
+      RV2AI     = 0.
+      RV3AR     = 0.
+      RV3AI     = 0.
+
+      RV1AR1     = 0.
+      RV1AI1     = 0.
+      RV2AR1     = 0.
+      RV2AI1     = 0.
+      RV3AR1     = 0.
+      RV3AI1     = 0.
+ 
+      RV1AR2     = 0.
+      RV1AI2     = 0.
+      RV2AR2     = 0.
+      RV2AI2     = 0.
+      RV3AR2     = 0.
+      RV3AI2     = 0.
+      ENDIF
+
+      NCHIP1 = NCHI + 1
+
+      RESS1 = RESS - HSS
+      RESS2 = RESS + HSS
+      RECCS = RECC
+      RECC  = RECC - FLOOR(RECC/2./PI)*2.*PI
+      RECC1 = (RECC-HCC) - FLOOR((RECC-HCC)/2./PI)*2.*PI
+      RECC2 = (RECC+HCC) - FLOOR((RECC+HCC)/2./PI)*2.*PI
+
+
+C     USE SPLINE TO FIND FIELD DATA AT (RESS,RECC,REFF)
+      IF (RESS.LE.1.) THEN
+      CALL SPLINT(CS,DPSIDS,SCPSIP,NRP1,RESS,REQPSIP)
+      CALL SPLINT(CS,T     ,SCT   ,NRP1,RESS,REQT   )
+      CALL SPLINT(CS,PPEQ  ,SCPP  ,NRP1,RESS,REQPP  )
+      CALL SPLINT(CS,TP    ,SCTP  ,NRP1,RESS,REQTP  )
+      CALL SPLINT(CS,ROT   ,SCROT ,NRP1,RESS,REQROT )
+      CALL SPLINT(CS,RHOU  ,SCRHOU,NRP1,RESS,REQRHOU)
+      CALL SPLINT(CS,RESIST,SCETA ,NRP1,RESS,REQETA )
+      ENDIF
+
+      IF (RESS1.LE.1.) THEN
+      CALL SPLINT(CS,DPSIDS,SCPSIP,NRP1,RESS1,REQPSIP1)
+      CALL SPLINT(CS,T     ,SCT   ,NRP1,RESS1,REQT1   )
+      CALL SPLINT(CS,PPEQ  ,SCPP  ,NRP1,RESS1,REQPP1  )
+      CALL SPLINT(CS,TP    ,SCTP  ,NRP1,RESS1,REQTP1 )
+      CALL SPLINT(CS,ROT   ,SCROT ,NRP1,RESS1,REQROT1)
+      CALL SPLINT(CS,RHOU  ,SCRHOU,NRP1,RESS1,REQRHOU1)
+      CALL SPLINT(CS,RESIST,SCETA ,NRP1,RESS1,REQETAS1)
+      ENDIF
+
+      IF (RESS2.LE.1.) THEN
+      CALL SPLINT(CS,DPSIDS,SCPSIP,NRP1,RESS2,REQPSIP2)
+      CALL SPLINT(CS,T     ,SCT   ,NRP1,RESS2,REQT2   )
+      CALL SPLINT(CS,PPEQ  ,SCPP  ,NRP1,RESS2,REQPP2  )
+      CALL SPLINT(CS,TP    ,SCTP  ,NRP1,RESS2,REQTP2 )
+      CALL SPLINT(CS,ROT   ,SCROT ,NRP1,RESS2,REQROT2)
+      CALL SPLINT(CS,RHOU  ,SCRHOU,NRP1,RESS2,REQRHOU2)
+      CALL SPLINT(CS,RESIST,SCETA ,NRP1,RESS2,REQETAS2)
+      ENDIF
+ 
+      IF (RESS.LE.1.) THEN
+      CALL SPLINE2DT(REQJAC, RESS,RECC, 1,   1,   1,
+     &               SPJAC,  CS,  RECHI,NRP1,NRP1,NCHIP1,SCJAC )
+      CALL SPLINE2DT(REQREQ2,RESS,RECC, 1,   1,   1,
+     &               SPREQ2, CS,  RECHI,NRP1,NRP1,NCHIP1,SCREQ2)
+      CALL SPLINE2DT(REQBEQ2,RESS,RECC, 1,   1,   1,
+     &               SPBEQ2, CS,  RECHI,NRP1,NRP1,NCHIP1,SCBEQ2)
+      CALL SPLINE2DT(REQG11, RESS,RECC, 1,   1,   1,
+     &               SPG11,  CS,  RECHI,NRP1,NRP1,NCHIP1,SCG11 )
+      CALL SPLINE2DT(REQG12, RESS,RECC, 1,   1,   1,
+     &               SPG12,  CS,  RECHI,NRP1,NRP1,NCHIP1,SCG12 )
+      CALL SPLINE2DT(REQG22, RESS,RECC, 1,   1,   1,
+     &               SPG22,  CS,  RECHI,NRP1,NRP1,NCHIP1,SCG22 )
+      ENDIF
+
+      IF (KRE_VAC.GT.0.AND.RESS.GT.1.) THEN
+      CALL SPLINE2DT(REQJAC, RESS,RECC, 1,   1,   1,
+     &               VPJAC,  VCS, RECHI,NVG,NVG,NCHIP1,VCJAC )
+      CALL SPLINE2DT(REQREQ2,RESS,RECC, 1,   1,   1,
+     &               VPREQ2, VCS, RECHI,NVG,NVG,NCHIP1,VCREQ2)
+      CALL SPLINE2DT(REQBEQ2,RESS,RECC, 1,   1,   1,
+     &               VPBEQ2, VCS, RECHI,NVG,NVG,NCHIP1,VCBEQ2)
+      CALL SPLINE2DT(REQG11, RESS,RECC, 1,   1,   1,
+     &               VPG11,  VCS, RECHI,NVG,NVG,NCHIP1,VCG11 )
+      CALL SPLINE2DT(REQG12, RESS,RECC, 1,   1,   1,
+     &               VPG12,  VCS, RECHI,NVG,NVG,NCHIP1,VCG12 )
+      CALL SPLINE2DT(REQG22, RESS,RECC, 1,   1,   1,
+     &               VPG22,  VCS, RECHI,NVG,NVG,NCHIP1,VCG22 )
+
+      CALL SPLINE2DT(REQBV1, RESS,RECC, 1,   1,   1,
+     &               VPBV1,  VCS, RECHI,NV,NV,NCHIP1,VCBV1 )
+      CALL SPLINE2DT(REQBV2, RESS,RECC, 1,   1,   1,
+     &               VPBV2,  VCS, RECHI,NV,NV,NCHIP1,VCBV2 )
+      CALL SPLINE2DT(REQBV3, RESS,RECC, 1,   1,   1,
+     &               VPBV3,  VCS, RECHI,NV,NV,NCHIP1,VCBV3 )
+      ENDIF
+
+      IF (RESS1.LE.1.) THEN
+      CALL SPLINE2DT(REQJACS1, RESS1,RECC, 1,   1,   1,
+     &               SPJAC,    CS,   RECHI,NRP1,NRP1,NCHIP1,SCJAC )
+      CALL SPLINE2DT(REQREQ2S1,RESS1,RECC, 1,   1,   1,
+     &               SPREQ2,   CS,   RECHI,NRP1,NRP1,NCHIP1,SCREQ2)
+      CALL SPLINE2DT(REQBEQ2S1,RESS1,RECC, 1,   1,   1,
+     &               SPBEQ2, CS,  RECHI,NRP1,NRP1,NCHIP1,SCBEQ2)
+      CALL SPLINE2DT(REQG11S1, RESS1,RECC, 1,   1,   1,
+     &               SPG11,    CS,   RECHI,NRP1,NRP1,NCHIP1,SCG11 )
+      CALL SPLINE2DT(REQG12S1, RESS1,RECC, 1,   1,   1,
+     &               SPG12,    CS,   RECHI,NRP1,NRP1,NCHIP1,SCG12 )
+      CALL SPLINE2DT(REQG22S1, RESS1,RECC, 1,   1,   1,
+     &               SPG22,    CS,   RECHI,NRP1,NRP1,NCHIP1,SCG22 )
+      ENDIF
+
+      IF (KRE_VAC.GT.0.AND.RESS1.GT.1.) THEN
+      CALL SPLINE2DT(REQJACS1, RESS1,RECC, 1,   1,   1,
+     &               VPJAC,    VCS,  RECHI,NVG,NVG,NCHIP1,VCJAC )
+      CALL SPLINE2DT(REQREQ2S1,RESS1,RECC, 1,   1,   1,
+     &               VPREQ2,   VCS,  RECHI,NVG,NVG,NCHIP1,VCREQ2)
+      CALL SPLINE2DT(REQG11S1, RESS1,RECC, 1,   1,   1,
+     &               VPG11,    VCS,  RECHI,NVG,NVG,NCHIP1,VCG11 )
+      CALL SPLINE2DT(REQG12S1, RESS1,RECC, 1,   1,   1,
+     &               VPG12,    VCS,  RECHI,NVG,NVG,NCHIP1,VCG12 )
+      CALL SPLINE2DT(REQG22S1, RESS1,RECC, 1,   1,   1,
+     &               VPG22,    VCS,  RECHI,NVG,NVG,NCHIP1,VCG22 )
+      ENDIF
+
+      IF (RESS2.LE.1.) THEN
+      CALL SPLINE2DT(REQJACS2, RESS2,RECC, 1,   1,   1,
+     &               SPJAC,    CS,   RECHI,NRP1,NRP1,NCHIP1,SCJAC )
+      CALL SPLINE2DT(REQREQ2S2,RESS2,RECC, 1,   1,   1,
+     &               SPREQ2,   CS,   RECHI,NRP1,NRP1,NCHIP1,SCREQ2)
+      CALL SPLINE2DT(REQBEQ2S2,RESS2,RECC, 1,   1,   1,
+     &               SPBEQ2, CS,  RECHI,NRP1,NRP1,NCHIP1,SCBEQ2)
+      CALL SPLINE2DT(REQG11S2, RESS2,RECC, 1,   1,   1,
+     &               SPG11,    CS,   RECHI,NRP1,NRP1,NCHIP1,SCG11 )
+      CALL SPLINE2DT(REQG12S2, RESS2,RECC, 1,   1,   1,
+     &               SPG12,    CS,   RECHI,NRP1,NRP1,NCHIP1,SCG12 )
+      CALL SPLINE2DT(REQG22S2, RESS2,RECC, 1,   1,   1,
+     &               SPG22,    CS,   RECHI,NRP1,NRP1,NCHIP1,SCG22 )
+      ENDIF
+
+      IF (KRE_VAC.GT.0.AND.RESS2.GT.1.) THEN
+      CALL SPLINE2DT(REQJACS2, RESS2,RECC, 1,   1,   1,
+     &               VPJAC,    VCS,  RECHI,NVG,NVG,NCHIP1,VCJAC )
+      CALL SPLINE2DT(REQREQ2S2,RESS2,RECC, 1,   1,   1,
+     &               VPREQ2,   VCS,  RECHI,NVG,NVG,NCHIP1,VCREQ2)
+      CALL SPLINE2DT(REQG11S2, RESS2,RECC, 1,   1,   1,
+     &               VPG11,    VCS,  RECHI,NVG,NVG,NCHIP1,VCG11 )
+      CALL SPLINE2DT(REQG12S2, RESS2,RECC, 1,   1,   1,
+     &               VPG12,    VCS,  RECHI,NVG,NVG,NCHIP1,VCG12 )
+      CALL SPLINE2DT(REQG22S2, RESS2,RECC, 1,   1,   1,
+     &               VPG22,    VCS,  RECHI,NVG,NVG,NCHIP1,VCG22 )
+      ENDIF
+
+      IF (RESS.LE.1.) THEN
+      CALL SPLINE2DT(REQJACC1, RESS, RECC1,1,   1,   1,
+     &               SPJAC,    CS,   RECHI,NRP1,NRP1,NCHIP1,SCJAC )
+      CALL SPLINE2DT(REQJACC2, RESS, RECC2,1,   1,   1,
+     &               SPJAC,    CS,   RECHI,NRP1,NRP1,NCHIP1,SCJAC )
+      CALL SPLINE2DT(REQREQ2C1,RESS, RECC1,1,   1,   1,
+     &               SPREQ2,   CS,   RECHI,NRP1,NRP1,NCHIP1,SCREQ2)
+      CALL SPLINE2DT(REQREQ2C2,RESS, RECC2,1,   1,   1,
+     &               SPREQ2,   CS,   RECHI,NRP1,NRP1,NCHIP1,SCREQ2)
+      CALL SPLINE2DT(REQBEQ2C1,RESS, RECC1,1,   1,   1,
+     &               SPBEQ2, CS,  RECHI,NRP1,NRP1,NCHIP1,SCBEQ2)
+      CALL SPLINE2DT(REQBEQ2C2,RESS, RECC2,1,   1,   1,
+     &               SPBEQ2, CS,  RECHI,NRP1,NRP1,NCHIP1,SCBEQ2)
+      CALL SPLINE2DT(REQG11C1, RESS, RECC1,1,   1,   1,
+     &               SPG11,    CS,   RECHI,NRP1,NRP1,NCHIP1,SCG11 )
+      CALL SPLINE2DT(REQG11C2, RESS, RECC2,1,   1,   1,
+     &               SPG11,    CS,   RECHI,NRP1,NRP1,NCHIP1,SCG11 )
+      CALL SPLINE2DT(REQG12C1, RESS, RECC1,1,   1,   1,
+     &               SPG12,    CS,   RECHI,NRP1,NRP1,NCHIP1,SCG12 )
+      CALL SPLINE2DT(REQG12C2, RESS, RECC2,1,   1,   1,
+     &               SPG12,    CS,   RECHI,NRP1,NRP1,NCHIP1,SCG12 )
+      CALL SPLINE2DT(REQG22C1, RESS, RECC1,1,   1,   1,
+     &               SPG22,    CS,   RECHI,NRP1,NRP1,NCHIP1,SCG22 )
+      CALL SPLINE2DT(REQG22C2, RESS, RECC2,1,   1,   1,
+     &               SPG22,    CS,   RECHI,NRP1,NRP1,NCHIP1,SCG22 )
+      ENDIF
+
+      IF (KRE_VAC.GT.0.AND.RESS.GT.1.) THEN
+      CALL SPLINE2DT(REQJACC1, RESS, RECC1,1,   1,   1,
+     &               VPJAC,    VCS,  RECHI,NVG,NVG,NCHIP1,VCJAC )
+      CALL SPLINE2DT(REQJACC2, RESS, RECC2,1,   1,   1,
+     &               VPJAC,    VCS,  RECHI,NVG,NVG,NCHIP1,VCJAC )
+      CALL SPLINE2DT(REQREQ2C1,RESS, RECC1,1,   1,   1,
+     &               VPREQ2,   VCS,  RECHI,NVG,NVG,NCHIP1,VCREQ2)
+      CALL SPLINE2DT(REQREQ2C2,RESS, RECC2,1,   1,   1,
+     &               VPREQ2,   VCS,  RECHI,NVG,NVG,NCHIP1,VCREQ2)
+      CALL SPLINE2DT(REQG11C1, RESS, RECC1,1,   1,   1,
+     &               VPG11,    VCS,  RECHI,NVG,NVG,NCHIP1,VCG11 )
+      CALL SPLINE2DT(REQG11C2, RESS, RECC2,1,   1,   1,
+     &               VPG11,    VCS,  RECHI,NVG,NVG,NCHIP1,VCG11 )
+      CALL SPLINE2DT(REQG12C1, RESS, RECC1,1,   1,   1,
+     &               VPG12,    VCS,  RECHI,NVG,NVG,NCHIP1,VCG12 )
+      CALL SPLINE2DT(REQG12C2, RESS, RECC2,1,   1,   1,
+     &               VPG12,    VCS,  RECHI,NVG,NVG,NCHIP1,VCG12 )
+      CALL SPLINE2DT(REQG22C1, RESS, RECC1,1,   1,   1,
+     &               VPG22,    VCS,  RECHI,NVG,NVG,NCHIP1,VCG22 )
+      CALL SPLINE2DT(REQG22C2, RESS, RECC2,1,   1,   1,
+     &               VPG22,    VCS,  RECHI,NVG,NVG,NCHIP1,VCG22 )
+      ENDIF
+                  
+      IF (KRE_VAC.GT.0.AND.RESS.GT.1.) THEN
+         CALL SPLINE2DT(REQBV1C1, RESS, RECC1,1,   1,   1,
+     &                  VPBV1,    VCS,  RECHI,NV,NV,NCHIP1,VCBV1 )
+         CALL SPLINE2DT(REQBV1C2, RESS, RECC2,1,   1,   1,
+     &                  VPBV1,    VCS,  RECHI,NV,NV,NCHIP1,VCBV1 )
+         CALL SPLINE2DT(REQBV2C1, RESS, RECC1,1,   1,   1,
+     &                  VPBV2,    VCS,  RECHI,NV,NV,NCHIP1,VCBV2 )
+         CALL SPLINE2DT(REQBV2C2, RESS, RECC2,1,   1,   1,
+     &                  VPBV2,    VCS,  RECHI,NV,NV,NCHIP1,VCBV2 )
+         CALL SPLINE2DT(REQBV3C1, RESS, RECC1,1,   1,   1,
+     &                  VPBV3,    VCS,  RECHI,NV,NV,NCHIP1,VCBV3 )
+         CALL SPLINE2DT(REQBV3C2, RESS, RECC2,1,   1,   1,
+     &                  VPBV3,    VCS,  RECHI,NV,NV,NCHIP1,VCBV3 )
+      ENDIF
+
+      IF (KRE_VAC.GT.0.AND.RESS1.GT.1.) THEN
+         CALL SPLINE2DT(REQBV1S1, RESS1,RECC, 1,   1,   1,
+     &                  VPBV1,    VCS,  RECHI,NV,NV,NCHIP1,VCBV1 )
+         CALL SPLINE2DT(REQBV2S1, RESS1,RECC, 1,   1,   1,
+     &                  VPBV2,    VCS,  RECHI,NV,NV,NCHIP1,VCBV2 )
+         CALL SPLINE2DT(REQBV3S1, RESS1,RECC, 1,   1,   1,
+     &                  VPBV3,    VCS,  RECHI,NV,NV,NCHIP1,VCBV3 )
+      ENDIF
+
+      IF (KRE_VAC.GT.0.AND.RESS2.GT.1.) THEN
+         CALL SPLINE2DT(REQBV1S2, RESS2,RECC, 1,   1,   1,
+     &                  VPBV1,    VCS,  RECHI,NV,NV,NCHIP1,VCBV1 )
+         CALL SPLINE2DT(REQBV2S2, RESS2,RECC, 1,   1,   1,
+     &                  VPBV2,    VCS,  RECHI,NV,NV,NCHIP1,VCBV2 )
+         CALL SPLINE2DT(REQBV3S2, RESS2,RECC, 1,   1,   1,
+     &                  VPBV3,    VCS,  RECHI,NV,NV,NCHIP1,VCBV3 )
+      ENDIF
+     
+      IF (RESS1.LE.1.) THEN
+      DO M=1,MSMAX
+      CALL SPLINT(CS, REAL(B1U(:,M)),SCB1UR(:,M),NRP1,RESS1,RB1UR1(M))
+      CALL SPLINT(CS, IMAG(B1U(:,M)),SCB1UI(:,M),NRP1,RESS1,RB1UI1(M))
+      CALL SPLINT(CSM,REAL(B2U(:,M)),SCB2UR(:,M),NR,  RESS1,RB2UR1(M))
+      CALL SPLINT(CSM,IMAG(B2U(:,M)),SCB2UI(:,M),NR,  RESS1,RB2UI1(M))
+      CALL SPLINT(CSM,REAL(B3U(:,M)),SCB3UR(:,M),NR,  RESS1,RB3UR1(M))
+      CALL SPLINT(CSM,IMAG(B3U(:,M)),SCB3UI(:,M),NR,  RESS1,RB3UI1(M))
+
+      CALL SPLINT(CSM,REAL(J1U(:,M)),SCJ1UR(:,M),NR,  RESS1,RJ1UR1(M))
+      CALL SPLINT(CSM,IMAG(J1U(:,M)),SCJ1UI(:,M),NR,  RESS1,RJ1UI1(M))
+      CALL SPLINT(CS, REAL(J2U(:,M)),SCJ2UR(:,M),NRP1,RESS1,RJ2UR1(M))
+      CALL SPLINT(CS, IMAG(J2U(:,M)),SCJ2UI(:,M),NRP1,RESS1,RJ2UI1(M))
+      CALL SPLINT(CS, REAL(J3U(:,M)),SCJ3UR(:,M),NRP1,RESS1,RJ3UR1(M))
+      CALL SPLINT(CS, IMAG(J3U(:,M)),SCJ3UI(:,M),NRP1,RESS1,RJ3UI1(M))
+
+      CALL SPLINT(CS, REAL(V1U(:,M)),SCV1UR(:,M),NRP1,RESS1,RV1UR1(M))
+      CALL SPLINT(CS, IMAG(V1U(:,M)),SCV1UI(:,M),NRP1,RESS1,RV1UI1(M))
+      CALL SPLINT(CSM,REAL(V2U(:,M)),SCV2UR(:,M),NR,  RESS1,RV2UR1(M))
+      CALL SPLINT(CSM,IMAG(V2U(:,M)),SCV2UI(:,M),NR,  RESS1,RV2UI1(M))
+      CALL SPLINT(CSM,REAL(V3U(:,M)),SCV3UR(:,M),NR,  RESS1,RV3UR1(M))
+      CALL SPLINT(CSM,IMAG(V3U(:,M)),SCV3UI(:,M),NR,  RESS1,RV3UI1(M))
+      ENDDO
+
+      H = RESS1
+      DO J=1,KRE_NMAX
+      CA  = CSA(1:NRP1,J)  
+      CAM = CSAM(1:NRP1,J)  
+      DO M=1,MSMAX
+      CALL SPLINT(CA, REAL(B1A(:,M,J)),SCB1AR(:,M,J),NRP1,H,RB1AR1(M,J))
+      CALL SPLINT(CA, IMAG(B1A(:,M,J)),SCB1AI(:,M,J),NRP1,H,RB1AI1(M,J))
+      CALL SPLINT(CAM,REAL(B2A(:,M,J)),SCB2AR(:,M,J),NR,  H,RB2AR1(M,J))
+      CALL SPLINT(CAM,IMAG(B2A(:,M,J)),SCB2AI(:,M,J),NR,  H,RB2AI1(M,J))
+      CALL SPLINT(CAM,REAL(B3A(:,M,J)),SCB3AR(:,M,J),NR,  H,RB3AR1(M,J))
+      CALL SPLINT(CAM,IMAG(B3A(:,M,J)),SCB3AI(:,M,J),NR,  H,RB3AI1(M,J))
+
+      CALL SPLINT(CAM,REAL(J1A(:,M,J)),SCJ1AR(:,M,J),NR,  H,RJ1AR1(M,J))
+      CALL SPLINT(CAM,IMAG(J1A(:,M,J)),SCJ1AI(:,M,J),NR,  H,RJ1AI1(M,J))
+      CALL SPLINT(CA, REAL(J2A(:,M,J)),SCJ2AR(:,M,J),NRP1,H,RJ2AR1(M,J))
+      CALL SPLINT(CA, IMAG(J2A(:,M,J)),SCJ2AI(:,M,J),NRP1,H,RJ2AI1(M,J))
+      CALL SPLINT(CA, REAL(J3A(:,M,J)),SCJ3AR(:,M,J),NRP1,H,RJ3AR1(M,J))
+      CALL SPLINT(CA, IMAG(J3A(:,M,J)),SCJ3AI(:,M,J),NRP1,H,RJ3AI1(M,J))
+
+      CALL SPLINT(CA, REAL(V1A(:,M,J)),SCV1AR(:,M,J),NRP1,H,RV1AR1(M,J))
+      CALL SPLINT(CA, IMAG(V1A(:,M,J)),SCV1AI(:,M,J),NRP1,H,RV1AI1(M,J))
+      CALL SPLINT(CAM,REAL(V2A(:,M,J)),SCV2AR(:,M,J),NR,  H,RV2AR1(M,J))
+      CALL SPLINT(CAM,IMAG(V2A(:,M,J)),SCV2AI(:,M,J),NR,  H,RV2AI1(M,J))
+      CALL SPLINT(CAM,REAL(V3A(:,M,J)),SCV3AR(:,M,J),NR,  H,RV3AR1(M,J))
+      CALL SPLINT(CAM,IMAG(V3A(:,M,J)),SCV3AI(:,M,J),NR,  H,RV3AI1(M,J))
+      ENDDO
+      ENDDO
+      ENDIF
+
+      IF (KRE_VAC.GT.0.AND.RESS1.GT.1.) THEN
+      I = NRP1
+      B1X = B1U(I:I+NVG-1,:)
+      B2X = B2U(I:I+NVG-1,:)
+      B3X = B3U(I:I+NVG-1,:)
+      DO M=1,MSMAX
+      CALL SPLINT(VCS, REAL(B1X(:,M)),VCB1UR(:,M),NVG,RESS1,RB1UR1(M))
+      CALL SPLINT(VCS, IMAG(B1X(:,M)),VCB1UI(:,M),NVG,RESS1,RB1UI1(M))
+      CALL SPLINT(VCSM,REAL(B2X(:,M)),VCB2UR(:,M),NVG,RESS1,RB2UR1(M))
+      CALL SPLINT(VCSM,IMAG(B2X(:,M)),VCB2UI(:,M),NVG,RESS1,RB2UI1(M))
+      CALL SPLINT(VCSM,REAL(B3X(:,M)),VCB3UR(:,M),NVG,RESS1,RB3UR1(M))
+      CALL SPLINT(VCSM,IMAG(B3X(:,M)),VCB3UI(:,M),NVG,RESS1,RB3UI1(M))
+      ENDDO
+
+      H = RESS1
+      DO J=1,KRE_NMAX
+      VCA  = CSA(I:I+NRP1-1,J)  
+      VCAM = CSAM(I:I+NRP1-1,J)  
+      B1X = B1A(I:I+NVG-1,:,J)
+      B2X = B2A(I:I+NVG-1,:,J)
+      B3X = B3A(I:I+NVG-1,:,J)
+      DO M=1,MSMAX
+      CALL SPLINT(VCA, REAL(B1X(:,M)),VCB1AR(:,M,J),NVG,H,RB1AR1(M,J))
+      CALL SPLINT(VCA, IMAG(B1X(:,M)),VCB1AI(:,M,J),NVG,H,RB1AI1(M,J))
+      CALL SPLINT(VCAM,REAL(B2X(:,M)),VCB2AR(:,M,J),NVG,H,RB2AR1(M,J))
+      CALL SPLINT(VCAM,IMAG(B2X(:,M)),VCB2AI(:,M,J),NVG,H,RB2AI1(M,J))
+      CALL SPLINT(VCAM,REAL(B3X(:,M)),VCB3AR(:,M,J),NVG,H,RB3AR1(M,J))
+      CALL SPLINT(VCAM,IMAG(B3X(:,M)),VCB3AI(:,M,J),NVG,H,RB3AI1(M,J))
+      ENDDO
+      ENDDO
+      ENDIF
+
+      IF (RESS2.LE.1.) THEN
+      DO M=1,MSMAX
+      CALL SPLINT(CS, REAL(B1U(:,M)),SCB1UR(:,M),NRP1,RESS2,RB1UR2(M))
+      CALL SPLINT(CS, IMAG(B1U(:,M)),SCB1UI(:,M),NRP1,RESS2,RB1UI2(M))
+      CALL SPLINT(CSM,REAL(B2U(:,M)),SCB2UR(:,M),NR,  RESS2,RB2UR2(M))
+      CALL SPLINT(CSM,IMAG(B2U(:,M)),SCB2UI(:,M),NR,  RESS2,RB2UI2(M))
+      CALL SPLINT(CSM,REAL(B3U(:,M)),SCB3UR(:,M),NR,  RESS2,RB3UR2(M))
+      CALL SPLINT(CSM,IMAG(B3U(:,M)),SCB3UI(:,M),NR,  RESS2,RB3UI2(M))
+
+      CALL SPLINT(CSM,REAL(J1U(:,M)),SCJ1UR(:,M),NR,  RESS2,RJ1UR2(M))
+      CALL SPLINT(CSM,IMAG(J1U(:,M)),SCJ1UI(:,M),NR,  RESS2,RJ1UI2(M))
+      CALL SPLINT(CS, REAL(J2U(:,M)),SCJ2UR(:,M),NRP1,RESS2,RJ2UR2(M))
+      CALL SPLINT(CS, IMAG(J2U(:,M)),SCJ2UI(:,M),NRP1,RESS2,RJ2UI2(M))
+      CALL SPLINT(CS, REAL(J3U(:,M)),SCJ3UR(:,M),NRP1,RESS2,RJ3UR2(M))
+      CALL SPLINT(CS, IMAG(J3U(:,M)),SCJ3UI(:,M),NRP1,RESS2,RJ3UI2(M))
+
+      CALL SPLINT(CS, REAL(V1U(:,M)),SCV1UR(:,M),NRP1,RESS2,RV1UR2(M))
+      CALL SPLINT(CS, IMAG(V1U(:,M)),SCV1UI(:,M),NRP1,RESS2,RV1UI2(M))
+      CALL SPLINT(CSM,REAL(V2U(:,M)),SCV2UR(:,M),NR,  RESS2,RV2UR2(M))
+      CALL SPLINT(CSM,IMAG(V2U(:,M)),SCV2UI(:,M),NR,  RESS2,RV2UI2(M))
+      CALL SPLINT(CSM,REAL(V3U(:,M)),SCV3UR(:,M),NR,  RESS2,RV3UR2(M))
+      CALL SPLINT(CSM,IMAG(V3U(:,M)),SCV3UI(:,M),NR,  RESS2,RV3UI2(M))
+      ENDDO
+
+      H = RESS2
+      DO J=1,KRE_NMAX
+      CA  = CSA(1:NRP1,J)  
+      CAM = CSAM(1:NRP1,J)  
+      DO M=1,MSMAX
+      CALL SPLINT(CA, REAL(B1A(:,M,J)),SCB1AR(:,M,J),NRP1,H,RB1AR2(M,J))
+      CALL SPLINT(CA, IMAG(B1A(:,M,J)),SCB1AI(:,M,J),NRP1,H,RB1AI2(M,J))
+      CALL SPLINT(CAM,REAL(B2A(:,M,J)),SCB2AR(:,M,J),NR,  H,RB2AR2(M,J))
+      CALL SPLINT(CAM,IMAG(B2A(:,M,J)),SCB2AI(:,M,J),NR,  H,RB2AI2(M,J))
+      CALL SPLINT(CAM,REAL(B3A(:,M,J)),SCB3AR(:,M,J),NR,  H,RB3AR2(M,J))
+      CALL SPLINT(CAM,IMAG(B3A(:,M,J)),SCB3AI(:,M,J),NR,  H,RB3AI2(M,J))
+
+      CALL SPLINT(CAM,REAL(J1A(:,M,J)),SCJ1AR(:,M,J),NR,  H,RJ1AR2(M,J))
+      CALL SPLINT(CAM,IMAG(J1A(:,M,J)),SCJ1AI(:,M,J),NR,  H,RJ1AI2(M,J))
+      CALL SPLINT(CA, REAL(J2A(:,M,J)),SCJ2AR(:,M,J),NRP1,H,RJ2AR2(M,J))
+      CALL SPLINT(CA, IMAG(J2A(:,M,J)),SCJ2AI(:,M,J),NRP1,H,RJ2AI2(M,J))
+      CALL SPLINT(CA, REAL(J3A(:,M,J)),SCJ3AR(:,M,J),NRP1,H,RJ3AR2(M,J))
+      CALL SPLINT(CA, IMAG(J3A(:,M,J)),SCJ3AI(:,M,J),NRP1,H,RJ3AI2(M,J))
+
+      CALL SPLINT(CA, REAL(V1A(:,M,J)),SCV1AR(:,M,J),NRP1,H,RV1AR2(M,J))
+      CALL SPLINT(CA, IMAG(V1A(:,M,J)),SCV1AI(:,M,J),NRP1,H,RV1AI2(M,J))
+      CALL SPLINT(CAM,REAL(V2A(:,M,J)),SCV2AR(:,M,J),NR,  H,RV2AR2(M,J))
+      CALL SPLINT(CAM,IMAG(V2A(:,M,J)),SCV2AI(:,M,J),NR,  H,RV2AI2(M,J))
+      CALL SPLINT(CAM,REAL(V3A(:,M,J)),SCV3AR(:,M,J),NR,  H,RV3AR2(M,J))
+      CALL SPLINT(CAM,IMAG(V3A(:,M,J)),SCV3AI(:,M,J),NR,  H,RV3AI2(M,J))
+      ENDDO
+      ENDDO
+      ENDIF
+
+      IF (KRE_VAC.GT.0.AND.RESS2.GT.1.) THEN
+      I = NRP1
+      B1X = B1U(I:I+NVG-1,:)
+      B2X = B2U(I:I+NVG-1,:)
+      B3X = B3U(I:I+NVG-1,:)
+      DO M=1,MSMAX
+      CALL SPLINT(VCS, REAL(B1X(:,M)),VCB1UR(:,M),NVG,RESS2,RB1UR2(M))
+      CALL SPLINT(VCS, IMAG(B1X(:,M)),VCB1UI(:,M),NVG,RESS2,RB1UI2(M))
+      CALL SPLINT(VCSM,REAL(B2X(:,M)),VCB2UR(:,M),NVG,RESS2,RB2UR2(M))
+      CALL SPLINT(VCSM,IMAG(B2X(:,M)),VCB2UI(:,M),NVG,RESS2,RB2UI2(M))
+      CALL SPLINT(VCSM,REAL(B3X(:,M)),VCB3UR(:,M),NVG,RESS2,RB3UR2(M))
+      CALL SPLINT(VCSM,IMAG(B3X(:,M)),VCB3UI(:,M),NVG,RESS2,RB3UI2(M))
+      ENDDO
+      H = RESS2
+      DO J=1,KRE_NMAX
+      VCA  = CSA(I:I+NRP1-1,J)  
+      VCAM = CSAM(I:I+NRP1-1,J)  
+      B1X = B1A(I:I+NVG-1,:,J)
+      B2X = B2A(I:I+NVG-1,:,J)
+      B3X = B3A(I:I+NVG-1,:,J)
+      DO M=1,MSMAX
+      CALL SPLINT(VCA, REAL(B1X(:,M)),VCB1AR(:,M,J),NVG,H,RB1AR2(M,J))
+      CALL SPLINT(VCA, IMAG(B1X(:,M)),VCB1AI(:,M,J),NVG,H,RB1AI2(M,J))
+      CALL SPLINT(VCAM,REAL(B2X(:,M)),VCB2AR(:,M,J),NVG,H,RB2AR2(M,J))
+      CALL SPLINT(VCAM,IMAG(B2X(:,M)),VCB2AI(:,M,J),NVG,H,RB2AI2(M,J))
+      CALL SPLINT(VCAM,REAL(B3X(:,M)),VCB3AR(:,M,J),NVG,H,RB3AR2(M,J))
+      CALL SPLINT(VCAM,IMAG(B3X(:,M)),VCB3AI(:,M,J),NVG,H,RB3AI2(M,J))
+      ENDDO
+      ENDDO
+      ENDIF
+
+      IF (RESS.LE.1.) THEN
+      DO M=1,MSMAX
+      CALL SPLINT(CS, REAL(B1U(:,M)),SCB1UR(:,M),NRP1,RESS, RB1UR(M))
+      CALL SPLINT(CS, IMAG(B1U(:,M)),SCB1UI(:,M),NRP1,RESS, RB1UI(M))
+      CALL SPLINT(CSM,REAL(B2U(:,M)),SCB2UR(:,M),NR,  RESS, RB2UR(M))
+      CALL SPLINT(CSM,IMAG(B2U(:,M)),SCB2UI(:,M),NR,  RESS, RB2UI(M))
+      CALL SPLINT(CSM,REAL(B3U(:,M)),SCB3UR(:,M),NR,  RESS, RB3UR(M))
+      CALL SPLINT(CSM,IMAG(B3U(:,M)),SCB3UI(:,M),NR,  RESS, RB3UI(M))
+
+      CALL SPLINT(CSM,REAL(J1U(:,M)),SCJ1UR(:,M),NR,  RESS, RJ1UR(M))
+      CALL SPLINT(CSM,IMAG(J1U(:,M)),SCJ1UI(:,M),NR,  RESS, RJ1UI(M))
+      CALL SPLINT(CS, REAL(J2U(:,M)),SCJ2UR(:,M),NRP1,RESS, RJ2UR(M))
+      CALL SPLINT(CS, IMAG(J2U(:,M)),SCJ2UI(:,M),NRP1,RESS, RJ2UI(M))
+      CALL SPLINT(CS, REAL(J3U(:,M)),SCJ3UR(:,M),NRP1,RESS, RJ3UR(M))
+      CALL SPLINT(CS, IMAG(J3U(:,M)),SCJ3UI(:,M),NRP1,RESS, RJ3UI(M))
+
+      CALL SPLINT(CS, REAL(V1U(:,M)),SCV1UR(:,M),NRP1,RESS, RV1UR(M))
+      CALL SPLINT(CS, IMAG(V1U(:,M)),SCV1UI(:,M),NRP1,RESS, RV1UI(M))
+      CALL SPLINT(CSM,REAL(V2U(:,M)),SCV2UR(:,M),NR,  RESS, RV2UR(M))
+      CALL SPLINT(CSM,IMAG(V2U(:,M)),SCV2UI(:,M),NR,  RESS, RV2UI(M))
+      CALL SPLINT(CSM,REAL(V3U(:,M)),SCV3UR(:,M),NR,  RESS, RV3UR(M))
+      CALL SPLINT(CSM,IMAG(V3U(:,M)),SCV3UI(:,M),NR,  RESS, RV3UI(M))
+      ENDDO
+
+      H = RESS
+      DO J=1,KRE_NMAX
+      CA  = CSA(1:NRP1,J)  
+      CAM = CSAM(1:NRP1,J)  
+      DO M=1,MSMAX
+      CALL SPLINT(CA, REAL(B1A(:,M,J)),SCB1AR(:,M,J),NRP1,H, RB1AR(M,J))
+      CALL SPLINT(CA, IMAG(B1A(:,M,J)),SCB1AI(:,M,J),NRP1,H, RB1AI(M,J))
+      CALL SPLINT(CAM,REAL(B2A(:,M,J)),SCB2AR(:,M,J),NR,  H, RB2AR(M,J))
+      CALL SPLINT(CAM,IMAG(B2A(:,M,J)),SCB2AI(:,M,J),NR,  H, RB2AI(M,J))
+      CALL SPLINT(CAM,REAL(B3A(:,M,J)),SCB3AR(:,M,J),NR,  H, RB3AR(M,J))
+      CALL SPLINT(CAM,IMAG(B3A(:,M,J)),SCB3AI(:,M,J),NR,  H, RB3AI(M,J))
+
+      CALL SPLINT(CAM,REAL(J1A(:,M,J)),SCJ1AR(:,M,J),NR,  H, RJ1AR(M,J))
+      CALL SPLINT(CAM,IMAG(J1A(:,M,J)),SCJ1AI(:,M,J),NR,  H, RJ1AI(M,J))
+      CALL SPLINT(CA, REAL(J2A(:,M,J)),SCJ2AR(:,M,J),NRP1,H, RJ2AR(M,J))
+      CALL SPLINT(CA, IMAG(J2A(:,M,J)),SCJ2AI(:,M,J),NRP1,H, RJ2AI(M,J))
+      CALL SPLINT(CA, REAL(J3A(:,M,J)),SCJ3AR(:,M,J),NRP1,H, RJ3AR(M,J))
+      CALL SPLINT(CA, IMAG(J3A(:,M,J)),SCJ3AI(:,M,J),NRP1,H, RJ3AI(M,J))
+
+      CALL SPLINT(CA, REAL(V1A(:,M,J)),SCV1AR(:,M,J),NRP1,H, RV1AR(M,J))
+      CALL SPLINT(CA, IMAG(V1A(:,M,J)),SCV1AI(:,M,J),NRP1,H, RV1AI(M,J))
+      CALL SPLINT(CAM,REAL(V2A(:,M,J)),SCV2AR(:,M,J),NR,  H, RV2AR(M,J))
+      CALL SPLINT(CAM,IMAG(V2A(:,M,J)),SCV2AI(:,M,J),NR,  H, RV2AI(M,J))
+      CALL SPLINT(CAM,REAL(V3A(:,M,J)),SCV3AR(:,M,J),NR,  H, RV3AR(M,J))
+      CALL SPLINT(CAM,IMAG(V3A(:,M,J)),SCV3AI(:,M,J),NR,  H, RV3AI(M,J))
+      ENDDO
+      ENDDO
+      ENDIF
+
+      IF (KRE_VAC.GT.0.AND.RESS.GT.1.) THEN
+      I = NRP1
+      B1X = B1U(I:I+NVG-1,:)
+      B2X = B2U(I:I+NVG-1,:)
+      B3X = B3U(I:I+NVG-1,:)
+      DO M=1,MSMAX
+      CALL SPLINT(VCS, REAL(B1X(:,M)),VCB1UR(:,M),NVG,RESS,RB1UR(M))
+      CALL SPLINT(VCS, IMAG(B1X(:,M)),VCB1UI(:,M),NVG,RESS,RB1UI(M))
+      CALL SPLINT(VCSM,REAL(B2X(:,M)),VCB2UR(:,M),NVG,RESS,RB2UR(M))
+      CALL SPLINT(VCSM,IMAG(B2X(:,M)),VCB2UI(:,M),NVG,RESS,RB2UI(M))
+      CALL SPLINT(VCSM,REAL(B3X(:,M)),VCB3UR(:,M),NVG,RESS,RB3UR(M))
+      CALL SPLINT(VCSM,IMAG(B3X(:,M)),VCB3UI(:,M),NVG,RESS,RB3UI(M))
+      ENDDO
+
+      H = RESS
+      DO J=1,KRE_NMAX
+      VCA  = CSA(I:I+NRP1-1,J)  
+      VCAM = CSAM(I:I+NRP1-1,J)  
+      B1X = B1A(I:I+NVG-1,:,J)
+      B2X = B2A(I:I+NVG-1,:,J)
+      B3X = B3A(I:I+NVG-1,:,J)
+      DO M=1,MSMAX
+      CALL SPLINT(VCA, REAL(B1X(:,M)),VCB1AR(:,M,J),NVG,H,RB1AR(M,J))
+      CALL SPLINT(VCA, IMAG(B1X(:,M)),VCB1AI(:,M,J),NVG,H,RB1AI(M,J))
+      CALL SPLINT(VCAM,REAL(B2X(:,M)),VCB2AR(:,M,J),NVG,H,RB2AR(M,J))
+      CALL SPLINT(VCAM,IMAG(B2X(:,M)),VCB2AI(:,M,J),NVG,H,RB2AI(M,J))
+      CALL SPLINT(VCAM,REAL(B3X(:,M)),VCB3AR(:,M,J),NVG,H,RB3AR(M,J))
+      CALL SPLINT(VCAM,IMAG(B3X(:,M)),VCB3AI(:,M,J),NVG,H,RB3AI(M,J))
+      ENDDO
+      ENDDO
+      ENDIF
+
+C     GET B-FIELD AS COMPLEX QUANTITIES
+      RB1U   = (0.,0.) 
+      RJ1U   = (0.,0.) 
+      RV1U   = (0.,0.) 
+      RB1US1 = (0.,0.) 
+      RB1US2 = (0.,0.) 
+      RB1UC1 = (0.,0.) 
+      RB1UC2 = (0.,0.) 
+      RJ1US1 = (0.,0.) 
+      RJ1US2 = (0.,0.) 
+      RJ1UC1 = (0.,0.) 
+      RJ1UC2 = (0.,0.) 
+      RV1US1 = (0.,0.) 
+      RV1US2 = (0.,0.) 
+      RV1UC1 = (0.,0.) 
+      RV1UC2 = (0.,0.) 
+
+      RB2U   = (0.,0.) 
+      RJ2U   = (0.,0.) 
+      RV2U   = (0.,0.) 
+      RB2US1 = (0.,0.) 
+      RB2US2 = (0.,0.) 
+      RB2UC1 = (0.,0.) 
+      RB2UC2 = (0.,0.) 
+      RJ2US1 = (0.,0.) 
+      RJ2US2 = (0.,0.) 
+      RJ2UC1 = (0.,0.) 
+      RJ2UC2 = (0.,0.) 
+      RV2US1 = (0.,0.) 
+      RV2US2 = (0.,0.) 
+      RV2UC1 = (0.,0.) 
+      RV2UC2 = (0.,0.) 
+
+      RB3U   = (0.,0.) 
+      RJ3U   = (0.,0.) 
+      RV3U   = (0.,0.) 
+      RB3US1 = (0.,0.) 
+      RB3US2 = (0.,0.) 
+      RB3UC1 = (0.,0.) 
+      RB3UC2 = (0.,0.) 
+      RJ3US1 = (0.,0.) 
+      RJ3US2 = (0.,0.) 
+      RJ3UC1 = (0.,0.) 
+      RJ3UC2 = (0.,0.) 
+      RV3US1 = (0.,0.) 
+      RV3US2 = (0.,0.) 
+      RV3UC1 = (0.,0.) 
+      RV3UC2 = (0.,0.) 
+
+C     GET TIME-DEPENDENT FACTOR FOR PERTURBATION FIELDS
+      EXPGT = (1.,0.)
+      IF (KRE_PERTURB_TIME.EQ.1) THEN
+         IF (REAL(ALNORM)*(TRE-RE_TRELAX).GT.
+     &       LOG(RE_PERTURB_MAX(1)/ABS(REPERTURB))) THEN
+            RE_TRELAX = TRE
+            EXPGT = (1.,0.)
+         ELSE
+            EXPGT=EXP(ALNORM*(TRE-RE_TRELAX))
+         ENDIF
+      ELSEIF (KRE_PERTURB_TIME.EQ.2) THEN
+         IF (REAL(ALNORM)*TRE.GT.LOG(RE_PERTURB_MAX(1)/ABS(REPERTURB))) 
+     &   THEN
+            EXPGT = RE_PERTURB_MAX(1)/RE_PERTURB(1)
+         ELSE
+            EXPGT=EXP(ALNORM*TRE)
+         ENDIF
+      ELSEIF (KRE_PERTURB_TIME.EQ.3) THEN
+         IF (REAL(RE_EIGVAL(1))*TRE.GT.LOG(RE_PERTURB_MAX(1)/
+     &                                 ABS(REPERTURB))) THEN
+            EXPGT = RE_PERTURB_MAX(1)/RE_PERTURB(1)
+     &              *EXP(CI*IMAG(RE_EIGVAL(1))*TRE)
+         ELSE
+            EXPGT=EXP(RE_EIGVAL(1)*TRE)
+         ENDIF
+      ENDIF
+
+      CEXPF = EXP(CI*RNTOR*REFF)*EXPGT
+      DO M=1,MSMAX
+C     DO M=1,0
+         CEXPC  = EXP(CI*RM(M,2)*RECC)*CEXPF
+         CEXPC1 = EXP(CI*RM(M,2)*RECC1)*CEXPF
+         CEXPC2 = EXP(CI*RM(M,2)*RECC2)*CEXPF
+
+         RB1U   = RB1U   + (RB1UR(M) +CI*RB1UI(M)) *CEXPC
+         RJ1U   = RJ1U   + (RJ1UR(M) +CI*RJ1UI(M)) *CEXPC
+         RV1U   = RV1U   + (RV1UR(M) +CI*RV1UI(M)) *CEXPC
+         RB1US1 = RB1US1 + (RB1UR1(M)+CI*RB1UI1(M))*CEXPC
+         RB1US2 = RB1US2 + (RB1UR2(M)+CI*RB1UI2(M))*CEXPC
+         RB1UC1 = RB1UC1 + (RB1UR(M) +CI*RB1UI(M)) *CEXPC1
+         RB1UC2 = RB1UC2 + (RB1UR(M) +CI*RB1UI(M)) *CEXPC2
+         RJ1US1 = RJ1US1 + (RJ1UR1(M)+CI*RJ1UI1(M))*CEXPC
+         RJ1US2 = RJ1US2 + (RJ1UR2(M)+CI*RJ1UI2(M))*CEXPC
+         RJ1UC1 = RJ1UC1 + (RJ1UR(M) +CI*RJ1UI(M)) *CEXPC1
+         RJ1UC2 = RJ1UC2 + (RJ1UR(M) +CI*RJ1UI(M)) *CEXPC2
+         RV1US1 = RV1US1 + (RV1UR1(M)+CI*RV1UI1(M))*CEXPC
+         RV1US2 = RV1US2 + (RV1UR2(M)+CI*RV1UI2(M))*CEXPC
+         RV1UC1 = RV1UC1 + (RV1UR(M) +CI*RV1UI(M)) *CEXPC1
+         RV1UC2 = RV1UC2 + (RV1UR(M) +CI*RV1UI(M)) *CEXPC2
+
+         RB2U   = RB2U   + (RB2UR(M) +CI*RB2UI(M)) *CEXPC
+         RJ2U   = RJ2U   + (RJ2UR(M) +CI*RJ2UI(M)) *CEXPC
+         RV2U   = RV2U   + (RV2UR(M) +CI*RV2UI(M)) *CEXPC
+         RB2US1 = RB2US1 + (RB2UR1(M)+CI*RB2UI1(M))*CEXPC
+         RB2US2 = RB2US2 + (RB2UR2(M)+CI*RB2UI2(M))*CEXPC
+         RB2UC1 = RB2UC1 + (RB2UR(M) +CI*RB2UI(M)) *CEXPC1
+         RB2UC2 = RB2UC2 + (RB2UR(M) +CI*RB2UI(M)) *CEXPC2
+         RJ2US1 = RJ2US1 + (RJ2UR1(M)+CI*RJ2UI1(M))*CEXPC
+         RJ2US2 = RJ2US2 + (RJ2UR2(M)+CI*RJ2UI2(M))*CEXPC
+         RJ2UC1 = RJ2UC1 + (RJ2UR(M) +CI*RJ2UI(M)) *CEXPC1
+         RJ2UC2 = RJ2UC2 + (RJ2UR(M) +CI*RJ2UI(M)) *CEXPC2
+         RV2US1 = RV2US1 + (RV2UR1(M)+CI*RV2UI1(M))*CEXPC
+         RV2US2 = RV2US2 + (RV2UR2(M)+CI*RV2UI2(M))*CEXPC
+         RV2UC1 = RV2UC1 + (RV2UR(M) +CI*RV2UI(M)) *CEXPC1
+         RV2UC2 = RV2UC2 + (RV2UR(M) +CI*RV2UI(M)) *CEXPC2
+
+         RB3U   = RB3U   + (RB3UR(M) +CI*RB3UI(M)) *CEXPC
+         RJ3U   = RJ3U   + (RJ3UR(M) +CI*RJ3UI(M)) *CEXPC
+         RV3U   = RV3U   + (RV3UR(M) +CI*RV3UI(M)) *CEXPC
+         RB3US1 = RB3US1 + (RB3UR1(M)+CI*RB3UI1(M))*CEXPC
+         RB3US2 = RB3US2 + (RB3UR2(M)+CI*RB3UI2(M))*CEXPC
+         RB3UC1 = RB3UC1 + (RB3UR(M) +CI*RB3UI(M)) *CEXPC1
+         RB3UC2 = RB3UC2 + (RB3UR(M) +CI*RB3UI(M)) *CEXPC2
+         RJ3US1 = RJ3US1 + (RJ3UR1(M)+CI*RJ3UI1(M))*CEXPC
+         RJ3US2 = RJ3US2 + (RJ3UR2(M)+CI*RJ3UI2(M))*CEXPC
+         RJ3UC1 = RJ3UC1 + (RJ3UR(M) +CI*RJ3UI(M)) *CEXPC1
+         RJ3UC2 = RJ3UC2 + (RJ3UR(M) +CI*RJ3UI(M)) *CEXPC2
+         RV3US1 = RV3US1 + (RV3UR1(M)+CI*RV3UI1(M))*CEXPC
+         RV3US2 = RV3US2 + (RV3UR2(M)+CI*RV3UI2(M))*CEXPC
+         RV3UC1 = RV3UC1 + (RV3UR(M) +CI*RV3UI(M)) *CEXPC1
+         RV3UC2 = RV3UC2 + (RV3UR(M) +CI*RV3UI(M)) *CEXPC2
+      ENDDO
+
+      RB1UF = RB1U*CI*RNTOR
+      RB2UF = RB2U*CI*RNTOR
+      RB3UF = RB3U*CI*RNTOR
+      RJ1UF = RJ1U*CI*RNTOR
+      RJ2UF = RJ2U*CI*RNTOR
+      RJ3UF = RJ3U*CI*RNTOR
+      RV1UF = RV1U*CI*RNTOR
+      RV2UF = RV2U*CI*RNTOR
+      RV3UF = RV3U*CI*RNTOR
+
+C     ADD OTHER TOROIDAL HARMONICS
+      DO J=1,KRE_NMAX
+C     GET TIME-DEPENDENT FACTOR FOR PERTURBATION FIELDS
+      EXPGT = (1.,0.)
+      IF (KRE_PERTURB_TIME.EQ.1) THEN
+         IF (REAL(ALNORM)*(TRE-RE_TRELAX).GT.
+     &       LOG(RE_PERTURB_MAX(J+1)/ABS(RE_PERTURB(J+1)))) THEN
+            RE_TRELAX = TRE
+            EXPGT = (1.,0.)
+         ELSE
+            EXPGT=EXP(ALNORM*(TRE-RE_TRELAX))
+         ENDIF
+      ELSEIF (KRE_PERTURB_TIME.EQ.2) THEN
+         IF (REAL(ALNORM)*TRE.GT.LOG(RE_PERTURB_MAX(J+1)/
+     &                           ABS(RE_PERTURB(J+1)))) THEN
+            EXPGT = RE_PERTURB_MAX(J+1)/RE_PERTURB(J+1)
+         ELSE
+            EXPGT=EXP(ALNORM*TRE)
+         ENDIF
+      ELSEIF (KRE_PERTURB_TIME.EQ.3) THEN
+         IF (REAL(RE_EIGVAL(J+1))*TRE.GT.LOG(RE_PERTURB_MAX(J+1)/
+     &                                   ABS(RE_PERTURB(J+1)))) THEN
+            EXPGT = RE_PERTURB_MAX(J+1)/RE_PERTURB(J+1)
+     &              *EXP(CI*IMAG(RE_EIGVAL(J+1))*TRE)
+         ELSE
+            EXPGT=EXP(RE_EIGVAL(J+1)*TRE)
+         ENDIF
+      ENDIF
+
+      EXPGT = EXPGT*RE_PERTURB(J+1)/REPERTURB
+      CEXPF = EXP(CI*RNTORA(J)*REFF)*EXPGT
+      DO M=1,MSMAX
+         CEXPC  = EXP(CI*RM(M,2)*RECC)*CEXPF
+         CEXPC1 = EXP(CI*RM(M,2)*RECC1)*CEXPF
+         CEXPC2 = EXP(CI*RM(M,2)*RECC2)*CEXPF
+
+         RB1U   = RB1U   + (RB1AR(M,J) +CI*RB1AI(M,J)) *CEXPC
+         RJ1U   = RJ1U   + (RJ1AR(M,J) +CI*RJ1AI(M,J)) *CEXPC
+         RV1U   = RV1U   + (RV1AR(M,J) +CI*RV1AI(M,J)) *CEXPC
+         RB1US1 = RB1US1 + (RB1AR1(M,J)+CI*RB1AI1(M,J))*CEXPC
+         RB1US2 = RB1US2 + (RB1AR2(M,J)+CI*RB1AI2(M,J))*CEXPC
+         RB1UC1 = RB1UC1 + (RB1AR(M,J) +CI*RB1AI(M,J)) *CEXPC1
+         RB1UC2 = RB1UC2 + (RB1AR(M,J) +CI*RB1AI(M,J)) *CEXPC2
+         RJ1US1 = RJ1US1 + (RJ1AR1(M,J)+CI*RJ1AI1(M,J))*CEXPC
+         RJ1US2 = RJ1US2 + (RJ1AR2(M,J)+CI*RJ1AI2(M,J))*CEXPC
+         RJ1UC1 = RJ1UC1 + (RJ1AR(M,J) +CI*RJ1AI(M,J)) *CEXPC1
+         RJ1UC2 = RJ1UC2 + (RJ1AR(M,J) +CI*RJ1AI(M,J)) *CEXPC2
+         RV1US1 = RV1US1 + (RV1AR1(M,J)+CI*RV1AI1(M,J))*CEXPC
+         RV1US2 = RV1US2 + (RV1AR2(M,J)+CI*RV1AI2(M,J))*CEXPC
+         RV1UC1 = RV1UC1 + (RV1AR(M,J) +CI*RV1AI(M,J)) *CEXPC1
+         RV1UC2 = RV1UC2 + (RV1AR(M,J) +CI*RV1AI(M,J)) *CEXPC2
+                                             
+         RB2U   = RB2U   + (RB2AR(M,J) +CI*RB2AI(M,J)) *CEXPC
+         RJ2U   = RJ2U   + (RJ2AR(M,J) +CI*RJ2AI(M,J)) *CEXPC
+         RV2U   = RV2U   + (RV2AR(M,J) +CI*RV2AI(M,J)) *CEXPC
+         RB2US1 = RB2US1 + (RB2AR1(M,J)+CI*RB2AI1(M,J))*CEXPC
+         RB2US2 = RB2US2 + (RB2AR2(M,J)+CI*RB2AI2(M,J))*CEXPC
+         RB2UC1 = RB2UC1 + (RB2AR(M,J) +CI*RB2AI(M,J)) *CEXPC1
+         RB2UC2 = RB2UC2 + (RB2AR(M,J) +CI*RB2AI(M,J)) *CEXPC2
+         RJ2US1 = RJ2US1 + (RJ2AR1(M,J)+CI*RJ2AI1(M,J))*CEXPC
+         RJ2US2 = RJ2US2 + (RJ2AR2(M,J)+CI*RJ2AI2(M,J))*CEXPC
+         RJ2UC1 = RJ2UC1 + (RJ2AR(M,J) +CI*RJ2AI(M,J)) *CEXPC1
+         RJ2UC2 = RJ2UC2 + (RJ2AR(M,J) +CI*RJ2AI(M,J)) *CEXPC2
+         RV2US1 = RV2US1 + (RV2AR1(M,J)+CI*RV2AI1(M,J))*CEXPC
+         RV2US2 = RV2US2 + (RV2AR2(M,J)+CI*RV2AI2(M,J))*CEXPC
+         RV2UC1 = RV2UC1 + (RV2AR(M,J) +CI*RV2AI(M,J)) *CEXPC1
+         RV2UC2 = RV2UC2 + (RV2AR(M,J) +CI*RV2AI(M,J)) *CEXPC2
+
+         RB3U   = RB3U   + (RB3AR(M,J) +CI*RB3AI(M,J)) *CEXPC
+         RJ3U   = RJ3U   + (RJ3AR(M,J) +CI*RJ3AI(M,J)) *CEXPC
+         RV3U   = RV3U   + (RV3AR(M,J) +CI*RV3AI(M,J)) *CEXPC
+         RB3US1 = RB3US1 + (RB3AR1(M,J)+CI*RB3AI1(M,J))*CEXPC
+         RB3US2 = RB3US2 + (RB3AR2(M,J)+CI*RB3AI2(M,J))*CEXPC
+         RB3UC1 = RB3UC1 + (RB3AR(M,J) +CI*RB3AI(M,J)) *CEXPC1
+         RB3UC2 = RB3UC2 + (RB3AR(M,J) +CI*RB3AI(M,J)) *CEXPC2
+         RJ3US1 = RJ3US1 + (RJ3AR1(M,J)+CI*RJ3AI1(M,J))*CEXPC
+         RJ3US2 = RJ3US2 + (RJ3AR2(M,J)+CI*RJ3AI2(M,J))*CEXPC
+         RJ3UC1 = RJ3UC1 + (RJ3AR(M,J) +CI*RJ3AI(M,J)) *CEXPC1
+         RJ3UC2 = RJ3UC2 + (RJ3AR(M,J) +CI*RJ3AI(M,J)) *CEXPC2
+         RV3US1 = RV3US1 + (RV3AR1(M,J)+CI*RV3AI1(M,J))*CEXPC
+         RV3US2 = RV3US2 + (RV3AR2(M,J)+CI*RV3AI2(M,J))*CEXPC
+         RV3UC1 = RV3UC1 + (RV3AR(M,J) +CI*RV3AI(M,J)) *CEXPC1
+         RV3UC2 = RV3UC2 + (RV3AR(M,J) +CI*RV3AI(M,J)) *CEXPC2
+
+         RB1UF  = RB1UF + (RB1AR(M,J)+CI*RB1AI(M,J))*CEXPC*CI*RNTORA(J)
+         RB2UF  = RB2UF + (RB2AR(M,J)+CI*RB2AI(M,J))*CEXPC*CI*RNTORA(J)
+         RB3UF  = RB3UF + (RB3AR(M,J)+CI*RB3AI(M,J))*CEXPC*CI*RNTORA(J)
+         RJ1UF  = RJ1UF + (RJ1AR(M,J)+CI*RJ1AI(M,J))*CEXPC*CI*RNTORA(J)
+         RJ2UF  = RJ2UF + (RJ2AR(M,J)+CI*RJ2AI(M,J))*CEXPC*CI*RNTORA(J)
+         RJ3UF  = RJ3UF + (RJ3AR(M,J)+CI*RJ3AI(M,J))*CEXPC*CI*RNTORA(J)
+         RV1UF  = RV1UF + (RV1AR(M,J)+CI*RV1AI(M,J))*CEXPC*CI*RNTORA(J)
+         RV2UF  = RV2UF + (RV2AR(M,J)+CI*RV2AI(M,J))*CEXPC*CI*RNTORA(J)
+         RV3UF  = RV3UF + (RV3AR(M,J)+CI*RV3AI(M,J))*CEXPC*CI*RNTORA(J)
+      ENDDO
+      ENDDO
+
+C     GET HAT_B, HAT_J, HAT_V components
+      IF (RESS1.LE.1.) THEN 
+      HB1S1 =REAL(REPERTURB*RB1US1)
+      HB2S1 =REAL(REPERTURB*RB2US1)+REQPSIP1
+      HB3S1 =REAL(REPERTURB*RB3US1)+REQT1*REQJACS1/REQREQ2S1
+      HJ1S1 =REAL(REPERTURJ*RJ1US1) 
+      HJ2S1 =REAL(REPERTURJ*RJ2US1)-REQPSIP1*REQTP1 
+      HJ3S1 =REAL(REPERTURJ*RJ3US1)-REQJACS1*(REQPP1+REQT1*REQTP1/
+     &                 REQREQ2S1)
+      HV1S1 =REAL(REPERTURB*RV1US1)  
+      HV2S1 =REAL(REPERTURB*RV2US1)-REQPSIP1*REQROT1/REQJACS1
+      HV3S1 =REAL(REPERTURB*RV3US1)+REQRHOU1+REQT1*REQROT1/
+     &                 REQBEQ2S1 
+      ELSE
+      HB1S1 =REAL(REPERTURB*RB1US1)+REQBV1S1 
+      HB2S1 =REAL(REPERTURB*RB2US1)+REQBV2S1
+      HB3S1 =REAL(REPERTURB*RB3US1)+REQBV3S1
+      ENDIF
+
+      IF (RESS2.LE.1.) THEN 
+      HB1S2 =REAL(REPERTURB*RB1US2)
+      HB2S2 =REAL(REPERTURB*RB2US2)+REQPSIP2
+      HB3S2 =REAL(REPERTURB*RB3US2)+REQT2*REQJACS2/REQREQ2S2
+      HJ1S2 =REAL(REPERTURJ*RJ1US2) 
+      HJ2S2 =REAL(REPERTURJ*RJ2US2)-REQPSIP2*REQTP2 
+      HJ3S2 =REAL(REPERTURJ*RJ3US2)-REQJACS2*(REQPP2+REQT2*REQTP2/
+     &                  REQREQ2S2)
+      HV1S2 =REAL(REPERTURB*RV1US2)  
+      HV2S2 =REAL(REPERTURB*RV2US2)-REQPSIP2*REQROT2/REQJACS2
+      HV3S2 =REAL(REPERTURB*RV3US2)+REQRHOU2+REQT2*REQROT2/
+     &                 REQBEQ2S2 
+      ELSE
+      HB1S2 =REAL(REPERTURB*RB1US2)+REQBV1S2
+      HB2S2 =REAL(REPERTURB*RB2US2)+REQBV2S2
+      HB3S2 =REAL(REPERTURB*RB3US2)+REQBV3S2
+      ENDIF
+
+      IF (RESS.LE.1.) THEN 
+      HB1   =REAL(REPERTURB*RB1U  )
+      HJ1   =REAL(REPERTURJ*RJ1U  ) 
+      HV1   =REAL(REPERTURB*RV1U  )  
+      HB1C1 =REAL(REPERTURB*RB1UC1)
+      HB1C2 =REAL(REPERTURB*RB1UC2)
+      HJ1C1 =REAL(REPERTURJ*RJ1UC1)
+      HJ1C2 =REAL(REPERTURJ*RJ1UC2)
+      HV1C1 =REAL(REPERTURB*RV1UC1)
+      HV1C2 =REAL(REPERTURB*RV1UC2)
+      HB1F  =REAL(REPERTURB*RB1UF )
+      HJ1F  =REAL(REPERTURJ*RJ1UF )
+      HV1F  =REAL(REPERTURB*RV1UF )
+
+      HB2   =REAL(REPERTURB*RB2U  )+REQPSIP
+      HJ2   =REAL(REPERTURJ*RJ2U  )-REQPSIP*REQTP 
+      HV2   =REAL(REPERTURB*RV2U  )-REQPSIP*REQROT/REQJAC
+      HB2C1 =REAL(REPERTURB*RB2UC1)+REQPSIP
+      HB2C2 =REAL(REPERTURB*RB2UC2)+REQPSIP
+      HJ2C1 =REAL(REPERTURJ*RJ2UC1)-REQPSIP*REQTP 
+      HJ2C2 =REAL(REPERTURJ*RJ2UC2)-REQPSIP*REQTP 
+      HV2C1 =REAL(REPERTURB*RV2UC1)-REQPSIP*REQROT/REQJACC1
+      HV2C2 =REAL(REPERTURB*RV2UC2)-REQPSIP*REQROT/REQJACC2
+      HB2F  =REAL(REPERTURB*RB2UF ) 
+      HJ2F  =REAL(REPERTURJ*RJ2UF ) 
+      HV2F  =REAL(REPERTURB*RV2UF ) 
+
+      HB3   =REAL(REPERTURB*RB3U  )+REQT*REQJAC/REQREQ2
+      HJ3   =REAL(REPERTURJ*RJ3U  )-REQJAC*(REQPP+REQT*REQTP/
+     &                 REQREQ2)
+      HV3   =REAL(REPERTURB*RV3U  )+REQRHOU+REQT*REQROT/REQBEQ2 
+      HB3C1 =REAL(REPERTURB*RB3UC1)+REQT*REQJACC1/REQREQ2C1
+      HB3C2 =REAL(REPERTURB*RB3UC2)+REQT*REQJACC2/REQREQ2C2
+      HJ3C1 =REAL(REPERTURJ*RJ3UC1)-REQJACC1*(REQPP+REQT*REQTP/
+     &                  REQREQ2C1)
+      HJ3C2 =REAL(REPERTURJ*RJ3UC2)-REQJACC2*(REQPP+REQT*REQTP/
+     &                  REQREQ2C2)
+      HV3C1 =REAL(REPERTURB*RV3UC1)+REQRHOU+REQT*REQROT/REQBEQ2C1 
+      HV3C2 =REAL(REPERTURB*RV3UC2)+REQRHOU+REQT*REQROT/REQBEQ2C2 
+      HB3F  =REAL(REPERTURB*RB3UF )
+      HJ3F  =REAL(REPERTURJ*RJ3UF )
+      HV3F  =REAL(REPERTURB*RV3UF )
+      ELSE
+      HB1   =REAL(REPERTURB*RB1U  )+REQBV1
+      HJ1   =0. 
+      HV1   =0.
+      HB1C1 =REAL(REPERTURB*RB1UC1)+REQBV1C1
+      HB1C2 =REAL(REPERTURB*RB1UC2)+REQBV1C2
+      HJ1C1 =0. 
+      HJ1C2 =0. 
+      HV1C1 =0.
+      HV1C2 =0.
+      HB1F  =REAL(REPERTURB*RB1UF )
+      HJ1F  =0.
+      HV1F  =0.
+
+      HB2   =REAL(REPERTURB*RB2U  )+REQBV2
+      HJ2   =0.
+      HV2   =0.
+      HB2C1 =REAL(REPERTURB*RB2UC1)+REQBV2C1
+      HB2C2 =REAL(REPERTURB*RB2UC2)+REQBV2C2
+      HJ2C1 =0.
+      HJ2C2 =0.
+      HV2C1 =0.
+      HV2C2 =0.
+      HB2F  =REAL(REPERTURB*RB2UF ) 
+      HJ2F  =0.
+      HV2F  =0.
+
+      HB3   =REAL(REPERTURB*RB3U  )+REQBV3
+      HJ3   =0.
+      HV3   =0.
+      HB3C1 =REAL(REPERTURB*RB3UC1)+REQBV3C1
+      HB3C2 =REAL(REPERTURB*RB3UC2)+REQBV3C2
+      HJ3C1 =0.
+      HJ3C2 =0.
+      HV3C1 =0.
+      HV3C2 =0.
+      HB3F  =REAL(REPERTURB*RB3UF )
+      HJ3F  =0.
+      HV3F  =0.
+      ENDIF
+
+
+C     GET B,DB/DS,DB/DCHI,DB/DPHI
+      REB   = SQRT(REQG11*HB1**2    +2.*REQG12*HB1*HB2+
+     &             REQG22*HB2**2    +REQREQ2*HB3**2)/REQJAC
+      REBS1 = SQRT(REQG11S1*HB1S1**2+2.*REQG12S1*HB1S1*HB2S1+
+     &             REQG22S1*HB2S1**2+REQREQ2S1*HB3S1**2)/REQJACS1
+      REBS2 = SQRT(REQG11S2*HB1S2**2+2.*REQG12S2*HB1S2*HB2S2+
+     &             REQG22S2*HB2S2**2+REQREQ2S2*HB3S2**2)/REQJACS2
+      REBC1 = SQRT(REQG11C1*HB1C1**2+2.*REQG12C1*HB1C1*HB2C1+
+     &             REQG22C1*HB2C1**2+REQREQ2C1*HB3C1**2)/REQJACC1
+      REBC2 = SQRT(REQG11C2*HB1C2**2+2.*REQG12C2*HB1C2*HB2C2+
+     &             REQG22C2*HB2C2**2+REQREQ2C2*HB3C2**2)/REQJACC2
+      REBS  = (REBS2-REBS1)/2./HSS
+      REBC  = (REBC2-REBC1)/2./HCC
+      REBF  = (REQG11*HB1*HB1F+REQG12*(HB1*HB2F+HB1F*HB2)+
+     &         REQG22*HB2*HB2F+REQREQ2*HB3*HB3F)/REQJAC**2/REB
+
+C     GET B DOT J, E_PARA, AND J DOT V
+      REBDOTJ = (REQG11*HB1*HJ1+REQG12*(HB1*HJ2+HB2*HJ1)+
+     &           REQG22*HB2*HJ2+REQREQ2*HB3*HJ3)/REQJAC**2
+      REEPARA = REQETA*REBDOTJ/REB
+      REBDOTV = (REQG11-(REQPSIP*REQG22/REQJAC)**2/REQBEQ2)/REQJAC*
+     &          HV1*HB1 + 
+     &          (1.-REQPSIP**2*REQG22/REQJAC**2/REQBEQ2)*REQG12/
+     &          REQJAC*HV1*HB2 -
+     &          REQPSIP*REQT*REQG12/REQJAC**2/REQBEQ2*HV1*HB3 +
+     &          (REQG12*HB1+REQG22*HB2)*REQT/REQJAC/REQBEQ2*HV2 -
+     &          REQPSIP*REQREQ2*REQG22/REQJAC**2/REQBEQ2*HV2*HB3 +
+     &          (REQG12*HB1+REQG22*HB2)*REQPSIP/REQJAC**2*HV3 + 
+     &          REQT/REQJAC*HV3*HB3
+
+C     GET (S,CHI,PHI)-PROJECTIONS OF VECTOR QUANTITIES
+      REBGRAD(1) = HB1/REQJAC
+      REBGRAD(2) = HB2/REQJAC
+      REBGRAD(3) = HB3/REQJAC
+
+      REJGRAD(1) = HJ1/REQJAC
+      REJGRAD(2) = HJ2/REQJAC
+      REJGRAD(3) = HJ3/REQJAC
+
+      REVGRAD(1) = HV1
+      REVGRAD(2) =-REQPSIP**2*REQG12/REQJAC**2/REQBEQ2*HV1 + 
+     &             REQT/REQBEQ2*HV2 + REQPSIP/REQJAC*HV3
+      REVGRAD(3) =-(REQT*REQG12/REQREQ2*HV1+REQG22*HV2)*
+     &             REQPSIP/REQJAC/REQBEQ2 + REQT/REQREQ2*HV3
+      
+      REJBGRAD(1) = (REQG12*(HB3*HJ1-HB1*HJ3)-
+     &               REQG22*(HB2*HJ3-HB3*HJ2))*REQREQ2/REQJAC**3   
+      REJBGRAD(2) = (REQG12*(HB2*HJ3-HB3*HJ2)-
+     &               REQG11*(HB3*HJ1-HB1*HJ3))*REQREQ2/REQJAC**3   
+      REJBGRAD(3) = 1./REQJAC/REQREQ2*(HB2*HJ1-HB1*HJ2)
+
+      REBBGRAD(1) = ((REQG12*HB1+REQG22*HB2)*REBF - 
+     &               REQREQ2*REBC*HB3)/REQJAC**2
+      REBBGRAD(2) = (-(REQG11*HB1+REQG12*HB2)*REBF + 
+     &               REQREQ2*REBS*HB3)/REQJAC**2
+      REBBGRAD(3) = ((REQG11*REBC-REQG12*REBS)*HB1 + 
+     &               (REQG12*REBC-REQG22*REBS)*HB2)/REQJAC**2
+
+C     COMPUTE REBGRADV
+      REBGRADV = 0. 
+      IF ((KRE_STAR.EQ.2.OR.KRE_STAR.EQ.3.OR.KRE_STAR.EQ.5).AND.
+     &    RESS2.LE.1.) THEN
+      REVGRAD2S1 =-REQPSIP1**2*REQG12S1/REQJACS1**2/REQBEQ2S1*HV1S1 + 
+     &             REQT1/REQBEQ2S1*HV2S1 + REQPSIP1/REQJACS1*HV3S1
+      REVGRAD2S2 =-REQPSIP2**2*REQG12S2/REQJACS2**2/REQBEQ2S2*HV1S2 + 
+     &             REQT2/REQBEQ2S2*HV2S2 + REQPSIP2/REQJACS2*HV3S2
+      REVGRAD2C1 =-REQPSIP**2*REQG12C1/REQJACC1**2/REQBEQ2C1*HV1C1 + 
+     &             REQT/REQBEQ2C1*HV2C1 + REQPSIP/REQJACC1*HV3C1
+      REVGRAD2C2 =-REQPSIP**2*REQG12C2/REQJACC2**2/REQBEQ2C2*HV1C2 + 
+     &             REQT/REQBEQ2C2*HV2C2 + REQPSIP/REQJACC2*HV3C2
+      REVGRAD2F  =-REQPSIP**2*REQG12/REQJAC**2/REQBEQ2*HV1F + 
+     &             REQT/REQBEQ2*HV2F + REQPSIP/REQJAC*HV3F
+
+      REVGRAD3S1 =-(REQT1*REQG12S1/REQREQ2S1*HV1S1+REQG22S1*HV2S1)*
+     &             REQPSIP1/REQJACS1/REQBEQ2S1 + REQT1/REQREQ2S1*HV3S1
+      REVGRAD3S2 =-(REQT2*REQG12S2/REQREQ2S2*HV1S2+REQG22S2*HV2S2)*
+     &             REQPSIP2/REQJACS2/REQBEQ2S2 + REQT2/REQREQ2S2*HV3S2
+      REVGRAD3C1 =-(REQT*REQG12C1/REQREQ2C1*HV1C1+REQG22C1*HV2C1)*
+     &             REQPSIP/REQJACC1/REQBEQ2C1 + REQT/REQREQ2C1*HV3C1
+      REVGRAD3C2 =-(REQT*REQG12C2/REQREQ2C2*HV1C2+REQG22C2*HV2C2)*
+     &             REQPSIP/REQJACC2/REQBEQ2C2 + REQT/REQREQ2C2*HV3C2
+      REVGRAD3F  =-(REQT*REQG12/REQREQ2*HV1F+REQG22*HV2F)*
+     &             REQPSIP/REQJAC/REQBEQ2 + REQT/REQREQ2*HV3F
+
+         HE1C1 = REQETA*(REQG11C1*HJ1C1+REQG12C1*HJ2C1)/REQJACC1 - 
+     &           (HB3C1*REVGRAD2C1-HB2C1*REVGRAD3C1)
+         HE1C2 = REQETA*(REQG11C2*HJ1C2+REQG12C2*HJ2C2)/REQJACC2 - 
+     &           (HB3C2*REVGRAD2C2-HB2C2*REVGRAD3C2)
+         HE2S1 = REQETAS1*(REQG12S1*HJ1S1+REQG22S1*HJ2S1)/REQJACS1 - 
+     &           (HB1S1*REVGRAD3S1-HB3S1*HV1S1)
+         HE2S2 = REQETAS2*(REQG12S2*HJ1S2+REQG22S2*HJ2S2)/REQJACS2 - 
+     &           (HB1S2*REVGRAD3S2-HB3S2*HV1S2)
+         HE3S1 = REQETAS1*REQREQ2S1*HJ3S1/REQJACS1 - 
+     &           (HB2S1*HV1S1-HB1S1*REVGRAD2S1)
+         HE3S2 = REQETAS2*REQREQ2S2*HJ3S2/REQJACS2 - 
+     &           (HB2S2*HV1S2-HB1S2*REVGRAD2S2)
+         HE3C1 = REQETA*REQREQ2C1*HJ3C1/REQJACC1 - 
+     &           (HB2C1*HV1C1-HB1C1*REVGRAD2C1)
+         HE3C2 = REQETA*REQREQ2C2*HJ3C2/REQJACC2 - 
+     &           (HB2C2*HV1C2-HB1C2*REVGRAD2C2)
+         HE1F  = REQETA*(REQG11*HJ1F+REQG12*HJ2F)/REQJAC -
+     &           (HB3F*REVGRAD(2)-HB2F*REVGRAD(3)) -
+     &           (HB3*REVGRAD2F - HB2*REVGRAD3F)
+         HE2F  = REQETA*(REQG12*HJ1F+REQG22*HJ2F)/REQJAC -
+     &           (HB1F*REVGRAD(3)-HB3F*HV1) -
+     &           (HB1*REVGRAD3F - HB3*HV1F)
+
+         HH1 = (HE3C2-HE3C1)/2./HCC - HE2F
+         HH2 = HE1F - (HE3S2-HE3S1)/2./HSS
+         HH3 = (HE2S2-HE2S1)/2./HSS - (HE1C2-HE1C1)/2./HCC    
+
+         HF1 = (REQG11*HH1 + REQG12*HH2)/REQJAC
+         HF2 = (REQG12*HH1 + REQG22*HH2)/REQJAC
+         HF3 = REQREQ2*HH3/REQJAC
+
+         HB1L = REQG11*HB1 + REQG12*HB2
+         HB2L = REQG12*HB1 + REQG22*HB2
+         HB3L = REQREQ2*HB3
+
+         REBGRADV(1) = (HF3*HB2L-HF2*HB3L)/REQJAC
+         REBGRADV(2) = (HF1*HB3L-HF3*HB1L)/REQJAC
+         REBGRADV(3) = (HF2*HB1L-HF1*HB2L)/REQJAC
+      ENDIF
+      
+      RECC = RECCS
+      DEALLOCATE(B1X,B2X,B3X)
+      IF (KRE_NMAX.GT.0) DEALLOCATE(CA,CAM,VCA,VCAM)
+     
+
+      RETURN
+      END
+
+      SUBROUTINE RE_FIELD_DATA
+C     ==========================================================
+      USE DIMENSIM
+      USE GLOBALM
+      USE RCOMDM
+      USE GVACUUMM
+      USE REORBITM
+      USE MPIENV
+
+      IMPLICIT NONE
+
+      INTEGER NCHIP1,I,J,M,KCHECK
+      REAL*8  R9,RCHIH,TMP1,TMP2,TMP3,TMP4,TMP5,TMP6
+      COMPLEX*16,DIMENSION(:,:),ALLOCATABLE::B1X,B2X,B3X
+      REAL*8,DIMENSION(:),ALLOCATABLE::CA,CAM,VCA,VCAM
+      CHARACTER(LEN=64) FILENAME
+
+      KCHECK = 1
+      R9     =-1.0E30
+
+C     CALCULATE SOME BASIC PARAMETERS
+      CALL GET_RE_CONST
+
+C     COMPUTE EQUILIBRIUM B-FIELD IN VACUUM REGION
+      IF (KRE_VAC.GT.0) CALL RE_BEQ_VAC
+
+      NTRE = NRP1
+      IF (KRE_VAC.GT.0) NTRE = NR + NVG
+
+      ALLOCATE(B1X(NVG,MSMAX),B2X(NVG,MSMAX),B3X(NVG,MSMAX))  
+
+C     PREPARE 1D AND 2D SPLINE COEFFIENTS FOR FIELD COMPUTATIONS
+      NCHIP1 = NCHI + 1
+
+      IF (.NOT.ALLOCATED(RECHI)) ALLOCATE(RECHI(NCHIP1))
+      RCHIH    = 2.*PI/NCHI
+      RECHI(1) = 0.
+      DO J=2,NCHIP1
+         RECHI(J) = RECHI(J-1) + RCHIH
+      ENDDO
+
+      IF (.NOT.ALLOCATED(SCPSIP)) ALLOCATE(SCPSIP(NRP1),SCT(NRP1),
+     &   SCPP(NRP1),SCTP(NRP1),SCROT(NRP1),SCRHOU(NRP1),SCETA(NRP1))
+
+      IF (.NOT.ALLOCATED(SPJAC)) ALLOCATE(
+     &   SPJAC(NRP1,NCHIP1),SPREQ2(NRP1,NCHIP1),SPBEQ2(NRP1,NCHIP1),
+     &   SPG11(NRP1,NCHIP1),SPG12(NRP1,NCHIP1), SPG22(NRP1,NCHIP1),
+     &   SCJAC(NRP1,NCHIP1),SCREQ2(NRP1,NCHIP1),SCBEQ2(NRP1,NCHIP1),
+     &   SCG11(NRP1,NCHIP1),SCG12(NRP1,NCHIP1), SCG22(NRP1,NCHIP1))
+
+      IF (KRE_VAC.GT.0.AND.(.NOT.ALLOCATED(VPJAC))) ALLOCATE(
+     &   VPJAC(NVG,NCHIP1),VPREQ2(NVG,NCHIP1),VPBEQ2(NVG,NCHIP1),
+     &   VPG11(NVG,NCHIP1),VPG12(NVG,NCHIP1), VPG22(NVG,NCHIP1),
+     &   VPZEQ(NVG,NCHIP1),
+     &   VCJAC(NVG,NCHIP1),VCREQ2(NVG,NCHIP1),VCBEQ2(NVG,NCHIP1),
+     &   VCG11(NVG,NCHIP1),VCG12(NVG,NCHIP1), VCG22(NVG,NCHIP1),
+     &   VCZEQ(NVG,NCHIP1))
+
+      IF (.NOT.ALLOCATED(SCB1UR)) ALLOCATE(
+     &   SCB1UR(NRP1,MSMAX),SCB2UR(NRP1,MSMAX),SCB3UR(NRP1,MSMAX),
+     &   SCB1UI(NRP1,MSMAX),SCB2UI(NRP1,MSMAX),SCB3UI(NRP1,MSMAX),
+     &   SCJ1UR(NRP1,MSMAX),SCJ2UR(NRP1,MSMAX),SCJ3UR(NRP1,MSMAX),
+     &   SCJ1UI(NRP1,MSMAX),SCJ2UI(NRP1,MSMAX),SCJ3UI(NRP1,MSMAX),
+     &   SCV1UR(NRP1,MSMAX),SCV2UR(NRP1,MSMAX),SCV3UR(NRP1,MSMAX),
+     &   SCV1UI(NRP1,MSMAX),SCV2UI(NRP1,MSMAX),SCV3UI(NRP1,MSMAX))
+     
+      IF (KRE_VAC.GT.0.AND.(.NOT.ALLOCATED(VCB1UR))) ALLOCATE(
+     &   VCB1UR(NVG,MSMAX),VCB2UR(NVG,MSMAX),VCB3UR(NVG,MSMAX),
+     &   VCB1UI(NVG,MSMAX),VCB2UI(NVG,MSMAX),VCB3UI(NVG,MSMAX))
+
+      CALL SPLINE(CS,DPSIDS,NRP1,R9,R9,SCPSIP)
+      CALL SPLINE(CS,T,     NRP1,R9,R9,SCT)
+      CALL SPLINE(CS,PPEQ,  NRP1,R9,R9,SCPP)
+      CALL SPLINE(CS,TP,    NRP1,R9,R9,SCTP)
+      CALL SPLINE(CS,ROT,   NRP1,R9,R9,SCROT)
+      CALL SPLINE(CS,RHOU,  NRP1,R9,R9,SCRHOU)
+      CALL SPLINE(CS,RESIST,NRP1,R9,R9,SCETA)
+
+      DO J=1,NCHI
+      DO I=2,NRP1
+         SPJAC(I,J)  = RJA(I,J)
+         SPREQ2(I,J) = REQ(I,J)**2
+         SPBEQ2(I,J) = G22L(I,J)*DPSIDS(I)**2/RJA(I,J)**2 +
+     &                 T(I)**2/REQ(I,J)**2
+         SPG11(I,J)  = G11L(I,J)
+         SPG12(I,J)  = G12L(I,J)
+         SPG22(I,J)  = G22L(I,J)
+      ENDDO
+      SPJAC(1,J)  = SPJAC(2,J) 
+      SPREQ2(1,J) = SPREQ2(2,J) 
+      SPBEQ2(1,J) = SPBEQ2(2,J) 
+      SPG11(1,J)  = SPG11(2,J) 
+      SPG12(1,J)  = SPG12(2,J) 
+      SPG22(1,J)  = SPG22(2,J) 
+      ENDDO
+
+      DO I=1,NRP1
+         SPJAC (I,NCHIP1) = SPJAC(I,1)
+         SPREQ2(I,NCHIP1) = SPREQ2(I,1)
+         SPBEQ2(I,NCHIP1) = SPBEQ2(I,1)
+         SPG11 (I,NCHIP1) = SPG11(I,1)
+         SPG12 (I,NCHIP1) = SPG12(I,1)
+         SPG22 (I,NCHIP1) = SPG22(I,1)
+      ENDDO
+
+      IF (KRE_VAC.GT.0) THEN
+      DO J=1,NCHI
+      DO I=1,NVG
+         VPJAC(I,J)  = VRJA(I,J)
+         VPREQ2(I,J) = VRR(I,J)**2
+         VPZEQ(I,J)  = VRZ(I,J)
+         VPBEQ2(I,J) = VPBVS(I,J)
+         VPG11(I,J)  = VRG11L(I,J)
+         VPG12(I,J)  = VRG12L(I,J)
+         VPG22(I,J)  = VRG22L(I,J)
+      ENDDO
+      ENDDO
+
+      DO I=1,NVG 
+         VPJAC (I,NCHIP1) = VPJAC(I,1)
+         VPREQ2(I,NCHIP1) = VPREQ2(I,1)
+         VPZEQ (I,NCHIP1) = VPZEQ(I,1)
+         VPBEQ2(I,NCHIP1) = VPBEQ2(I,1)
+         VPG11 (I,NCHIP1) = VPG11(I,1)
+         VPG12 (I,NCHIP1) = VPG12(I,1)
+         VPG22 (I,NCHIP1) = VPG22(I,1)
+      ENDDO
+      ENDIF
+
+      CALL SPLINE2D(SPJAC, CS,RECHI,NRP1,NCHIP1,NRP1,SCJAC)
+      CALL SPLINE2D(SPREQ2,CS,RECHI,NRP1,NCHIP1,NRP1,SCREQ2)
+      CALL SPLINE2D(SPBEQ2,CS,RECHI,NRP1,NCHIP1,NRP1,SCBEQ2)
+      CALL SPLINE2D(SPG11, CS,RECHI,NRP1,NCHIP1,NRP1,SCG11)
+      CALL SPLINE2D(SPG12, CS,RECHI,NRP1,NCHIP1,NRP1,SCG12)
+      CALL SPLINE2D(SPG22, CS,RECHI,NRP1,NCHIP1,NRP1,SCG22)
+
+      IF (KRE_VAC.GT.0) THEN
+      CALL SPLINE2D(VPJAC, VCS,RECHI,NVG,NCHIP1,NVG,VCJAC)
+      CALL SPLINE2D(VPREQ2,VCS,RECHI,NVG,NCHIP1,NVG,VCREQ2)
+      CALL SPLINE2D(VPZEQ, VCS,RECHI,NVG,NCHIP1,NVG,VCZEQ)
+      CALL SPLINE2D(VPBEQ2,VCS,RECHI,NVG,NCHIP1,NVG,VCBEQ2)
+      CALL SPLINE2D(VPG11, VCS,RECHI,NVG,NCHIP1,NVG,VCG11)
+      CALL SPLINE2D(VPG12, VCS,RECHI,NVG,NCHIP1,NVG,VCG12)
+      CALL SPLINE2D(VPG22, VCS,RECHI,NVG,NCHIP1,NVG,VCG22)
+      ENDIF
+
+      IF (KRE_VAC.GT.0) THEN
+         CALL SPLINE2D(VPBV1,VCS,RECHI,NV,NCHIP1,NV,VCBV1)
+         CALL SPLINE2D(VPBV2,VCS,RECHI,NV,NCHIP1,NV,VCBV2)
+         CALL SPLINE2D(VPBV3,VCS,RECHI,NV,NCHIP1,NV,VCBV3)
+      ENDIF
+
+      DO M=1,MSMAX
+         CALL SPLINE(CS, REAL(B1U(:,M)),NRP1,R9,R9,SCB1UR(:,M)) 
+         CALL SPLINE(CS, IMAG(B1U(:,M)),NRP1,R9,R9,SCB1UI(:,M)) 
+         CALL SPLINE(CSM,REAL(B2U(:,M)),NR,  R9,R9,SCB2UR(:,M)) 
+         CALL SPLINE(CSM,IMAG(B2U(:,M)),NR,  R9,R9,SCB2UI(:,M)) 
+         CALL SPLINE(CSM,REAL(B3U(:,M)),NR,  R9,R9,SCB3UR(:,M)) 
+         CALL SPLINE(CSM,IMAG(B3U(:,M)),NR,  R9,R9,SCB3UI(:,M)) 
+
+         CALL SPLINE(CSM,REAL(J1U(:,M)),NR,  R9,R9,SCJ1UR(:,M)) 
+         CALL SPLINE(CSM,IMAG(J1U(:,M)),NR,  R9,R9,SCJ1UI(:,M)) 
+         CALL SPLINE(CS, REAL(J2U(:,M)),NRP1,R9,R9,SCJ2UR(:,M)) 
+         CALL SPLINE(CS, IMAG(J2U(:,M)),NRP1,R9,R9,SCJ2UI(:,M)) 
+         CALL SPLINE(CS, REAL(J3U(:,M)),NRP1,R9,R9,SCJ3UR(:,M)) 
+         CALL SPLINE(CS, IMAG(J3U(:,M)),NRP1,R9,R9,SCJ3UI(:,M)) 
+
+         CALL SPLINE(CS, REAL(V1U(:,M)),NRP1,R9,R9,SCV1UR(:,M)) 
+         CALL SPLINE(CS, IMAG(V1U(:,M)),NRP1,R9,R9,SCV1UI(:,M)) 
+         CALL SPLINE(CSM,REAL(V2U(:,M)),NR,  R9,R9,SCV2UR(:,M)) 
+         CALL SPLINE(CSM,IMAG(V2U(:,M)),NR,  R9,R9,SCV2UI(:,M)) 
+         CALL SPLINE(CSM,REAL(V3U(:,M)),NR,  R9,R9,SCV3UR(:,M)) 
+         CALL SPLINE(CSM,IMAG(V3U(:,M)),NR,  R9,R9,SCV3UI(:,M)) 
+      ENDDO
+
+      IF (KRE_VAC.GT.0) THEN
+      I = NRP1
+      B1X = B1U(I:I+NVG-1,:)
+      B2X = B2U(I:I+NVG-1,:)
+      B3X = B3U(I:I+NVG-1,:)
+      DO M=1,MSMAX
+         CALL SPLINE(VCS, REAL(B1X(:,M)),NVG,R9,R9,VCB1UR(:,M))
+         CALL SPLINE(VCS, IMAG(B1X(:,M)),NVG,R9,R9,VCB1UI(:,M))
+         CALL SPLINE(VCSM,REAL(B2X(:,M)),NVG,R9,R9,VCB2UR(:,M))
+         CALL SPLINE(VCSM,IMAG(B2X(:,M)),NVG,R9,R9,VCB2UI(:,M))
+         CALL SPLINE(VCSM,REAL(B3X(:,M)),NVG,R9,R9,VCB3UR(:,M))
+         CALL SPLINE(VCSM,IMAG(B3X(:,M)),NVG,R9,R9,VCB3UI(:,M))
+      ENDDO
+      ENDIF
+
+C     READ IN EXTRA PERTURBED FIELDS FROM FILES
+C     NOTE THAT ALL FIELD DATA SHOULD HAVE THE SAME VALUES OF
+C     (NR,NV,M1,M2) AS THE PRESENT RUN
+      IF (KRE_NMAX.GT.0.AND.(.NOT.ALLOCATED(RNTORA))) ALLOCATE(
+     &   RNTORA(KRE_NMAX),   CNEIGV(KRE_NMAX),
+     &   CSA(NR+NV,KRE_NMAX),CSAM(NR+NV,KRE_NMAX),
+     &   SCB1AR(NRP1,MSMAX,KRE_NMAX),SCB1AI(NRP1,MSMAX,KRE_NMAX),
+     &   SCB2AR(NRP1,MSMAX,KRE_NMAX),SCB2AI(NRP1,MSMAX,KRE_NMAX),
+     &   SCB3AR(NRP1,MSMAX,KRE_NMAX),SCB3AI(NRP1,MSMAX,KRE_NMAX),
+     &   SCJ1AR(NRP1,MSMAX,KRE_NMAX),SCJ1AI(NRP1,MSMAX,KRE_NMAX),
+     &   SCJ2AR(NRP1,MSMAX,KRE_NMAX),SCJ2AI(NRP1,MSMAX,KRE_NMAX),
+     &   SCJ3AR(NRP1,MSMAX,KRE_NMAX),SCJ3AI(NRP1,MSMAX,KRE_NMAX),
+     &   SCV1AR(NRP1,MSMAX,KRE_NMAX),SCV1AI(NRP1,MSMAX,KRE_NMAX),
+     &   SCV2AR(NRP1,MSMAX,KRE_NMAX),SCV2AI(NRP1,MSMAX,KRE_NMAX),
+     &   SCV3AR(NRP1,MSMAX,KRE_NMAX),SCV3AI(NRP1,MSMAX,KRE_NMAX),
+     &   VCB1AR(NVG, MSMAX,KRE_NMAX),VCB1AI(NVG, MSMAX,KRE_NMAX),
+     &   VCB2AR(NVG, MSMAX,KRE_NMAX),VCB2AI(NVG, MSMAX,KRE_NMAX),
+     &   VCB3AR(NVG, MSMAX,KRE_NMAX),VCB3AI(NVG, MSMAX,KRE_NMAX),
+     &   B1A(NR+NV,  MSMAX,KRE_NMAX),B2A(NR+NV,  MSMAX,KRE_NMAX),
+     &   B3A(NR+NV,  MSMAX,KRE_NMAX),J1A(NRP1,   MSMAX,KRE_NMAX),
+     &   J2A(NRP1,   MSMAX,KRE_NMAX),J3A(NRP1,   MSMAX,KRE_NMAX),
+     &   V1A(NRP1,   MSMAX,KRE_NMAX),V2A(NRP1,   MSMAX,KRE_NMAX),
+     &   V3A(NRP1,   MSMAX,KRE_NMAX))
+
+      IF (KRE_NMAX.GT.0) ALLOCATE(CA(NRP1),CAM(NRP1),VCA(NVG),VCAM(NVG))
+
+      DO J=1,KRE_NMAX
+         WRITE(FILENAME,"(A11,I0.2)") "FIELD_RE_",J
+         OPEN(98,FILE=TRIM(FILENAME))
+         READ(98,*) I,I,I,I,RNTORA(J),TMP1,TMP2
+         CNEIGV(J) = CMPLX(TMP1,TMP2)
+         DO I=1,NR+NV
+            READ(98,*) CSA(I,J),CSAM(I,J)
+         ENDDO
+         DO M=1,MSMAX
+         DO I=1,NR+NV
+            READ(98,*) TMP1,TMP2,TMP3,TMP4,TMP5,TMP6
+            B1A(I,M,J) = CMPLX(TMP1,TMP2)
+            B2A(I,M,J) = CMPLX(TMP3,TMP4)
+            B3A(I,M,J) = CMPLX(TMP5,TMP6)
+         ENDDO
+         ENDDO
+         DO M=1,MSMAX
+         DO I=1,NRP1
+            READ(98,*) TMP1,TMP2,TMP3,TMP4,TMP5,TMP6
+            J1A(I,M,J) = CMPLX(TMP1,TMP2)
+            J2A(I,M,J) = CMPLX(TMP3,TMP4)
+            J3A(I,M,J) = CMPLX(TMP5,TMP6)
+         ENDDO
+         ENDDO
+
+         DO M=1,MSMAX
+         DO I=1,NRP1
+            READ(98,*) TMP1,TMP2,TMP3,TMP4,TMP5,TMP6
+            V1A(I,M,J) = CMPLX(TMP1,TMP2)
+            V2A(I,M,J) = CMPLX(TMP3,TMP4)
+            V3A(I,M,J) = CMPLX(TMP5,TMP6)
+         ENDDO
+         ENDDO
+         CLOSE(98)
+
+C        PATCH PERTURBATIONS NEAR AXIS AND PLASMA EDGE
+         DO I=1,NRP1
+            IF (CSA(I,J).LT.0.03.OR.CSA(I,J).GT.RE_PEDGE) THEN 
+               B1A(I,:,J) = 0.0        
+               B2A(I,:,J) = 0.0        
+               B3A(I,:,J) = 0.0        
+               J1A(I,:,J) = 0.0        
+               J2A(I,:,J) = 0.0        
+               J3A(I,:,J) = 0.0        
+               V1A(I,:,J) = 0.0        
+               V2A(I,:,J) = 0.0        
+               V3A(I,:,J) = 0.0        
+            ENDIF
+         ENDDO    
+
+         CA  = CSA(1:NRP1,J)
+         CAM = CSAM(1:NRP1,J)
+         DO M=1,MSMAX
+         CALL SPLINE(CA, REAL(B1A(:,M,J)),NRP1,R9,R9,SCB1AR(:,M,J)) 
+         CALL SPLINE(CA, IMAG(B1A(:,M,J)),NRP1,R9,R9,SCB1AI(:,M,J)) 
+         CALL SPLINE(CAM,REAL(B2A(:,M,J)),NR,  R9,R9,SCB2AR(:,M,J)) 
+         CALL SPLINE(CAM,IMAG(B2A(:,M,J)),NR,  R9,R9,SCB2AI(:,M,J)) 
+         CALL SPLINE(CAM,REAL(B3A(:,M,J)),NR,  R9,R9,SCB3AR(:,M,J)) 
+         CALL SPLINE(CAM,IMAG(B3A(:,M,J)),NR,  R9,R9,SCB3AI(:,M,J)) 
+
+         CALL SPLINE(CAM,REAL(J1A(:,M,J)),NR,  R9,R9,SCJ1AR(:,M,J)) 
+         CALL SPLINE(CAM,IMAG(J1A(:,M,J)),NR,  R9,R9,SCJ1AI(:,M,J)) 
+         CALL SPLINE(CA, REAL(J2A(:,M,J)),NRP1,R9,R9,SCJ2AR(:,M,J)) 
+         CALL SPLINE(CA, IMAG(J2A(:,M,J)),NRP1,R9,R9,SCJ2AI(:,M,J)) 
+         CALL SPLINE(CA, REAL(J3A(:,M,J)),NRP1,R9,R9,SCJ3AR(:,M,J)) 
+         CALL SPLINE(CA, IMAG(J3A(:,M,J)),NRP1,R9,R9,SCJ3AI(:,M,J)) 
+
+         CALL SPLINE(CA, REAL(V1A(:,M,J)),NRP1,R9,R9,SCV1AR(:,M,J)) 
+         CALL SPLINE(CA, IMAG(V1A(:,M,J)),NRP1,R9,R9,SCV1AI(:,M,J)) 
+         CALL SPLINE(CAM,REAL(V2A(:,M,J)),NR,  R9,R9,SCV2AR(:,M,J)) 
+         CALL SPLINE(CAM,IMAG(V2A(:,M,J)),NR,  R9,R9,SCV2AI(:,M,J)) 
+         CALL SPLINE(CAM,REAL(V3A(:,M,J)),NR,  R9,R9,SCV3AR(:,M,J)) 
+         CALL SPLINE(CAM,IMAG(V3A(:,M,J)),NR,  R9,R9,SCV3AI(:,M,J)) 
+         ENDDO
+
+         IF (KRE_VAC.GT.0) THEN
+         I = NRP1
+         VCA = CSA(I:I+NVG,J)
+         VCAM= CSAM(I:I+NVG,J)
+         B1X = B1A(I:I+NVG-1,:,J)
+         B2X = B2A(I:I+NVG-1,:,J)
+         B3X = B3A(I:I+NVG-1,:,J)
+         DO M=1,MSMAX
+         CALL SPLINE(VCA, REAL(B1X(:,M)),NVG,R9,R9,VCB1AR(:,M,J))
+         CALL SPLINE(VCA, IMAG(B1X(:,M)),NVG,R9,R9,VCB1AI(:,M,J))
+         CALL SPLINE(VCAM,REAL(B2X(:,M)),NVG,R9,R9,VCB2AR(:,M,J))
+         CALL SPLINE(VCAM,IMAG(B2X(:,M)),NVG,R9,R9,VCB2AI(:,M,J))
+         CALL SPLINE(VCAM,REAL(B3X(:,M)),NVG,R9,R9,VCB3AR(:,M,J))
+         CALL SPLINE(VCAM,IMAG(B3X(:,M)),NVG,R9,R9,VCB3AI(:,M,J))
+         ENDDO
+         ENDIF
+      ENDDO
+
+      DEALLOCATE(B1X,B2X,B3X)
+      IF (KRE_NMAX.GT.0) DEALLOCATE(CA,CAM,VCA,VCAM)
+
+      RETURN
+      END
+
+      SUBROUTINE RE_BEQ_VAC   
+C     ==========================================================
+C     COMPUTE EQUILIBRIUM FIELD IN VACUUM REGION
+C     FROM G-FILE (EQDSK.IN)
+C     CONVERT INTO (B1,B2,B3) 
+C     AND MAP INTO VACUUM (S,CHI)-GRID
+C     ==========================================================
+      USE DIMENSIM
+      USE GLOBALM
+      USE RCOMDM
+      USE GVACUUMM
+      USE REORBITM
+      USE MPIENV
+
+      IMPLICIT NONE
+      INCLUDE 'comioc.inc'
+
+      INTEGER INRBOX,INZBOX,NCHIP1,I,J,KCHECK
+      INTEGER IR,IR1,IR2,IZ,IZ1,IZ2
+      REAL*8  RDUMMY,RBOXLEN,ZBOXLEN,RBOXLFT,ZBOXLFT,ZBOXMID
+      REAL*8  RCHI,RBOXH,ZBOXH,RPNT,ZPNT
+      REAL*8  RH1,RH2,ZH1,ZH2,TMP1,TMP2,TMP3,TMP4
+      REAL*8  DPSIDR,DPSIDZ,BVR,BVZ
+      REAL*8  VDRDS,VDRDC,VDZDS,VDZDC,VH1,VH2
+      REAL*8,DIMENSION(:,:),ALLOCATABLE::EQPSI
+      REAL*8,DIMENSION(:),ALLOCATABLE::RBOUND,ZBOUND
+
+      KCHECK = 1
+      IF (ISMPIRUN.GT.0) KCHECK = 0
+
+C     STEP 1: READ G-FILE
+      OPEN(99,FILE='EQDSK.IN',STATUS='OLD',FORM='FORMATTED')
+      READ(99,'(48X,3I4)') I,INRBOX,INZBOX
+      ALLOCATE(EQPSI(INRBOX,INZBOX))
+      READ(99,9381) RBOXLEN,ZBOXLEN,RDUMMY,RBOXLFT,ZBOXMID
+      READ(99,9381) RDUMMY
+      READ(99,9381) RDUMMY
+      READ(99,9381) RDUMMY
+      READ(99,9381) (RDUMMY, I=1,INRBOX)
+      READ(99,9381) (RDUMMY, I=1,INRBOX)
+      READ(99,9381) (RDUMMY, I=1,INRBOX)
+      READ(99,9381) (RDUMMY, I=1,INRBOX)
+      READ(99,9381) ((EQPSI(I,J),I=1,INRBOX),J=1,INZBOX)
+      READ(99,9381) (RDUMMY, I=1,INRBOX)
+      READ(99,*) NBOUND,NLIMIT 
+      ALLOCATE(RBOUND(NBOUND),ZBOUND(NBOUND))
+      IF (.NOT.ALLOCATED(RLIMIT)) 
+     &   ALLOCATE(RLIMIT(NLIMIT),ZLIMIT(NLIMIT))
+      READ(99,9381) (RBOUND(I),ZBOUND(I),I=1,NBOUND)
+      READ(99,9381) (RLIMIT(I),ZLIMIT(I),I=1,NLIMIT)
+      CLOSE(99)
+ 9381 FORMAT(1P,5E16.9)
+
+C     NORMALIZATION
+      RBOXLEN = RBOXLEN/R0EXP
+      ZBOXLEN = ZBOXLEN/R0EXP
+      RBOXLFT = RBOXLFT/R0EXP
+      ZBOXMID = ZBOXMID/R0EXP
+      EQPSI   = EQPSI/(R0EXP**2*B0EXP)
+
+      RBOXH = RBOXLEN/DFLOAT(INRBOX-1)  
+      ZBOXH = ZBOXLEN/DFLOAT(INZBOX-1)  
+      ZBOXLFT = ZBOXMID - ZBOXLEN*0.5
+
+      RBOUND = RBOUND/R0EXP
+      ZBOUND = ZBOUND/R0EXP
+      RLIMIT = RLIMIT/R0EXP
+      ZLIMIT = ZLIMIT/R0EXP
+
+      NCHIP1 = NCHI + 1
+      RCHI   = 4.*PI/NCHI
+
+C     COMPUTE GEOMETRIC ANGLE FOR LIMITER POINTS
+      IF (.NOT.ALLOCATED(ALIMIT)) ALLOCATE(ALIMIT(NLIMIT),
+     &   RXLIM(NLIMIT-1),ZXLIM(NLIMIT-1),AXLIM(NLIMIT-1))
+      
+      DO I=1,NLIMIT
+         ALIMIT(I) = DATAN2(ZLIMIT(I)-ZEQ(1,1),RLIMIT(I)-REQ(1,1))
+         IF (ALIMIT(I).LT.0.) ALIMIT(I) = ALIMIT(I)+2*PI     
+      ENDDO
+
+      J=0
+      DO I=1,NLIMIT-1
+         IF (ABS(ALIMIT(I+1)-ALIMIT(I)).GE.PI) J = J+1
+      ENDDO
+      IF (J.GE.2) STOP 'BAD SPECIFICATION OF LIMITER'
+
+C     COMPUTE POINT X ON EACH SEGMENT OF LIMITER LINE, 
+C     SUCH THAT OX IS PERPENDICULAR TO THE SEGMENT, O=MAGNETIC AXIS
+      DO I=1,NLIMIT-1
+         RH1  = RLIMIT(I)
+         ZH1  = ZLIMIT(I)         
+         RH2  = RLIMIT(I+1)
+         ZH2  = ZLIMIT(I+1)         
+         TMP1 = RH2-RH1
+         TMP2 = ZH2-ZH1
+         TMP3 = TMP1**2*REQ(1,1)+TMP2**2*RH1-TMP1*TMP2*(ZH1-ZEQ(1,1))
+         TMP4 = TMP2**2*ZEQ(1,1)+TMP1**2*ZH1-TMP1*TMP2*(RH1-REQ(1,1))
+         RH1  = TMP1**2 + TMP2**2
+         RXLIM(I) = TMP3/RH1
+         ZXLIM(I) = TMP4/RH1
+         AXLIM(I) = DATAN2(ZXLIM(I)-ZEQ(1,1),RXLIM(I)-REQ(1,1))
+         IF (AXLIM(I).LT.0.) AXLIM(I) = AXLIM(I) + 2*PI
+      ENDDO
+      
+      IF (KCHECK.EQ.1) THEN
+         OPEN(CHOUTP,FILE='LIMITER.OUT')
+         WRITE(CHOUTP,200) RBOXLFT*R0EXP,RBOXLEN*R0EXP
+         WRITE(CHOUTP,200) ZBOXLFT*R0EXP,ZBOXLEN*R0EXP
+         WRITE(CHOUTP,210) NBOUND,NLIMIT  
+         DO I=1,NBOUND
+            WRITE(CHOUTP,200) RBOUND(I)*R0EXP,ZBOUND(I)*R0EXP
+         ENDDO
+         DO I=1,NLIMIT
+            WRITE(CHOUTP,200) RLIMIT(I)*R0EXP,ZLIMIT(I)*R0EXP
+         ENDDO
+ 200     FORMAT(2(1X,E12.5E2))
+ 210     FORMAT(2(1X,I5))
+      ENDIF
+         
+      IF (.NOT.ALLOCATED(VPBV1)) ALLOCATE(
+     &   VPBV1(NV,NCHIP1),VPBV2(NV,NCHIP1),VPBV3(NV,NCHIP1),
+     &   VPBVS(NV,NCHIP1), 
+     &   VCBV1(NV,NCHIP1),VCBV2(NV,NCHIP1),VCBV3(NV,NCHIP1)) 
+
+      IF (KCHECK.EQ.1) OPEN(CHOUTP,FILE='BEQ_VAC.OUT')
+
+C     LOOP-THROUGH (S,CHI)-MESH IN VACUUM
+C     KEEP TRACK OF NVG SO THAT IR<INRBOX & IZ<INZBOX
+      NVG = 1
+      DO I=1,NV
+      IR = 1
+      DO J=1,NCHI
+         IF (VRR(I,J).GE.(RBOXLFT+RBOXLEN).OR.VRR(I,J).LE.RBOXLFT.OR.
+     &       VRZ(I,J).GE.(ZBOXLFT+ZBOXLEN).OR.VRZ(I,J).LE.ZBOXLFT)
+     &      IR = 0
+      ENDDO
+      IF (IR.EQ.1) THEN
+      IF (NVG.LT.I) NVG = I
+
+      DO J=1,NCHI
+C        FIND (R,Z)-POINT
+         RPNT = VRR(I,J)
+         ZPNT = VRZ(I,J)
+
+C        STEP 2: COMPUTE (BR,BZ) AT (RPNT,ZPNT)     
+         IR    = FLOOR((RPNT-RBOXLFT)/RBOXH) + 1
+         IZ    = FLOOR((ZPNT-ZBOXLFT)/ZBOXH) + 1
+         RH1   = RPNT-(RBOXLFT+RBOXH*(IR-1))
+         ZH1   = ZPNT-(ZBOXLFT+ZBOXH*(IZ-1))
+         RH2   = (RBOXLFT+RBOXH*IR) - RPNT
+         ZH2   = (ZBOXLFT+ZBOXH*IZ) - ZPNT
+
+C        DPSI/DR AT (RPNT,ZPNT)
+         IF (IR.GT.1) IR1=IR-1         
+         IF (IR.EQ.1) IR1=IR         
+         IF (IR+1.EQ.INRBOX) IR2=IR+1
+         IF (IR+1.LT.INRBOX) IR2=IR+2
+         
+         TMP1=(EQPSI(IR+1,IZ)-EQPSI(IR1,IZ))/(IR+1-IR1)/RBOXH
+         TMP2=(EQPSI(IR2,IZ)-EQPSI(IR,IZ))/(IR2-IR)/RBOXH
+         TMP3=(EQPSI(IR+1,IZ+1)-EQPSI(IR1,IZ+1))/(IR+1-IR1)/RBOXH
+         TMP4=(EQPSI(IR2,IZ+1)-EQPSI(IR,IZ+1))/(IR2-IR)/RBOXH
+         DPSIDR = (TMP1*RH2+TMP2*RH1)/RBOXH*ZH2/ZBOXH +
+     &            (TMP3*RH2+TMP4*RH1)/RBOXH*ZH1/ZBOXH
+
+C        DPSI/DZ AT (RPNT,ZPNT)
+         IF (IZ.GT.1) IZ1=IZ-1         
+         IF (IZ.EQ.1) IZ1=IZ         
+         IF (IZ+1.EQ.INZBOX) IZ2=IZ+1
+         IF (IZ+1.LT.INZBOX) IZ2=IZ+2
+         
+         TMP1=(EQPSI(IR,IZ+1)-EQPSI(IR,IZ1))/(IZ+1-IZ1)/ZBOXH
+         TMP2=(EQPSI(IR,IZ2)-EQPSI(IR,IZ))/(IZ2-IZ)/ZBOXH
+         TMP3=(EQPSI(IR+1,IZ+1)-EQPSI(IR+1,IZ1))/(IZ+1-IZ1)/ZBOXH
+         TMP4=(EQPSI(IR+1,IZ2)-EQPSI(IR+1,IZ))/(IZ2-IZ)/ZBOXH
+         DPSIDZ = (TMP1*ZH2+TMP2*ZH1)/ZBOXH*RH2/RBOXH +
+     &            (TMP3*ZH2+TMP4*ZH1)/ZBOXH*RH1/RBOXH
+
+C        (BVR,BVZ) AT (RPNT,ZPNT)
+         BVR = -DPSIDZ/RPNT
+         BVZ =  DPSIDR/RPNT
+
+C        STEP 3: CONVERT (BR,BZ,BPHI) TO (B1,B2,B3)
+C        PREPARE DRDS,DRDC,ETC.
+         IF (I.EQ.1) THEN
+            VDRDS=(VRR(I+1,J)-VRR(I,J))/(VCS(I+1)-VCS(I))
+            VDZDS=(VRZ(I+1,J)-VRZ(I,J))/(VCS(I+1)-VCS(I))
+         ELSE
+            VH1 = VCS(I)-VCS(I-1)
+            VH2 = VCS(I+1)-VCS(I)
+            TMP1 = VH1*VH2*(VH1+VH2)
+            VDRDS=(VH2**2*(VRR(I,J)-VRR(I-1,J))+
+     &             VH1**2*(VRR(I+1,J)-VRR(I,J)))/TMP1
+            VDZDS=(VH2**2*(VRZ(I,J)-VRZ(I-1,J))+
+     &             VH1**2*(VRZ(I+1,J)-VRZ(I,J)))/TMP1
+         ENDIF
+
+         IF (J.EQ.1) THEN
+            VDRDC=(VRR(I,2)-VRR(I,NCHI))/RCHI
+            VDZDC=(VRZ(I,2)-VRZ(I,NCHI))/RCHI
+         ELSEIF (J.EQ.NCHI) THEN
+            VDRDC=(VRR(I,1)-VRR(I,NCHI-1))/RCHI
+            VDZDC=(VRZ(I,1)-VRZ(I,NCHI-1))/RCHI
+         ELSE
+            VDRDC=(VRR(I,J+1)-VRR(I,J-1))/RCHI
+            VDZDC=(VRZ(I,J+1)-VRZ(I,J-1))/RCHI
+         ENDIF
+
+         BVR = BVR*RE_BVAC
+         BVZ = BVZ*RE_BVAC
+
+C        COMPUTE (B1,B2,B3)
+         VPBV1(I,J) = (BVR*VDZDC-BVZ*VDRDC)*VRR(I,J)
+         VPBV2(I,J) = (BVZ*VDRDS-BVR*VDZDS)*VRR(I,J)
+         VPBV3(I,J) = VRJA(I,J)*T(NRP1)/VRR(I,J)**2
+
+C        COMPUTE B^2 IN VACUUM
+         VPBVS(I,J) = BVR**2 + BVZ**2 + (T(NRP1)/VRR(I,J))**2
+
+         IF (KCHECK.EQ.1) WRITE(CHOUTP,100) BVR,BVZ,T(NRP1)/VRR(I,J)
+C        IF (KCHECK.EQ.1) WRITE(CHOUTP,100) VPBV1(I,J),VPBV2(I,J),
+C    &                                      VPBV3(I,J)
+C        IF (KCHECK.EQ.1) WRITE(CHOUTP,100) T(NRP1),VRR(I,J),VRJA(I,J)
+C        IF (KCHECK.EQ.1) WRITE(CHOUTP,100) VDRDC,VDZDC,VPBVS(I,J)
+      ENDDO
+
+      VPBV1(I,NCHIP1) = VPBV1(I,1) 
+      VPBV2(I,NCHIP1) = VPBV2(I,1) 
+      VPBV3(I,NCHIP1) = VPBV3(I,1) 
+      VPBVS(I,NCHIP1) = VPBVS(I,1) 
+      ENDIF
+      ENDDO
+
+      IF (KCHECK.EQ.1.AND.(ISMPIRUN.EQ.0.OR.RANK.EQ.ROOT)) THEN
+         WRITE(*,*) 'NVG=',NVG,CS(NR+NVG)
+      
+C        DO J=1,NCHI
+C           WRITE(*,*) VRR(NVG,J),VRZ(NVG,J)
+C        ENDDO
+      ENDIF
+
+      IF (KCHECK.EQ.1) THEN
+         CLOSE(CHOUTP)
+         OPEN(CHOUTP,FILE='BEQ_PLS.OUT')
+         DO I=2,NRP1
+         DO J=1,NCHI
+         IF (J.EQ.1) THEN
+            VDRDC=(REQ(I,2)-REQ(I,NCHI))/RCHI
+            VDZDC=(ZEQ(I,2)-ZEQ(I,NCHI))/RCHI
+         ELSEIF (J.EQ.NCHI) THEN
+            VDRDC=(REQ(I,1)-REQ(I,NCHI-1))/RCHI
+            VDZDC=(ZEQ(I,1)-ZEQ(I,NCHI-1))/RCHI
+         ELSE
+            VDRDC=(REQ(I,J+1)-REQ(I,J-1))/RCHI
+            VDZDC=(ZEQ(I,J+1)-ZEQ(I,J-1))/RCHI
+         ENDIF
+         
+         BVR = DPSIDS(I)*VDRDC/RJA(I,J)
+         BVZ = DPSIDS(I)*VDZDC/RJA(I,J)
+         WRITE(CHOUTP,100) BVR,BVZ,T(I)/REQ(I,J)
+C        WRITE(CHOUTP,100) 0.0,DPSIDS(I),RJA(I,J)*T(I)/REQ(I,J)**2
+C        WRITE(CHOUTP,100) T(I),REQ(I,J),RJA(I,J)
+C        WRITE(CHOUTP,100) VDRDC,VDZDC,BVR**2+BVZ**2+(T(I)/REQ(I,J))**2
+         ENDDO
+         ENDDO
+         CLOSE(CHOUTP)
+      ENDIF
+ 100  FORMAT(3(1X,E12.5E2))
+
+      DEALLOCATE(EQPSI,RBOUND,ZBOUND)
+
+      RETURN
+      END
+
+      SUBROUTINE RE_WIENER(TRED,YRELOC)    
+C     ==========================================================
+      USE REORBITM
+      USE RAN_MODM
+      USE MPIENV
+
+      IMPLICIT NONE
+
+      REAL*8  TRED,REB,RE_GAMMA,RE_MU,REPP,RELL,RE_Z,REDW,RE_SAC2
+      REAL*8,DIMENSION(NREEQ+NREEQ2)::YRELOC
+
+      REPP     = YRELOC(4)
+      RELL     = YRELOC(5)
+      REB      = YRELOC(NREEQ+2)
+      RE_MU    = YRELOC(NREEQ+3)
+      RE_GAMMA = SQRT(1+REPP**2)
+      RE_Z     = RE_CONST(3)
+
+      RE_SAC2  = RE_SAC
+      IF (YRELOC(1).GT.1.0.OR.RE_AN.GE.1.) RE_SAC2 = 0.0
+      
+      REDW =-2.*RE_MU*SQRT(RELL*RE_GAMMA*(1.+RE_Z)/REB/REPP**3)
+      REDW = REDW*RE_SAC2*RE_T0
+     
+      YRELOC(5) = YRELOC(5) + REDW*RAN_NORMAL(0.0,SQRT(TRED))
+      IF (YRELOC(5).LT.0.0) YRELOC(5) = 0.1
+
+      RETURN
+      END
+
+      SUBROUTINE GET_RE_CONST
+C     ==========================================================
+      USE GLOBALM
+      USE REORBITM
+      USE MPIENV
+
+      IMPLICIT NONE
+
+      INTEGER KCHECK
+      REAL*8  NE0
+
+      KCHECK = 1
+
+C     CALCULATE SOME BASIC PARAMETERS
+      NE0          = RE_CONST(1)
+      V_ALFVEN     = B0EXP/SQRT(MU0*2.*M_I*NE0)
+      V_ALFVENE    = B0EXP/SQRT(MU0*M_E*NE0)
+      OMEGA_ALFVEN = V_ALFVEN/R0EXP
+      OMEGA_CE     =-RE_CN*E_E*B0EXP/(RE_AN*M_I)
+      
+      C_VA         = V_LIGHT/V_ALFVEN
+      RE_CM        = C_VA**2*(OMEGA_ALFVEN/OMEGA_CE)
+      RE_CSTAR     = V_LIGHT/R0EXP/OMEGA_CE
+      RE_TAU       = 1.5*RE_CONST(2)*(V_LIGHT/V_ALFVENE)**2  
+      RE_EC        = NE0*E_E**3*RE_CONST(2)*1.E-7/(EPSILON0*M_E)
+      RE_E0        =-B0EXP*R0EXP*OMEGA_ALFVEN/RE_EC
+      RE_T0        = E_E*RE_EC/(M_E*V_LIGHT*OMEGA_ALFVEN)
+      RE_TFAC      = R0EXP/V_ALFVEN*1.0e+6
+      RE_TRAD      = 1.5*M_E*RE_CONST(1)*RE_CONST(2)/(EPSILON0*B0EXP**2)
+
+      IF (KRE_FLT.EQ.1) RE_CM = 0.0
+
+      IF (KCHECK.EQ.1.AND.(ISMPIRUN.EQ.0.OR.RANK.EQ.ROOT)) THEN
+         WRITE(*,*) 'TAU_ALFVEN =',R0EXP/V_ALFVEN
+         WRITE(*,*) 'RE_CM =',RE_CM
+         WRITE(*,*) 'RE_CSTAR =',RE_CSTAR
+         WRITE(*,*) 'RE_TAU=',RE_TAU
+         WRITE(*,*) 'RE_EC =',RE_EC
+         WRITE(*,*) 'RE_E0 =',RE_E0
+         WRITE(*,*) 'RE_T0 =',RE_T0
+         WRITE(*,*) 'RE_TRAD =',RE_TRAD
+         WRITE(*,*) 'V_LIGHT/V_ALFVEN =',C_VA
+      ENDIF
+
+      RETURN
+      END
+
+      SUBROUTINE RE_INIT_COND(YRE)
+C     ==========================================================
+      USE GLOBALM  
+      USE REORBITM
+      USE DIMENSIM
+      USE GVACUUMM
+      USE RCOMDM
+
+      IMPLICIT NONE
+
+      INTEGER K,SIGMA,NCHIP1
+      INTEGER NRER,NREL,NREP,K1,K2,K3,I,J,KCLOC
+      REAL*8  HRES,HREL,HREP,B2_LOC,HSP1,RECC
+      REAL*8  ARE1,ARE2,HRE1,HRE2,TEMP
+      REAL*8  AA1,AA2,AA3,AA4,BB1,BB2,BB3,BB4,
+     &        OPP,OQQ,OSS,ODD,OX1,OX2,OY1,OY2,OXX,OYY
+      REAL*8  YRE(NREEQ+NREEQ2,*)
+      REAL*8,DIMENSION(:),ALLOCATABLE::RLIM,ZLIM,OCHI
+      REAL*8,DIMENSION(:),ALLOCATABLE::PFI,EFI,SFI,FFI,PII 
+      REAL*8,DIMENSION(:,:),ALLOCATABLE::B_2,SCB2,ORR,OZZ      
+
+      KRE_STEP_TOT = 0
+      RE_TIME_TOT  = 0
+      NCHIP1       = NCHI+1
+      HSP1         = 1.0/RE_SP
+
+      IF (KRE_INIT.EQ.1) THEN
+C     1D UNIFORM DISTRIBUTION IN CHI SPACE
+      SIGMA = KRE_SIGMA0
+      NRE1  = NREORBIT
+      NRE2  = 1
+      DO K=1,NREORBIT
+         YRE(1,K) = RE_S0
+         YRE(2,K) = RE_CHI0+DFLOAT(K-1)*2.*PI/DFLOAT(NREORBIT)
+         YRE(3,K) = RE_PHI0
+         YRE(4,K) = RE_P0 
+         YRE(5,K) = RE_LAMBDA0
+            
+         YRE(NREEQ+4,K) = DFLOAT(SIGMA) 
+         YRE(NREEQ+9,K) = ABS(RE_PERTURB(1))
+C        SIGMA        =-SIGMA
+      ENDDO
+      ENDIF
+
+      IF (KRE_INIT.EQ.2) THEN
+C     3D UNIFORM DISTRIBUTION IN (S^2,LAMBDA,SIGMA) SPACE
+C     S-DIMENSION=NRER, LAMBDA-DIMENSION=NREL, SIGMA-DIMENSION=2
+C     VALID FOR NREORBIT=8*NRER*(INTEGER)
+      NRER = NRE1
+      NREL = INT(NREORBIT/NRER/2)
+      NRE2 = NREL
+      IF (NREORBIT.NE.NRER*NREL*2) STOP 'WRONG NREORBIT'
+
+      HRES = (RE_S0MAX**RE_SP-RE_S0MIN**RE_SP)/DFLOAT(NRER+1)
+      HREL = RE_LAMBDA0/DFLOAT(NREL)
+      DO K3=1,2
+      DO K1=1,NRER
+      DO K2=1,NREL
+         K     = (K3-1)*NRER*NREL + (K1-1)*NREL + K2
+         YRE(1,K) = (RE_S0MIN**RE_SP+HRES*K1)**HSP1
+         YRE(2,K) = RE_CHI0
+         YRE(3,K) = RE_PHI0
+         YRE(4,K) = RE_P0 
+         YRE(5,K) = HREL*K2   
+            
+         YRE(NREEQ+4,K) = 2*K3-3
+         YRE(NREEQ+9,K) = ABS(RE_PERTURB(1))
+      ENDDO
+      ENDDO
+      ENDDO
+      ENDIF
+
+      IF (KRE_INIT.EQ.3) THEN
+C     1D UNIFORM DISTRIBUTION IN S^2
+C     S-DIMENSION=NREORBIT 
+C     USEFUL FOR FIELD LINE TRACING, BY SETTING RE_LAMBDA0=0 
+C     AND SMALL RE_P0
+      NRER = NREORBIT+1
+      NRE1 = NRER-1
+      NRE2 = 1
+
+      HRES = (RE_S0MAX**RE_SP-RE_S0MIN**RE_SP)/DFLOAT(NRER)
+      DO K=1,NREORBIT
+         YRE(1,K) = (RE_S0MIN**RE_SP+HRES*K)**HSP1
+         YRE(2,K) = RE_CHI0
+         YRE(3,K) = RE_PHI0
+         YRE(4,K) = RE_P0 
+         YRE(5,K) = RE_LAMBDA0   
+            
+         YRE(NREEQ+4,K) = DFLOAT(KRE_SIGMA0)
+         YRE(NREEQ+9,K) = ABS(RE_PERTURB(1))
+      ENDDO
+      ENDIF
+
+      IF (KRE_INIT.EQ.4) THEN
+C     2D UNIFORM DISTRIBUTION IN (S^2,LAMBDA) SPACE
+C     S-DIMENSION=NRER, LAMBDA-DIMENSION=NREL
+C     VALID FOR NREORBIT=4*NRER*(INTEGER)
+      NRER = NRE1
+      NREL = INT(NREORBIT/NRER)
+      NRE2 = NREL
+      IF (NREORBIT.NE.NRER*NREL) STOP 'WRONG NREORBIT'
+
+      HRES = (RE_S0MAX**RE_SP-RE_S0MIN**RE_SP)/DFLOAT(NRER+1)
+      HREL = RE_LAMBDA0/DFLOAT(NREL)
+      DO K1=1,NRER
+      DO K2=1,NREL
+         K     = (K1-1)*NREL + K2
+         YRE(1,K) = (RE_S0MIN**RE_SP+HRES*K1)**HSP1
+         YRE(2,K) = RE_CHI0
+         YRE(3,K) = RE_PHI0
+         YRE(4,K) = RE_P0 
+         YRE(5,K) = HREL*K2   
+            
+         YRE(NREEQ+4,K) = DFLOAT(KRE_SIGMA0)
+         YRE(NREEQ+9,K) = ABS(RE_PERTURB(1))
+      ENDDO
+      ENDDO
+      ENDIF
+
+      IF (KRE_INIT.EQ.5) THEN
+C     3D UNIFORM DISTRIBUTION IN (S^2,P,SIGMA) SPACE
+C     S-DIMENSION=NRER, P-DIMENSION=NREP, SIGMA-DIMENSION=2
+C     VALID FOR NREORBIT=8*NRER*(INTEGER)
+      NRER = NRE1
+      NREP = INT(NREORBIT/NRER/2)
+      NRE2 = NREP
+      IF (NREORBIT.NE.NRER*NREP*2) STOP 'WRONG NREORBIT'
+
+      HRES = (RE_S0MAX**RE_SP-RE_S0MIN**RE_SP)/DFLOAT(NRER+1)
+      HREP = RE_P0/DFLOAT(NREP)
+      DO K3=1,2
+      DO K1=1,NRER
+      DO K2=1,NREP
+         K     = (K3-1)*NRER*NREP + (K1-1)*NREP + K2
+         YRE(1,K) = (RE_S0MIN**RE_SP+HRES*K1)**HSP1
+         YRE(2,K) = RE_CHI0
+         YRE(3,K) = RE_PHI0
+         YRE(4,K) = HREP*K2 
+         YRE(5,K) = RE_LAMBDA0   
+            
+         YRE(NREEQ+4,K) = 2*K3-3
+         YRE(NREEQ+9,K) = ABS(RE_PERTURB(1))
+      ENDDO
+      ENDDO
+      ENDDO
+      ENDIF
+
+      IF (KRE_INIT.EQ.6) THEN
+C     2D UNIFORM DISTRIBUTION IN (S^2,P) SPACE
+C     S-DIMENSION=NRER, P-DIMENSION=NREP
+C     VALID FOR NREORBIT=4*NRER*(INTEGER)
+      NRER = NRE1
+      NREP = INT(NREORBIT/NRER)
+      NRE2 = NREP
+      IF (NREORBIT.NE.NRER*NREP) STOP 'WRONG NREORBIT'
+
+      HRES = (RE_S0MAX**RE_SP-RE_S0MIN**RE_SP)/DFLOAT(NRER)
+      HREP = RE_P0/DFLOAT(NREP)
+      DO K1=1,NRER
+      DO K2=1,NREP
+         K     = (K1-1)*NREP + K2
+         YRE(1,K) = (RE_S0MIN**RE_SP+HRES*(K1-1))**HSP1
+         YRE(2,K) = RE_CHI0
+         YRE(3,K) = RE_PHI0
+         YRE(4,K) = HREP*K2 
+         YRE(5,K) = RE_LAMBDA0   
+            
+         YRE(NREEQ+4,K) = DFLOAT(KRE_SIGMA0)
+         YRE(NREEQ+9,K) = ABS(RE_PERTURB(1))
+      ENDDO
+      ENDDO
+      ENDIF
+
+      IF (KRE_INIT.EQ.7) THEN
+C     2D UNIFORM DISTRIBUTION IN (S^2,CHI) SPACE
+C     S-DIMENSION=NRER, CHI-DIMENSION=NREP
+C     CHI=RE_CHI0=[0,2*PI]
+C     VALID FOR NREORBIT=NRER*(INTEGER)
+      NRER = NRE1
+      NREP = INT(NREORBIT/NRER)
+      NRE2 = NREP
+      IF (NREORBIT.NE.NRER*NREP) STOP 'WRONG NREORBIT'
+
+      HRES = (RE_S0MAX**RE_SP-RE_S0MIN**RE_SP)/DFLOAT(NRER)
+      HREP = 2*PI/DFLOAT(NREP)
+      DO K1=1,NRER
+      DO K2=1,NREP
+         K     = (K1-1)*NREP + K2
+         YRE(1,K) = (RE_S0MIN**RE_SP+HRES*(K1-1))**HSP1
+         YRE(2,K) = HREP*(K2-1) 
+         YRE(3,K) = RE_PHI0
+         YRE(4,K) = RE_P0   
+         YRE(5,K) = RE_LAMBDA0   
+            
+         YRE(NREEQ+4,K) = DFLOAT(KRE_SIGMA0)
+         YRE(NREEQ+9,K) = ABS(RE_PERTURB(1))
+      ENDDO
+      ENDDO
+      ENDIF
+
+      IF (KRE_INIT.EQ.8) THEN
+C     3D UNIFORM DISTRIBUTION IN (S^2,CHI,SIGMA0) SPACE
+C     S-DIMENSION=NRER, CHI-DIMENSION=NREP
+C     CHI=RE_CHI0=[0,2*PI]
+C     VALID FOR NREORBIT=NRER*(INTEGER)
+      NRER = NRE1
+      NREP = INT(NREORBIT/NRER/2)
+      NRE2 = NREP
+      IF (NREORBIT.NE.NRER*NREP*2) STOP 'WRONG NREORBIT'
+
+      HRES = (RE_S0MAX**RE_SP-RE_S0MIN**RE_SP)/DFLOAT(NRER+1)
+      HREP = 2*PI/DFLOAT(NREP)
+      DO K3=1,2
+      DO K1=1,NRER
+      DO K2=1,NREP
+         K     = (K3-1)*NRER*NREP + (K1-1)*NREP + K2
+         YRE(1,K) = (RE_S0MIN**RE_SP+HRES*K1)**HSP1
+         YRE(2,K) = HREP*(K2-1) 
+         YRE(3,K) = RE_PHI0
+         YRE(4,K) = RE_P0   
+         YRE(5,K) = RE_LAMBDA0   
+            
+         YRE(NREEQ+4,K) = 2*K3 - 3
+         YRE(NREEQ+9,K) = ABS(RE_PERTURB(1))
+      ENDDO
+      ENDDO
+      ENDDO
+      ENDIF
+
+CGZHao 2020-8-17, FOR READING FAST ION DISTRIBUTION FUNCTION PREDICTED BY TRANSP 
+C IN TRANSP: FAST ION DISTR: (R(cm), Z(cm), v_\para/v, E(eV))
+C IN MARS: 
+C     YRE(4,:)=p=SQRT(gamma^2-1)
+C     YRE(5,:)=lambda=(1-v^2_paral/v^2/)*B0/B
+C     gamma: RELATIVISTIC FACTOR
+C ADD SOME VARIABLES IN THIS ROUTINE:
+C     PFI: v_\para/v; 
+C     EFI: kinetic energy in [eV]; 
+C     SFI:sign of v_\para       
+C     B_LOC: B/B0; NORMALIZED MAGNETIC FIELD AT THE INITIAL POSITIONS of
+C     PARTICLES
+C PARAMETERS in REOBITM MODULE
+C     V_LIGHT = 2.99792E+8,m/s
+C     E_E     = 1.6021917E-19,
+C     M_I     = 1.67261E-27,
+C FOR READING (R,Z), JUST COPY FROM THE OPTION KRE_INIT.EQ.9
+C KRE_INIT=9:  4D-DISTRIBUTION IN FIDIST.IN
+C KRE_INIT=19: 5D-DISTRIBUTION IN FIDIST.IN (+ PHI-VARIATION)
+      IF (KRE_INIT.EQ.9.OR.KRE_INIT.EQ.19) THEN
+      OPEN(99,FILE='FIDIST.IN')
+      READ(99,*) K1   
+
+      IF (K1.LE.NREORBIT) THEN 
+         NREORBIT = K1   
+      ELSE
+         STOP 'NREORBIT TOO SMALL'
+      ENDIF
+      WRITE(*,*) 'FAST ION NUMBER:NREORBIT=',NREORBIT
+
+      ALLOCATE(B_2(NRP1,NCHIP1),SCB2(NRP1,NCHIP1))
+      ALLOCATE(ORR(NRP1,NCHIP1),OZZ(NRP1,NCHIP1))
+      ALLOCATE(RLIM(NREORBIT),ZLIM(NREORBIT),PII(NREORBIT))
+      ALLOCATE(PFI(NREORBIT), EFI(NREORBIT),SFI(NREORBIT),FFI(NREORBIT))
+      ALLOCATE(OCHI(NCHIP1))
+
+C(R,Z) in m
+      WRITE(*,*) 'initial FI:(R(m), Z(m), v_\para/v, E(eV))'
+      IF (KRE_INIT.EQ.9) THEN
+      DO K=1,NREORBIT
+         READ(99,*) RLIM(K),ZLIM(K),PFI(K),EFI(K),TEMP,PII(K)
+      ENDDO
+      ELSEIF (KRE_INIT.EQ.19) THEN
+      DO K=1,NREORBIT
+         READ(99,*) RLIM(K),ZLIM(K),FFI(K),PFI(K),EFI(K),TEMP,PII(K)
+      ENDDO
+      ENDIF
+      CLOSE(99)
+121   FORMAT(4(1X,E14.6))
+
+      NRE1 = NREORBIT
+      NRE2 = 1
+
+      DO K=1,NREORBIT
+         SFI(K)=PFI(K)/ABS(PFI(K))
+      ENDDO
+
+C     STEP 2: NORMALIZE (R,Z)
+      RLIM = RLIM/R0EXP
+      ZLIM = ZLIM/R0EXP
+C
+      DO I=1,NRP1
+         DO J=1,NCHI
+            ORR(I,J) = REQ(I,J)
+            OZZ(I,J) = ZEQ(I,J)
+         ENDDO
+         J = NCHI+1
+         ORR(I,J) = REQ(I,1)
+         OZZ(I,J) = ZEQ(I,1)
+      ENDDO
+
+C     B^2
+      DO J=1,NCHI
+        DO I=2,NRP1
+          B_2(I,J)=G22L(I,J)*DPSIDS(I)**2/RJA(I,J)**2 +
+     &             T(I)**2/REQ(I,J)**2
+        ENDDO
+         B_2(1,J)=T(1)**2/REQ(1,J)**2
+      ENDDO
+     
+      Do I=1,NRP1
+          B_2(I,NCHIP1)=B_2(I,1)
+      ENDDO
+      
+      CALL SPLINE2D(B_2, CS, OCHI,NRP1,NCHIP1,NRP1,SCB2)      
+
+
+C     STEP 3: FIND (S,CHI) FOR EACH (R,Z) POINT
+      DO J=1,NCHI+1
+         OCHI(J) = 2.*PI*(J-1)/NCHI
+      ENDDO
+
+      DO K=1,NREORBIT
+         DO I=1,NRP1-1
+         DO J=1,NCHI
+            AA1 = ORR(I+1,J)-ORR(I,J) 
+            BB1 = OZZ(I+1,J)-OZZ(I,J) 
+            AA2 = ORR(I,J+1)-ORR(I,J)
+            BB2 = OZZ(I,J+1)-OZZ(I,J)
+            AA3 = ORR(I,J)+ORR(I+1,J+1)-ORR(I+1,J)-ORR(I,J+1)
+            BB3 = OZZ(I,J)+OZZ(I+1,J+1)-OZZ(I+1,J)-OZZ(I,J+1)
+            AA4 = ORR(I,J)
+            BB4 = OZZ(I,J)
+
+            OPP = AA3*BB1 - AA1*BB3
+            OQQ = AA2*BB1 - AA1*BB2 + (RLIM(K)-AA4)*BB3 - 
+     &                                (ZLIM(K)-BB4)*AA3
+            OSS = (RLIM(K)-AA4)*BB2 - (ZLIM(K)-BB4)*AA2
+            
+            IF (OPP.EQ.0.) THEN
+               IF (OQQ.EQ.0.) STOP 'KRE_INIT=9'
+               OX1 = -OSS/OQQ
+               OX2 = OX1
+            ELSE
+               ODD = OQQ*OQQ - 4.*OPP*OSS
+               IF (ODD.GT.0.) THEN
+                  OX1 = (-OQQ+SQRT(ODD))/OPP/2.
+                  OX2 = (-OQQ-SQRT(ODD))/OPP/2.
+               ELSE
+                  OX1 = -1.
+                  OX2 = -1.
+               ENDIF
+            ENDIF
+
+            OY1 = ((AA2+AA3*OX1)*(RLIM(K)-AA4-AA1*OX1) + 
+     &             (BB2+BB3*OX1)*(ZLIM(K)-BB4-BB1*OX1))/
+     &            ((AA2+AA3*OX1)**2 + (BB2+BB3*OX1)**2)
+            OY2 = ((AA2+AA3*OX2)*(RLIM(K)-AA4-AA1*OX2) + 
+     &             (BB2+BB3*OX2)*(ZLIM(K)-BB4-BB1*OX2))/
+     &            ((AA2+AA3*OX2)**2 + (BB2+BB3*OX2)**2)
+            
+            KCLOC = 0
+            IF (0.LE.OX1.AND.OX1.LE.1..AND.0.LE.OY1.AND.OY1.LE.1.) THEN
+               OXX   = OX1
+               OYY   = OY1
+               KCLOC = 1
+            ELSEIF (0.LE.OX2.AND.OX2.LE.1..AND.0.LE.OY2.AND.OY2.LE.1.) 
+     &             THEN
+               OXX    = OX2
+               OYY    = OY2
+               KCLOC  = 1
+            ENDIF
+
+            IF (KCLOC.EQ.1) THEN
+               YRE(1,K)  = CS(I)*(1.-OXX) + CS(I+1)*OXX
+               YRE(2,K)  = OCHI(J)*(1.-OYY) + OCHI(J+1)*OYY
+            ENDIF
+         ENDDO
+         ENDDO
+
+          IF (KRE_INIT.EQ.9)  YRE(3,K) = RE_PHI0
+          IF (KRE_INIT.EQ.19) YRE(3,K) = FFI(K) 
+          YRE(NREEQ+4,K) = SFI(K)
+          YRE(NREEQ+9,K) = ABS(RE_PERTURB(1))
+          YRE(NREEQ+14,K)= PII(K)    
+      ENDDO
+ 
+      WRITE(*,*) 'K,B2_LOC,YRE_1(s),YRE_2(chi),R,Z,gamma,pitch,p,lam'
+      DO K=1,NREORBIT
+       RECC = YRE(2,K)
+       RECC = RECC - FLOOR(RECC/2./PI)*2.*PI
+       CALL SPLINE2DT(B2_LOC, YRE(1,K),RECC, 1,   1,   1,
+     &               B_2,  CS,  OCHI,NRP1,NRP1,NCHIP1,SCB2 )
+      TEMP      = EFI(K)*E_E/(M_I*RE_AN*V_LIGHT**2)+1.0
+
+C     p
+      YRE(4,K)  = SQRT(TEMP**2-1)
+
+C     lambda
+C     YQL: NOTE THAT LAMBDA BELOW IS CALCULATED USING EQUILIBRIUM
+C     B-FIELD, WHILE LAMBDA DURING PARTICLE TRACING USES TOTAL B-FIELD
+C     (EQUILIBRIUM + 3D PERTURBATION). THIS MAY CAUSE TROUBLE IF PFI(K) IS
+C     TOO SMALL BECAUSE SUCH A PARTICLE MAY NOT EXIST IN TOTAL 3D FIELD
+C     ONE SOLUTION IS TO GRADUALLY INCREASE 3D PERTURBATION WITH TIME,
+C     STARTING FROM VERY LOW AMPLITUDE
+      YRE(5,K)  = (1-PFI(K)**2)/SQRT(B2_LOC)
+
+      WRITE(*,122) K, B2_LOC, YRE(1,K), YRE(2,K), RLIM(K),
+     & ZLIM(K),TEMP, PFI(K),YRE(4,K),YRE(5,K)
+      ENDDO
+
+      DEALLOCATE(RLIM,ZLIM,OCHI,PFI,EFI,FFI,PII,B_2,SFI,SCB2,ORR,OZZ)
+      ENDIF
+122   FORMAT(I8,9(1X,E16.8))
+CGZHao 2020-8-17      
+
+
+      IF (KRE_INIT.EQ.10.OR.KRE_INIT.EQ.11) THEN
+C     NRE1-ARRAY FOR FIRST PARAMETER DEFINED BY KRE1   
+C     NRE2-ARRAY FOR SECOND PARAMETER DEFINED BY KRE2   
+C     FOR BOTH PARAMETERS, LOWER BOUND IS 0, UPPER BOUND IS RE_*0 VALUE
+C     EXCEPTION IS FOR RE_S0: LOWER BOUND=RE_S0, UPPER BOUND=1
+C     KRE_INIT=10: SIGMA=+1 AND -1 
+C              11: SIGMA=KRE_SIGMA0
+C     REQUIREMENTS: 1) KRE1.NE.KRE2; 2) NRE1*NRE2*2=NREORBIT
+      IF (KRE1.EQ.KRE2) STOP 'REORBIT:INIT'
+      IF (KRE_INIT.EQ.10.AND.NRE1*NRE2*2.NE.NREORBIT) 
+     &   STOP 'REORBIT:INIT'
+      IF (KRE_INIT.EQ.11.AND.NRE1*NRE2.NE.NREORBIT) STOP 'REORBIT:INIT'
+      
+      IF (NRE1.GT.1) THEN
+         IF (KRE1.EQ.1) ARE1 = RE_S0MAX**RE_SP-RE_S0MIN**RE_SP
+         IF (KRE1.EQ.2) ARE1 = RE_CHI0
+         IF (KRE1.EQ.3) ARE1 = RE_PHI0
+         IF (KRE1.EQ.4) ARE1 = RE_P0
+         IF (KRE1.EQ.5) ARE1 = RE_LAMBDA0
+         IF (KRE1.EQ.6) ARE1 = ABS(RE_PERTURB(1))
+         HRE1 = ARE1/DFLOAT(NRE1+1)
+      ENDIF
+      IF (NRE2.GT.1) THEN
+         IF (KRE2.EQ.1) ARE2 = RE_S0MAX**RE_SP-RE_S0MIN**RE_SP
+         IF (KRE2.EQ.2) ARE2 = RE_CHI0
+         IF (KRE2.EQ.3) ARE2 = RE_PHI0
+         IF (KRE2.EQ.4) ARE2 = RE_P0
+         IF (KRE2.EQ.5) ARE2 = RE_LAMBDA0
+         IF (KRE2.EQ.6) ARE2 = ABS(RE_PERTURB(1))
+         HRE2 = ARE2/DFLOAT(NRE2+1)
+      ENDIF
+
+      DO K3=1,12-KRE_INIT
+      DO K1=1,NRE1
+      DO K2=1,NRE2
+         K     = (K3-1)*NRE1*NRE2 + (K1-1)*NRE2 + K2
+         YRE(1,K) = RE_S0
+         YRE(2,K) = RE_CHI0
+         YRE(3,K) = RE_PHI0
+         YRE(4,K) = RE_P0   
+         YRE(5,K) = RE_LAMBDA0   
+
+         YRE(NREEQ+4,K) = KRE_SIGMA0
+         IF (KRE_INIT.EQ.10) YRE(NREEQ+4,K) = 2*K3 - 3
+
+         YRE(NREEQ+9,K) = ABS(RE_PERTURB(1))
+         IF (NRE1.GT.1.AND.KRE1.LT.6) YRE(KRE1,K) = HRE1*K1
+         IF (NRE2.GT.1.AND.KRE2.LT.6) YRE(KRE2,K) = HRE2*K2
+         IF (NRE1.GT.1.AND.KRE1.EQ.1) YRE(KRE1,K)=
+     &                                (RE_S0MIN**RE_SP+HRE1*K1)**HSP1
+         IF (NRE2.GT.1.AND.KRE2.EQ.1) YRE(KRE2,K)=
+     &                                (RE_S0MIN**RE_SP+HRE2*K2)**HSP1
+         IF (NRE1.GT.1.AND.KRE1.EQ.6) YRE(NREEQ+9,K) = HRE1*K1
+         IF (NRE2.GT.1.AND.KRE2.EQ.6) YRE(NREEQ+9,K) = HRE2*K2
+      ENDDO
+      ENDDO
+      ENDDO
+      ENDIF
+
+      IF (KRE_INIT.EQ.20) THEN
+C     START INITIAL POSITION OF PARTICLES FROM A LIMITER
+C     PLATE SPECIFIED BY INPUT FILE LIMITER_GEOM.IN
+
+C     STEP 1: READ INPUT FILE FOR LIMITER GEOMETRY
+C     PARTICLE WILL BE LAUNCHED FROM EACH (R,Z) POINT SPECIFIED BY THE
+C     FILE
+      OPEN(99,FILE='LIMITER_GEOM.IN')
+      READ(99,*) K1,K2
+      NREORBIT = K1   
+      NRE1     = NREORBIT*NPHIMAX
+      NRE2     = 1
+
+C     NOTE THAT KRE_INIT=20 OPTION MODIFIES NAMELIST VALUE NREORBIT
+      ALLOCATE(RLIM(NREORBIT),ZLIM(NREORBIT))
+         
+      DO K=1,NREORBIT
+         READ(99,*) RLIM(K),ZLIM(K)
+      ENDDO
+      CLOSE(99)
+
+C     STEP 2: NORMALIZE (R,Z)
+      RLIM = RLIM/R0EXP
+      ZLIM = ZLIM/R0EXP
+
+C     STEP 3: FIND (S,CHI) FOR EACH (RLIM,ZLIM) POINT
+      ALLOCATE( OCHI(NCHI+1) )
+      DO J=1,NCHI+1
+         OCHI(J) = 2.*PI*(J-1)/NCHI
+      ENDDO
+
+      DO K=1,NREORBIT
+         DO I=1,NVEQ-1
+         DO J=1,NCHI
+            AA1 = VRRM(I+1,J)-VRRM(I,J) 
+            BB1 = VRZM(I+1,J)-VRZM(I,J) 
+            AA2 = VRRM(I,J+1)-VRRM(I,J)
+            BB2 = VRZM(I,J+1)-VRZM(I,J)
+            AA3 = VRRM(I,J)+VRRM(I+1,J+1)-VRRM(I+1,J)-VRRM(I,J+1)
+            BB3 = VRZM(I,J)+VRZM(I+1,J+1)-VRZM(I+1,J)-VRZM(I,J+1)
+            AA4 = VRRM(I,J)
+            BB4 = VRZM(I,J)
+
+            OPP = AA3*BB1 - AA1*BB3
+            OQQ = AA2*BB1 - AA1*BB2 + (RLIM(K)-AA4)*BB3 - 
+     &                                (ZLIM(K)-BB4)*AA3
+            OSS = (RLIM(K)-AA4)*BB2 - (ZLIM(K)-BB4)*AA2
+            
+            IF (OPP.EQ.0.) THEN
+               IF (OQQ.EQ.0.) STOP 'KRE_INIT=20'
+               OX1 = -OSS/OQQ
+               OX2 = OX1
+            ELSE
+               ODD = OQQ*OQQ - 4.*OPP*OSS
+               IF (ODD.GT.0.) THEN
+                  OX1 = (-OQQ+SQRT(ODD))/OPP/2.
+                  OX2 = (-OQQ-SQRT(ODD))/OPP/2.
+               ELSE
+                  OX1 = -1.
+                  OX2 = -1.
+               ENDIF
+            ENDIF
+
+            OY1 = ((AA2+AA3*OX1)*(RLIM(K)-AA4-AA1*OX1) + 
+     &             (BB2+BB3*OX1)*(ZLIM(K)-BB4-BB1*OX1))/
+     &            ((AA2+AA3*OX1)**2 + (BB2+BB3*OX1)**2)
+            OY2 = ((AA2+AA3*OX2)*(RLIM(K)-AA4-AA1*OX2) + 
+     &             (BB2+BB3*OX2)*(ZLIM(K)-BB4-BB1*OX2))/
+     &            ((AA2+AA3*OX2)**2 + (BB2+BB3*OX2)**2)
+            
+            KCLOC = 0
+            IF (0.LE.OX1.AND.OX1.LE.1..AND.0.LE.OY1.AND.OY1.LE.1.) THEN
+               OXX   = OX1
+               OYY   = OY1
+               KCLOC = 1
+            ELSEIF (0.LE.OX2.AND.OX2.LE.1..AND.0.LE.OY2.AND.OY2.LE.1.) 
+     &             THEN
+               OXX    = OX2
+               OYY    = OY2
+               KCLOC  = 1
+            ENDIF
+
+            IF (KCLOC.EQ.1) THEN
+               YRE(1,K)  = VCSM(I)*(1.-OXX) + VCSM(I+1)*OXX
+               YRE(2,K)  = OCHI(J)*(1.-OYY) + OCHI(J+1)*OYY
+            ENDIF
+         ENDDO
+         ENDDO
+
+         DO K3=1,NPHIMAX
+         YRE(1,K+(K3-1)*NREORBIT)=YRE(1,K)
+         YRE(2,K+(K3-1)*NREORBIT)=YRE(2,K)
+         YRE(3,K+(K3-1)*NREORBIT) = 2*PI/DFLOAT(NPHIMAX+1)*K3
+         YRE(4,K+(K3-1)*NREORBIT) = RE_P0
+         YRE(5,K+(K3-1)*NREORBIT) = RE_LAMBDA0
+
+         YRE(NREEQ+4,K+(K3-1)*NREORBIT) = DFLOAT(KRE_SIGMA0)
+         YRE(NREEQ+9,K+(K3-1)*NREORBIT) = ABS(RE_PERTURB(1))
+         ENDDO
+      ENDDO
+
+      NREORBIT  = NRE1
+
+      DEALLOCATE(RLIM,ZLIM,OCHI)
+      ENDIF
+
+      IF (KRE_INIT.EQ.30) THEN
+C     RE-START REORBIT TRACING
+C     READ INITIAL CONDITIONS FROM RE_LOSS.IN   
+      OPEN(99,FILE='RE_LOSS.IN')
+      READ(99,*) K,KRE_STEP_TOT,K,K,K,K,RE_TIME_TOT,HRES,HRES,HRES,
+     &           HRES,HRES
+      READ(99,*) K,HRES,HRES,HRES,HRES,HRES,HRES,HRES,HRES,HRES,
+     &           HRES,HRES
+      DO K=1,NREORBIT
+         READ(99,*) YRE(NREEQ+6,K),YRE(NREEQ+7,K),YRE(NREEQ+5,K)
+     &             ,YRE(1,K),YRE(2,K),YRE(3,K),YRE(NREEQ+8,K)
+     &             ,YRE(4,K),YRE(5,K),YRE(NREEQ+4,K),YRE(NREEQ+9,K)
+     &             ,YRE(NREEQ+10,K),YRE(NREEQ+14,K)
+      ENDDO
+      CLOSE(99)
+      ENDIF
+
+C     STORE SOME INITIAL PARAMETERS
+      IF (KRE_INIT.NE.30) THEN
+      DO K=1,NREORBIT
+         YRE(NREEQ+6,K) = YRE(1,K)
+         YRE(NREEQ+7,K) = YRE(1,K)
+      ENDDO
+      ENDIF
+
+      RETURN
+      END
+
+

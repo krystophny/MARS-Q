@@ -1,0 +1,29 @@
+Sensitive parameters in CHEASE:
+
+NSMOOTH: control whether the plasma boundary can be well contructed by 
+         Fourier expansion.  =0 is good.
+
+SOLPDA: very important to control the q-profile, =0.5 is better than
+        =0.4
+
+B0EXP, R0EXP: should be set up in the NAMELIST in order to get correct 
+              current in the output.
+
+NCSCAL=4: no value of q at one point is needed to be specified,
+          important for constructing equilibrium from EQDSK
+
+Boundary shape (R,Z): should be normalized such that R0=1
+ 
+psi>0:  consider the sign of P' and TT'
+
+When change COMMON blocks, don't forget to change block size in COMDIM
+
+Good parameter set for CHEASE:
+   NS=NT=60, NCHI=256, MSMAX=60, shape is good, q is bad at center
+   NS=NT=46, NCHI=92,  MSMAX=22, both shape and q are good
+     
+Very important!: always choose NCHI as even number
+
+In order to better resolve magnetic axis, use the following packing for 
+the sigma-mesh:
+   NMESHC=1, NPOIDC=1, SOLPDC=0.8, CPLACE=0.0,CWIDTH=0.020,

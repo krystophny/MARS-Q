@@ -1,0 +1,247 @@
+MacConstants
+
+% ITER Scenario
+iter.name = 'ITER';
+iter.A = 3.2743; %R/a
+iter.R = 6.2;  %[m]
+iter.B = 2.65;  %[T]
+iter.Te = 1.9426e+4;  %[ev], average
+iter.Ti = 3.6201e+3;  %[ev], average
+iter.n = 2.1570e+19; %[1/m^3], ni
+iter.Z = 2.5; %D+T
+iter.Zeff = 1.1; 
+
+% ITER Scenario-4
+iter4.name = 'ITER-S4';
+iter4.A = 3.0910; %R/a
+iter4.R = 6.2;  %[m]
+iter4.B = 5.3;  %[T]
+iter4.Te = 34.25e+3;  %[ev], average
+%iter4.Ti = 31.32e+3;  %[ev], average
+iter4.Ti = 3.52e+6;  %[ev], average
+iter4.n = 7.220e+19; %[1/m^3], ni
+iter4.Z = 4; %D+T
+iter4.Zeff = 1.753; 
+
+% ITER Scenario-2
+iter2.name = 'ITER-S2';
+iter2.A = 3.0947; %R/a
+iter2.R = 6.2;  %[m]
+iter2.B = 5.3;  %[T]
+iter2.Te = 26.96e+3;  %[ev], average
+%iter2.Ti = 23.49e+3;  %[ev], average
+iter2.Ti = 1e+6;  %[ev], average
+iter2.n = 1.129E+20; %[1/m^3], ni
+iter2.Z = 2; %D+T
+iter2.Zeff = 1.753; 
+
+% JET
+jet.name = 'JET';
+jet.A = 3.08; %R/a
+jet.R = 2.898;  %[m]
+jet.B = 1.218;  %[T]
+jet.Te = 10e+3;  %[ev]
+jet.Ti = 10e+3;  %[ev]
+jet.n = 1.74e+19; %[1/m^3], ni
+jet.Z = 2; %D+D
+jet.Zeff = 1.0; 
+
+% DIII-D
+data = [
+%shot#  time(ms) B0EXP(T) R0EXP(M) R/a   ne0(m^-3)  Ti0(eV)   Te0(eV)   w0(rad/s) we(rad/s)  
+ 163519 1750     2.0083   1.6955  2.8495 3.6809e+19 7.0060e+3 4.2166e+3 1.4564e+5 1.6029e+5
+ 163519 2650     2.0089   1.6955  2.8719 5.1762e+19 6.7335e+3 4.7339e+3 9.8161e+4 1.1420e+5
+ 163520 1750     2.0112   1.6955  2.8848 3.8206e+19 6.5292e+3 4.0932e+3 1.4867e+5 1.5958e+5
+ 163520 2650     2.0126   1.6955  2.8585 5.4484e+19 6.4238e+3 4.3582e+3 9.9023e+4 1.0937e+5
+ 200236 0        2.3500   1.4850  3.5484 1.0e+18    16.344    16.344    0         0
+ 200236 0        2.3500   1.4850  3.5484 1.0e+18    10.296    10.296    0         0
+ 200236 0        2.3500   1.4850  3.5484 1.0e+18    5         5         0         0
+	];
+
+k = 1;
+d3d.name = 'DIII-D'; %141069@1495ms
+d3d.A = data(k,5);     %R/a
+d3d.R = data(k,4);  %[m]
+d3d.B = data(k,3);  %[T]
+d3d.Te = data(k,8);  %[ev]
+d3d.Ti = data(k,7);  %[ev]
+d3d.n = data(k,6);  %[1/m^3], ni
+d3d.Z = 2; %D+D
+d3d.Zeff = 1.0; 
+
+rot0  = data(k,9);
+
+% NSTX 
+nstx.name = 'NSTX'; %121803
+nstx.A    = 1/0.72483;
+nstx.R    = 0.85;
+nstx.B    = 0.390604;
+nstx.Te   = 887.095;
+nstx.Ti   = 817.658;
+nstx.n    = 5.256796E+19;
+nstx.Z    = 2;
+nstx.Zeff = 1.0; 
+
+% RFX
+rfx.name = 'RFX';
+rfx.A = 2/0.459;
+rfx.R = 2.0;
+rfx.B = 0.69;  %1.16 or 0.69 T
+rfx.Te = 1;
+rfx.Ti = 1;
+rfx.n  = 2.0e+19;
+rfx.Z  = 2;
+rfx.Zeff = 1.0; 
+
+% MAST
+mast.name = 'MAST';
+mast.A = 1.5416;
+mast.R = 1.0;
+mast.B = 0.5238;  
+mast.Te = 10e+03; %[eV]
+mast.Ti = 50e+03;
+mast.n  = 4.1144e+19;
+mast.Z  = 2;
+mast.Zeff = 1.0; 
+
+% JT60-SA
+jt60.name = 'JT60-SA';
+jt60.A = 2.6436;
+jt60.R = 3.25;
+jt60.B = 1.5631;  
+jt60.Te = 6.745e+3; %[eV]
+jt60.Ti = 7.100e+3;
+jt60.n  = 6.9344e+19;
+jt60.Z  = 2;
+jt60.Zeff = 1.0; 
+ 
+% AUG
+aug.name = 'ASDEX-U';
+aug.A = 3.2336;
+aug.R = 1.6500;
+aug.B = 1.8379;
+aug.Te = 5.2943e+03;
+%aug.Te = 5e+6;
+aug.Ti = 4.9130e+03;
+aug.n  = 4.9736e+19;
+aug.Z  = 2;
+aug.Zeff = 1.0;
+
+% KSTAR
+kstar.name = 'KSTAR';
+kstar.A = 3.8399;
+kstar.R = 1.8000;
+kstar.B = 1.7922;
+kstar.Te = 3.0163e+03;
+kstar.Ti = 4.1057e+03;
+kstar.n  = 4.3248e+19;
+kstar.Z  = 2;
+kstar.Zeff = 1.0;
+
+% STEP
+data3 = [
+%shot# B0EXP(T) R0EXP(M) R/a    ne0(m^-3)    Ti0(eV)      Te0(eV)      
+ 10001 3.2004   3.5995   1.8031 1.9664e+20   1.5051e+04   1.5051e+04   
+ 10002 3.2004   3.5995   1.8031 1.9664e+20   1.6006e+04   1.6006e+04   
+ 10003 3.1926   3.6083   1.8033 1.9624e+20   1.5681e+04   1.5681e+04
+ 10004 3.1968   3.6036   1.7965 1.4771e+20   3.0439e+04   3.0439e+04  
+ 10005 3.0000   4.3000   1.8000 1.3088e+20   1.9288e+04   1.9288e+04   
+];
+k = 5;
+step.name = 'STEP';
+step.A = data3(k,4); %R/a
+step.R = data3(k,3);  %[m]
+step.B = data3(k,2);  %[T]
+step.Te= data3(k,7);  %[ev], average
+step.Ti= data3(k,7);  %[ev], average
+step.n = data3(k,5); %[1/m^3], ni
+step.Z = 2.5; %D+T
+step.Zeff = 2.5; %Xenon Z=54)
+
+dev = d3d;
+name = dev.name;
+A = dev.A;
+R = dev.R;
+B = dev.B;
+Te = dev.Te;
+Ti = dev.Ti;
+n = dev.n;
+Z = dev.Z;
+Zeff = dev.Zeff;
+a = R/A;
+Te = Te*e/kB; %[K]
+Ti = Ti*e/kB; %[K]
+vthi = sqrt(2*kB*Ti/mi);
+vthe = sqrt(2*kB*Te/me);
+
+disp(['quantities for ', name])
+% gyrofrequencies
+omega_ce = e*B/me; 
+omega_ci = e*B/mi/Z; %[Hz]
+disp(['f_ci=', num2str(omega_ci/2/pi), ' f_ce=', num2str(omega_ce/2/pi)]), 
+
+% plasma frequency
+omega_pi = sqrt(e^2*n/mi/epsilon0);
+omega_pe = sqrt(e^2*n/me/epsilon0);
+disp(['f_pi=',num2str(omega_pi/2/pi), ' f_pe=',num2str(omega_pe/2/pi)])
+
+% gyro-radius
+r_Le = vthe/(omega_ce); %[m]
+r_Li = vthi/(omega_ci); %[m]
+disp(['r_Li=', num2str(r_Li), ' r_Le=', num2str(r_Le)]), 
+
+% Debye length
+r_D = sqrt(epsilon0*kB*Te/n/e^2); %[m]
+disp(['r_D=', num2str(r_D)]), 
+
+% rho_*
+rho_star = r_Li/a;
+% k_perp
+k_perp = [1 15]*100; %[1/m]
+disp(['k_perp=', num2str(k_perp), ' rho_*=', num2str(rho_star), ' k_perp*rho_*=' num2str(k_perp*rho_star)]), 
+
+% Alfven frequency
+v_A = B/sqrt(mu0*mi*Z*n); %[m/s]
+omega_A = v_A/R;  
+tau_A = R/v_A; %[s]
+disp(['f_A=',num2str(omega_A/2/pi), ' tau_A=',num2str(tau_A)])
+
+OMEGACI0 = omega_ci/omega_A
+ROTE     = rot0*tau_A
+  
+% ion sound frequency
+Gamma = 5/3;
+rho = mi*Z*n;
+P = n*kB*(Ti+Te);
+v_s = sqrt(Gamma*P/rho);
+omega_s = v_s/R;
+tau_s = R/v_s;
+disp(['f_s=',num2str(omega_s/2/pi), ' tau_s=',num2str(tau_s)])
+
+% diamagnetic drift frequency, estimation!
+omega_stari = 2*n*kB*Ti/a/(e*n*B)/R;
+omega_stare = 2*n*kB*Te/a/(e*n*B)/R;
+disp(['f_*i=',num2str(omega_stari/2/pi),' f_*e=',num2str(omega_stare/2/pi)])
+
+% magnetic drift frequency
+q = 2;
+omega_Bi = q*vthi^2/omega_ci/R/a;
+omega_Be = q*vthe^2/omega_ce/R/a;
+disp(['f_Bi=',num2str(omega_Bi/2/pi), ' f_Be=',num2str(omega_Be/2/pi)])
+
+% transit frequency (circulating ions and electrons)
+omega_ti = vthi/q/R;
+omega_te = vthe/q/R;
+disp(['f_ti=',num2str(omega_ti/2/pi), ' f_te=',num2str(omega_te/2/pi)])
+
+% bounce frequency (trapped ions and electrons)
+omega_bi = omega_ti/sqrt(2*A);
+omega_be = omega_te/sqrt(2*A);
+disp(['f_bi=',num2str(omega_bi/2/pi), ' f_be=',num2str(omega_be/2/pi)])
+
+% plasma resistivity according to Spitzer's formula
+etaP = pi*Zeff*e^2*sqrt(me)*lnL/(4*pi*epsilon0)^2/(kB*Te)^1.5;
+eta0 = mu0*R^2*omega_A/A^2;
+disp(['eta=',num2str(etaP),'[Ohm m];  S=',num2str(eta0/etaP)])
+disp(['ETA_MARS=1/S=',num2str(etaP/eta0)])
+

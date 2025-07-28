@@ -1,0 +1,1230 @@
+% plot time evolution of the toroidal rotation profile
+% from the output of MARS-Q runs with NCASE=6 (CALPHA7>0)
+% Note that this is a stand-alone code,
+% without coupling to other Mac* procedures
+
+%kdev    = 25;  %D3D157376_n3-2, n=3:PROFEQ_00.OUT; n=2:PROFEQ_05.OUT
+%kdev    = 45; %D3D157376_n6
+%kdev    = 38; %AUG33353
+%kdev    = 48; %ITER 7.5MA/5.3T_ISF
+%kdev    = 55; %MAST-U45272
+%kdev    = 56; %STEP_CASE1
+%kdev    = 61; %STEP_CASE2
+%kdev    = 62; %STEP_CASE3
+%kdev    = 63; %STEP_CASE4
+%kdev    = 66; %STEP_CASE5
+%kdev    = 65; %KSTAR30306.3900
+%kdev    = 68; %D3D163519.1750
+kdev    = 69; %D3D163519.2650
+%kdev    = 70; %D3D163520.1750
+%kdev    = 71; %D3D163520.2650
+
+Tmax = 1.126e+9; %maximal time to plot MARS-Q output
+SCOL = 'b';
+
+kplot = [
+%no key fig  %comments
+ 1  1   1    %adaptive time step
+ 2  0   2    %time evolution of radial profile of rotation change DeltaOmega
+ 3  1   3    %time evolution of radial profile of total rotation Omega
+ 4  0   4    %time evolution of rotation at magnetic axis
+ 5  0   5    %time evolution of total rotation at rational surface(s)
+ 6  1   6    %time evolution of b1 field at rational surface(s)
+ 7  0   7    %time evolution of radial profile of surface-averaged jxb torque density
+ 8  0   8    %time evolution of radial profile of surface-averaged NTV torque density
+ 9  0   9    %time evolution of radial profile of surface-averaged Reynolds stress torque density
+10  1  10    %time evolution of net torques
+11  0  11    %time evolution of normal displacement amplitude along plasma surface
+12  0  12    %net density pump-out
+13  0  13    %time evolution of particle flux associated with MHD
+14  0  14    %time evolution of particle flux associated with NTV
+15  0  15    %time evolution of radial profile of density change
+16  0  16    %time evolution of radial profile of total density 
+17  1  6     %time evolution of sensor field at pickup locations
+18  0  18    %compare particle fluxes from different terms at a given time
+19  0  19    %time evolution of net particle flux across plasma boundary
+20  0  20    %time evolution of volume-averaged plasma displacement
+21  0  21    %analytic steady state solution: figs 21-23
+22  0  30    %q-profile
+23  1  31    %time evolution of rotation at q95 surface
+];
+
+MacReadParam
+
+%mm = [1:1];
+%n   = 1;
+
+kprint = 0;
+kname  = '_n1_01'; %file name extention when kprint=1 
+
+%PLOT
+%Case# n q95/TIMEEVOL_n_#/Tmax[ms]
+%    2 1 9.95/04/70  9.9909/03/130 10.05/07/29.3
+%    2 2 9.95/02/84  9.9909/01/100 10.05/03/14.4
+%    3 1 11.1/03/70  11.283/02/120 11.4/06/19.7
+%    3 2 11.1/04/100 11.283/02/32  11.4/06/31
+
+Nmax = 50000;    %maximal time steps for plotting 
+Tmin = 0.0e+04;
+kres   = 0;       %1: plot rational surfaces
+kscale = 1;
+ks = 2;           %1: plot minor radius as s
+                  %2: plot minor radius as psip=s.^2
+
+plotnp = 5;       %select time slices for plotting
+                  %0: plot all time slices
+                  %1: plot end time step
+                  %2: plot start and end time steps
+                  %3: plot Ntime time slices
+                  %4: plot time slices with physical time step of dtphys in [ms]
+		  %5: plot the start and the last Ntime time slices
+		  %6: plot time-averaged profiles at Ntime time slices, 
+		  %   in [0,Tmax],with averaging window width of wtime
+		  %7: plot time-averaged profiles at Ntime time slices, 
+		  %   in [Tmax-Tdel,Tmax], with averaging window width of wtime
+		  
+Ntime  = 41;      %active when plotnp=3|5|6|7
+wtime  = 1;     %active when plotnp=6|7
+Tdel   = 65;       %active when plotnp=7
+
+stime  = 1.3;     %minor radius for ploting time trace; use rational surface(s) if stime>1 
+kedge  = 0;       %patch edge torque density
+rleft  = 0;       %radial range [rleft,rright] for 2D plot (plot2d=2)
+rright = 1;
+
+SLEFT  = 0;     %SLEFT in MARS-Q runs
+
+kplotsp = 2;      %1: time-stepping figure with one plot
+                  %2: time-stepping figure with two subplots
+
+plot2d = 1;       %0: do not plot 2D data
+                  %1: 1D plot of profile evolution for rotation, density, etc.
+                  %2: 2D plot of profile evolution for rotation, density, etc.
+
+knew = 5;         %1: b1res + torque + rotation
+                  %2: + xi_n
+                  %3: + density pumpout
+                  %4: + pickup signals
+                  %5: + VDE displacement
+
+if ks==1, SLAB = '\psi_p^{1/2}'; end
+if ks==2, SLAB = '\psi_p'; end
+
+% get re-normalisation factor
+fac_td = 1.0;
+fac_tt = 1.0;
+fac_xn = 1.0;
+fac_tm = 1.0;
+fac_b1 = 1.0;
+if kscale==1
+   fac_td = B0^2/4e-7/pi;   %[N/m^2]
+   fac_tt = fac_td*R0^3;    %[Nm]
+   fac_xn = R0*1e+3;        %[mm]
+   fac_tm = TAUA*1e+3;      %[ms]
+   fac_b1 = B0*1e+4;        %[Gauss]
+end
+
+Tmax  = Tmax/fac_tm;
+wtime = wtime/fac_tm;
+Tdel  = Tdel/fac_tm;
+
+%Axis2 = 0.528;   Tmax=Axis2/fac_tm;
+Axis2 = -1.0;
+
+% get the radial grid
+data = load([SDIR 'PROFEQ.OUT']);
+%data = load([SDIR 'PROFEQ_ROTneg']);
+%data = load([SDIR 'PROFEQ_ROTpos']);
+%data = load([SDIR 'PROFEQ_D3D157376_n3']);
+%data = load([SDIR 'PROFEQ_MAST22264']);
+%data = load([SDIR 'PROFEQ_MAST30128']);
+%data = load([SDIR 'PROFEQ_MAST28912_n2']);
+%data = load([SDIR 'PROFEQ_MAST29222_n2']);
+%data = load([SDIR 'PROFEQ_MAST25056_n3']);
+%data = load([SDIR 'PROFEQ_15MAQ10_n3']);
+
+if SLEFT>0
+   II = find(data(:,1)>SLEFT);
+   data = data(II,:);
+end
+
+s1   = data(:,1);
+w0   = data(:,6);  w0e = w0(end);
+q1   = data(:,2);
+d0   = data(:,5);
+Te   = data(:,11);
+s    = (s1(1:end-1)+s1(2:end))/2;  
+w0   = (w0(1:end-1)+w0(2:end))/2;
+d0   = (d0(1:end-1)+d0(2:end))/2;
+% fine ISTIME
+[Y,ISTIME] = min(abs(s1-stime));
+
+% find rational surfaces
+kplotq=0;
+if kplot(22,2)==1, kplotq=kplot(22,3); end
+[Is,rs,qs] = MacGetRatSurf(s1,q1,n,mm,kplotq,SCOL);  
+NS = length(Is);
+ms   = 1:NS;  
+
+%Key figures: 15, 11, 9, 7, 6, 5, 3
+
+% read the time evolution data from the MARS-Q output
+filename  = 'TIMEEVOL.OUT'; Tstart=0; kc=1;
+%filename  = 'TIMEEVOL_ESpotential'; Tstart=0; kc=1;
+%filename  = 'TIMEEVOL_KRE'; Tstart=0; kc=1;
+%filename  = 'TIMEEVOL_18_n4';  Tstart=7.4402e+04; kc=5; %Tstart=0; kc=1;
+%filename   = 'TIMEEVOL_19_n2';  Tstart=0; kc=1;
+%filename   = 'TIMEEVOL_19_n4';  Tstart=59920; kc=5;
+%filename   = 'TIMEEVOL_19_n4_b';  Tstart=59920; kc=4;
+%filename   = 'TIMEEVOL_37_n3';  Tstart=0; kc=1;
+%filename   = 'TIMEEVOL_37_n2_b';  Tstart=1.043705147e+6; kc=3;
+%filename   = 'TIMEEVOL_37_n2_lin2';  Tstart=0; kc=1;
+%filename   = 'TIMEEVOL_03_n6';  Tstart=0; kc=5;
+%filename  = 'TIMEEVOL_CHIM';
+%filename = 'TIMEEVOL_MAST22264_24';
+%filename = 'TIMEEVOL_MAST25056_13';
+%filename = 'TIMEEVOL_14'; Tstart=0; kc=1;
+%filename = 'Case02/TIMEEVOL.OUT';  Tstart=0; kc=1;
+%filename = 'TIMEEVOL_MAST28912_02';
+%filename = 'TIMEEVOL_14';  Tstart=0; kc=1;
+
+data = load([SDIR filename],'-ascii');
+%data = load('/cscratch/liuy/Data/ITER_MARSQ/TIMEEVOL_01h');
+%data = load('/cscratch/liuy/WorkITERa/TIMEEVOL.OUT');
+%data = load('~/IRIS/WorkD3Db/TIMEEVOL.OUT');
+
+% de-densify large data
+NDATA = size(data,1);
+if NDATA>10000
+   NDELTA = round(NDATA/10000);
+   II     = 1:NDELTA:NDATA;
+   NN = 1; if knew>3, NN=5; end
+   tt = cumsum(data(:,NN)); tt = tt(II); tt = [tt(1); diff(tt)];
+   data   = data(II,:);
+   data(:,NN) = tt;
+end
+   
+NN = 1;     %register of the array position
+if knew>3
+  NR              = data(1,1);
+  NCHI           = data(1,2);
+  NRATSURF = data(1,3);  NS = NRATSURF; 
+  NPICK        = data(1,4);
+  NN = 5;
+end
+
+delt = data(:,NN);  NN=NN+1; 
+
+tt = cumsum(delt) + Tstart;
+Tend = tt(end)
+II = find(tt<Tmax & tt>Tmin);
+if (tt(II(end))<tt(end)), II=[II; II(end)+1]; end
+data = data(II,:); t=tt(II);
+if length(II)>Nmax
+   II=1:Nmax;
+   data = data(II,:);
+   t    = tt(II);
+end   
+
+%specify line color
+Nc = 5;
+SS = '-';
+cc = zeros(Nc,3);
+for k=1:Nc
+    cc(k,1) = (k-1)/(Nc-1);
+    cc(k,3) = (Nc-k)/(Nc-1);
+    cc(k,2) = (k-1)*(Nc-k)/(Nc-1)^2;
+end
+cc = [0 0 1; 0 1 0; 1 0 0; 0 1 1; 0 0 0];
+
+NR   = length(s);
+
+dd = data(:,NN); NN=NN+1;         %net density pumpout (old model)
+if knew==1, dd = data(:,NN); NN=NN+1; end        %net density pumpout (old model), imaginary part
+if knew>1, ttrey = data(:,NN); NN=NN+1;  end    %net torque due to Reynolds stress tensor 
+ttjxb = data(:,NN); NN=NN+1;      %net JXB torque
+ttntv = data(:,NN); NN=NN+1;      %net NTV torque
+b1pest = data(:,NN:NN+NS-1) + data(:,NN+2*NS:NN+3*NS-1)*i;                                  %resonant harmonic of b1 in PEST CS (even if MARS-F ran in EQUAC)
+b1chi0 = data(:,NN+NS:NN+2*NS-1) + data(:,NN+3*NS:NN+4*NS-1)*i;  NN=NN+4*NS; %total b1 field at poloidal chi=0
+dw = data(:,NN:NN+NR-1); NN=NN+NR;       %change of toroidal rotation radial profile
+tjxb = data(:,NN:NN+NR-1); NN=NN+NR;      %JXB torque density radial profile
+tntv = data(:,NN:NN+NR-1); NN=NN+NR;      %NTV torque density radial profile
+if knew>1, trey = data(:,NN:NN+NR-1); NN=NN+NR;  end    %Reynolds stress torque density radial profile
+
+if knew==2, NCHI = round((size(data,2)-NN+1)/2); end
+if knew==3, NCHI = round((size(data,2)-NN+1-3*NR-2)/2); end
+
+if knew>1
+   Xn = data(:,NN:NN+NCHI-1) + data(:,NN+NCHI:NN+2*NCHI-1)*i;  NN=NN+2*NCHI;   %normal displacement of the plasma surface
+end
+if knew>2
+   fdmhd = data(:,NN);  NN=NN+1;   %fraction of net density pump out due to the MHD (convective) particle flux
+   fdntv   = data(:,NN);  NN=NN+1;   %fraction of net density pump out due to the NTV particle flux
+   drho = data(:,NN:NN+NR-1); NN=NN+NR;   %change of density radial profile
+   dmhd = data(:,NN:NN+NR-1); NN=NN+NR;   %MHD (convective) particle flux radial profile
+   dntv = data(:,NN:NN+NR-1); NN=NN+NR;   %NTV particle flux radial profile
+end
+if knew>3 & NPICK>0
+   bzpick = data(:,NN:NN+NPICK-1) + data(:,NN+NPICK:NN+2*NPICK-1)*i; NN=NN+2*NPICK;  %pick-up Bp signals
+end
+
+if knew>4
+   xirz = data(:,NN:NN+3); NN = NN+4;  %VDE displacement 
+end
+
+if (NN-1) ~= size(data,2), disp('data array size error!'), end
+
+%fix dw near magnetic axis
+if 1==0
+   I1 = find(s<0.05);
+   dw(:,I1) = 0;
+end
+
+%scale amplitude of w0 to 1e-2 (only for STEP-P project)
+if 1==0
+   w0 = w0/w0(1)*1e-2;
+end
+
+%select time slices for plotting, default is all times
+NP = length(t); IIT = [1:NP];
+if plotnp==1
+   IIT = [NP];
+elseif plotnp==2
+   IIT = [1 NP];
+elseif plotnp==3
+   tnew = linspace(t(1),t(end),Ntime);
+   IIT   = ones(size(tnew));
+   for k=1:length(tnew)
+       [Y,I] = min(abs(t-tnew(k)));
+       IIT(k) = I;
+   end
+elseif plotnp==4
+   dtphys = 20;            %time interval in [ms] 
+   tphys  = t*TAUA*1e+3;
+   tnphys = dtphys:dtphys:tphys(end); 
+   IIT    = ones(size(tnphys));
+   for k=1:length(tnphys)
+       [Y,I] = min(abs(tphys-tnphys(k)));
+       IIT(k) = I;
+   end
+elseif plotnp==5
+   IIT = [1 NP-Ntime+2:NP];
+end
+
+%====================================================================
+%plot adaptive time step
+%====================================================================
+if kplot(1,2)==1
+hf = figure(kplot(1,3));
+
+
+if kplotsp==2, hs=subplot(2,1,1); end
+%plot(tt*fac_tm,delt,SS,'Color',cc(kc,:),'LineWidth',3), hold on,
+plot([1:length(tt)],delt,SS,'Color',cc(kc,:),'LineWidth',3), hold on,
+if kscale==0
+   %xlabel('t/\tau_A','FontSize',18)
+   xlabel('iteration','FontSize',18)
+else
+   %xlabel('time [ms]','FontSize',18)
+   xlabel('iteration','FontSize',18)
+end
+ylabel('\Delta t/\tau_A','FontSize',18)
+if kplotsp==1, hs=get(hf,'CurrentAxes'); end
+set(hs,'FontSize',16,'FontWeight','Bold')
+
+if kplotsp==2
+hs=subplot(2,1,2);
+semilogy([1:length(tt)],tt,SS,'Color',cc(kc,:),'LineWidth',3), hold on,
+xlabel('iteration','FontSize',18)
+ylabel('t/\tau_A','FontSize',18)
+set(hs,'FontSize',16,'FontWeight','Bold')
+II = find(tt<Tmax);
+II = II(end);
+a=axis;
+semilogy([II II],[a(3) a(4)],'k-')
+disp(['Final time step=' int2str(II)])
+end
+
+end
+
+
+%====================================================================
+%plot time evolution of radial profile of rotation change DeltaOmega
+%====================================================================
+if plot2d==2 & kplot(2,2)==1
+
+hf = figure(kplot(2,3));
+II = find(s.^ks>=rleft & s.^ks<=rright);
+pcolor((s(II)).^ks,t*fac_tm,dw(:,II)/fac_tm), hold on, shading interp
+xlabel(SLAB,'FontSize',14)
+if kscale==0
+   ylabel('t/\tau_A','FontSize',14)
+   title('\Delta\Omega/\omega_A','FontSize',14)
+else
+   ylabel('time (ms)','FontSize',14)
+   title('\Delta\Omega (krad/s)','FontSize',14)
+end
+colorbar,  %colormap(hot)
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',14,'FontWeight','Bold')
+if kres==1
+a=axis; plot([rs.^ks rs.^ks]',[ones(NS,1)*a(3) ones(NS,1)*a(4)]','w--','LineWidth',1), hold on,
+end
+ 
+elseif plot2d==1 & kplot(2,2)==1
+hf = figure(kplot(2,3));
+
+plot(s.^ks,dw(IIT,:),'-','LineWidth',1), hold on,
+xlabel(SLAB,'FontSize',18,'FontWeight','Bold')
+ylabel('\Delta\Omega/\omega_A','FontSize',18,'FontWeight','Bold')
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+if kres==1
+a=axis; plot([rs.^ks rs.^ks]',[ones(NS,1)*a(3) ones(NS,1)*a(4)]','k--'), hold on,
+end
+end
+
+
+%====================================================================
+%plot time evolution of radial profile of total rotation Omega
+%====================================================================
+N  = size(dw,1);
+wn = ones(N,1)*w0' + dw;
+
+if plot2d==2 & kplot(3,2)==1
+
+hf = figure(kplot(3,3));
+II = find(s.^ks>=rleft & s.^ks<=rright);
+pcolor((s(II)).^ks,t*fac_tm,wn(:,II)/fac_tm), hold on, shading interp
+xlabel(SLAB,'FontSize',14)
+if kscale==0
+   ylabel('t/\tau_A','FontSize',14)
+   title('\Omega/\omega_A','FontSize',14)
+else
+   ylabel('time (ms)','FontSize',14)
+   title('\Omega (krad/s)','FontSize',14)
+end
+colorbar,  %colormap(hot)
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',14,'FontWeight','Bold')
+if kres==1
+a=axis; plot([rs.^ks rs.^ks]',[ones(NS,1)*a(3) ones(NS,1)*a(4)]','w--','LineWidth',1), hold on,
+end
+
+elseif plot2d==1 & kplot(3,2)==1
+
+hf = figure(kplot(3,3));
+s_new = s;  wn_new = wn(IIT,:);
+s_new = [s; 1];
+wn_new = [wn(IIT,:) ones(length(IIT),1)*w0e];
+if plotnp==6 | plotnp==7
+   if plotnp==6, tnew = linspace(t(1),t(end),Ntime); end
+   if plotnp==7, tnew = linspace(t(end)-Tdel,t(end),Ntime); end
+   NT   = length(tnew);
+   y    = zeros(NT-2,length(s_new));
+   IIT  = 1:NT;
+   for k=2:NT-1
+       ITT = find(t>=(tnew(k)-wtime/2) & t<=(tnew(k)+wtime/2));
+       if length(ITT)>1
+       for j=ITT(1):ITT(end)-1
+           y(k-1,:) = y(k-1,:) + (wn_new(j,:)+wn_new(j+1,:))*(t(j+1)-t(j))/2;
+       end
+       y(k-1,:) = y(k-1,:)/(t(ITT(end))-t(ITT(1)));
+       else
+       [YY,II] = min(abs(t-tnew(k)));
+       y(k-1,:)= wn_new(II,:);
+       end
+   end
+   cc  = linspace(0,1,NT); cc=cc(:);
+   ccc = zeros(NT,3);
+   if strcmp(SCOL,'b')
+      ccc(:,1) = cc.*(1-cc);
+      ccc(:,3) = cc;
+   elseif strcmp(SCOL,'r')   
+      ccc(:,1) = cc;
+      ccc(:,3) = cc.*(1-cc);
+   end
+end
+
+if length(IIT) > 2
+   IIT2 = 2:length(IIT)-1;
+   if plotnp~=2 & plotnp~=6 & plotnp~=7, plot(s_new.^ks,wn_new(IIT2,:)'/fac_tm,'LineWidth',1), hold on, end
+   if plotnp==6 | plotnp==7,
+      for k=2:NT-1
+          plot(s_new.^ks,y(k-1,:)/fac_tm,'Color',ccc(k,:),'LineWidth',1), hold on,
+      end	  
+   end 
+   plot(s_new.^ks,wn_new(1,:)'/fac_tm,'LineWidth',3,'Color','k'), hold on,
+   plot(s_new.^ks,wn_new(end,:)'/fac_tm,'LineWidth',3,'Color',SCOL), hold on,
+else
+   plot(s_new.^ks,wn_new(end,:)'/fac_tm,SS,'LineWidth',3,'Color',cc(kc,:)), hold on,
+end
+xlabel(SLAB,'FontSize',18,'FontWeight','Bold')
+if kscale==0
+  ylabel('\Omega/\omega_A','FontSize',18,'FontWeight','Bold')
+else
+  ylabel('\Omega (krad/s)','FontSize',18,'FontWeight','Bold')
+end
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+if kres==1
+a=axis; plot([rs.^ks rs.^ks]',[ones(NS,1)*a(3) ones(NS,1)*a(4)]','k--'), hold on,
+end
+end
+
+%axis([0 1 -20 150])
+if kprint>0, print(kplot(3,3),'-depsc',[SDIR 'rotprof' kname]), end
+
+%====================================================================
+%plot time evolution of rotation at magnetic axis
+%====================================================================
+if length(Is)>1 & kplot(4,2)==1 
+hf = figure(kplot(4,3));
+
+%[Y,Iq2]=min(abs(qs-3));
+%if length(Iq2)==1
+%   plot(t*fac_tm,wn(:,Is(Iq2))/fac_tm,SS,'Color',cc(kc,:),'LineWidth',3), hold on,
+%end
+plot(t*fac_tm,wn(:,1)/fac_tm,SS,'Color',cc(kc,:),'LineWidth',3), hold on,
+
+if kscale==1
+   xlabel('time (ms)','FontSize',18,'FontWeight','Bold')
+   ylabel('\Omega (krad/s)','FontSize',18,'FontWeight','Bold')
+else
+   xlabel('t/\tau_A','FontSize',18,'FontWeight','Bold')
+   ylabel('\Omega/\omega_A','FontSize',18,'FontWeight','Bold')
+end
+ha=get(hf,'CurrentAxes'); 
+set(ha,'FontSize',16,'FontWeight','Bold')
+if Axis2>0
+a=axis; axis([0 Axis2 0 100])
+end
+end
+
+%====================================================================
+%plot time evolution of rotation at q95 surface
+%====================================================================
+if length(Is)>1 & kplot(23,2)==1 
+hf = figure(kplot(23,3));
+
+[Y,Iq95]=min(abs(s.^2-0.95));
+plot(t*fac_tm,wn(:,Iq95)/fac_tm,SS,'Color',SCOL,'LineWidth',3), hold on,
+
+if kscale==1
+   xlabel('time (ms)','FontSize',18,'FontWeight','Bold')
+   ylabel('\Omega (krad/s)','FontSize',18,'FontWeight','Bold')
+else
+   xlabel('t/\tau_A','FontSize',18,'FontWeight','Bold')
+   ylabel('\Omega/\omega_A','FontSize',18,'FontWeight','Bold')
+end
+ha=get(hf,'CurrentAxes'); 
+set(ha,'FontSize',16,'FontWeight','Bold')
+if Axis2>0
+a=axis; axis([0 Axis2 0 100])
+end
+end
+
+%====================================================================
+%plot time evolution of total rotation at rational surface(s) 
+%====================================================================
+if kplot(5,2)==1 & length(Is)>0
+hf = figure(kplot(5,3));
+%ha = subplot(2,1,1);
+
+IIW = Is;
+if (stime<=1 & stime>=0), IIW = ISTIME; end
+
+if length(IIW)==1
+   plot(t*fac_tm,wn(:,IIW)/fac_tm,SS,'Color',cc(kc,:),'LineWidth',3), hold on,
+else
+   hp=plot(t*fac_tm,wn(:,IIW)/fac_tm,'LineWidth',3); hold on,
+   a=axis;
+   dd = (a(4)-a(3))/40;
+   for khp=1:length(hp) 
+        set(hp(khp),'LineStyle',SS)
+       c = get(hp(khp),'Color');
+       [X,I]=max(abs(wn(:,IIW(khp))/fac_tm));
+       text(t(I)*fac_tm,X+dd,[int2str(round(qs(khp)*n)) '/' int2str(n)],'FontSize',18,'FontWeight','Bold','Color',c)
+   end
+end
+if kscale==1
+   xlabel('time (ms)','FontSize',18,'FontWeight','Bold')
+ylabel('\Omega (krad/s)','FontSize',18,'FontWeight','Bold')
+else
+   xlabel('t/\tau_A','FontSize',18,'FontWeight','Bold')
+   ylabel('\Omega/\omega_A','FontSize',18,'FontWeight','Bold')
+end
+ha=get(hf,'CurrentAxes'); 
+set(ha,'FontSize',16,'FontWeight','Bold')
+if Axis2>0
+a = axis; axis([0 Axis2 0 10])
+end
+end
+
+%====================================================================
+%plot time evolution of b1 field at rational surface(s) 
+%====================================================================
+if NRATSURF>0 & kplot(6,2)==1
+hf = figure(kplot(6,3));
+
+MQ=8; ME=8;
+%hp=plot(t*fac_tm,real(b1pest(:,end))*fac_b1,'LineWidth',3); hold on,
+hp=semilogy(t*fac_tm,abs(b1pest(:,end))*fac_b1,[SCOL SS],'LineWidth',3); hold on,
+%hp=plot(t*fac_tm,abs(b1pest(:,end))*fac_b1,[SCOL SS],'LineWidth',3); hold on,
+%hp=plot(t*fac_tm,real(b1pest(:,MQ:ME))*fac_b1,'LineWidth',3); hold on,
+if kscale==1
+   xlabel('time (ms)','FontSize',18,'FontWeight','Bold')
+   ylabel('|b_{res}^1| (Gauss)','FontSize',18,'FontWeight','Bold')
+   if Axis2>0
+   a = axis; axis([0 Axis2 0 a(4)])
+   end
+else
+   xlabel('t/\tau_A','FontSize',18,'FontWeight','Bold')
+   ylabel('|b_{res}^1|','FontSize',18,'FontWeight','Bold')
+end
+ha=get(hf,'CurrentAxes'); 
+set(ha,'FontSize',16,'FontWeight','Bold')
+
+if kprint>0, print(kplot(6,3),'-depsc',[SDIR 'b1res' kname]), end
+
+if 1==0
+%estimate mode growth rate via a sliding time window of width DTW
+%and a total time window of TWE
+%growth rate normalized by Alfven time
+DTW = 125;
+TWE = 150;
+y   = abs(b1pest);
+II  = find(t<TWE-DTW);
+II2 = find(t<TWE);
+yy  = spline(t(II2),transpose(y(II2,1:end)),t(II)+DTW);
+yy  = transpose(yy);
+zz  = yy;
+for k=1:size(yy,2);
+    zz(:,k) = log(yy(:,k)./y(II,k))/DTW;
+end
+hf = figure(55);
+plot(t(II),zz,'LineWidth',2); hold on,
+plot([t(II(1)) t(II(end))],[mean(zz,1); mean(zz,1)],'--','LineWidth',2); hold on,
+xlabel('t/\tau_A','FontSize',18,'FontWeight','Bold')
+ylabel('\gamma\tau_A','FontSize',18,'FontWeight','Bold')
+ha=get(hf,'CurrentAxes'); 
+set(ha,'FontSize',16,'FontWeight','Bold')
+end
+end
+
+%====================================================================
+%plot time evolution of radial profile of surface-averaged jxb torque density
+%====================================================================
+if plot2d>0 & kplot(7,2)==1
+hf = figure(kplot(7,3));
+
+%patch edge solution
+if kedge>0
+x     = sqrt(s);
+y     = tjxb(IIT,:);
+IX    = find(x<0.99); 
+IX1   = IX(end);
+IX2   = IX(end-1);
+x1    = x(IX1);
+x2    = x(IX2);
+y1    = y(:,IX1);
+y2    = y(:,IX2);
+a     = (y2/(x2-1)-y1/(x1-1))/(x2-x1);
+b     = y1/(x1-1)-a*(x1-1);
+IX    = find(x>=0.99);
+xn    = x(IX)';
+y(:,IX)      = a*(xn-1).^2 + b*(xn-1);
+tjxb(IIT,:) = y;
+end
+
+if plot2d==2 & kplot(7,2)==1
+
+II = find(s.^ks>=rleft & s.^ks<=rright);
+pcolor((s(II)).^ks,fac_tm*t,fac_td*tjxb(:,II)), hold on, shading interp
+xlabel(SLAB,'FontSize',14)
+if kscale==0
+   ylabel('t/\tau_A','FontSize',14)
+   title('T_{jxb}','FontSize',14)
+else
+   ylabel('time (ms)','FontSize',14)
+   title('T_{jxb} (N/m^2)','FontSize',14)
+end
+colorbar,  %colormap(hot)
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',14,'FontWeight','Bold')
+if kres==1
+a=axis; plot([rs.^ks rs.^ks]',[ones(NS,1)*a(3) ones(NS,1)*a(4)]','w--','LineWidth',1), hold on,
+end
+
+elseif plot2d==1 & kplot(7,2)==1
+
+plot(s.^ks,fac_td*tjxb(IIT,:)','-'), hold on,
+xlabel(SLAB,'FontSize',18,'FontWeight','Bold')
+if kscale==1
+   ylabel('T_{jxb} (N/m^2)','FontSize',18,'FontWeight','Bold')
+else
+   ylabel('T_{jxb}','FontSize',18,'FontWeight','Bold')
+end
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+if kres==1
+a=axis; plot([rs.^ks rs.^ks]',[ones(NS,1)*a(3) ones(NS,1)*a(4)]','k--'), hold on,
+end
+
+end
+end
+
+%====================================================================
+%plot time evolution of radial profile of surface-averaged NTV torque density
+%====================================================================
+if plot2d>0 & kplot(8,2)==1
+hf = figure(kplot(8,3));
+
+%patch edge solution
+if kedge>0
+x     = sqrt(s);
+y     = tntv(IIT,:);
+IX    = find(x<0.99); 
+IX1   = IX(end);
+IX2   = IX(end-1);
+x1    = x(IX1);
+x2    = x(IX2);
+y1    = y(:,IX1);
+y2    = y(:,IX2);
+a     = (y2/(x2-1)-y1/(x1-1))/(x2-x1);
+b     = y1/(x1-1)-a*(x1-1);
+IX    = find(x>=0.99);
+xn    = x(IX)';
+y(:,IX)      = a*(xn-1).^2 + b*(xn-1);
+tntv(IIT,:) = y;
+end
+
+if plot2d==2 & kplot(8,2)==1
+
+II = find(s.^ks>=rleft & s.^ks<=rright);
+pcolor((s(II)).^ks,fac_tm*t,fac_td*tntv(:,II)), hold on, shading interp
+xlabel(SLAB,'FontSize',14)
+if kscale==0
+   ylabel('t/\tau_A','FontSize',14)
+   title('T_{NTV}','FontSize',14)
+else
+   ylabel('time (ms)','FontSize',14)
+   title('T_{NTV} (N/m^2)','FontSize',14)
+end
+colorbar,  %colormap(hot)
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',14,'FontWeight','Bold')
+if kres==1
+a=axis; plot([rs.^ks rs.^ks]',[ones(NS,1)*a(3) ones(NS,1)*a(4)]','w--','LineWidth',1), hold on,
+end
+
+elseif plot2d==1 & kplot(8,2)==1
+
+plot(s.^ks,fac_td*tntv(IIT,:)','-'), hold on,
+%semilogy(s.^ks,fac_td*abs(tntv(IIT,:))','-'), hold on,
+xlabel(SLAB,'FontSize',18,'FontWeight','Bold')
+if kscale==1
+   ylabel('T_{NTV} (N/m^2)','FontSize',18,'FontWeight','Bold')
+else
+   ylabel('T_{NTV}','FontSize',18,'FontWeight','Bold')
+end
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+if kres==1
+a=axis; plot([rs.^ks rs.^ks]',[ones(NS,1)*a(3) ones(NS,1)*a(4)]','k--'), hold on,
+end
+
+end
+end
+
+%====================================================================
+%plot time evolution of radial profile of surface-averaged Reynolds stress torque density
+%====================================================================
+if plot2d>0 & knew>1 & kplot(9,2)==1
+hf = figure(kplot(9,3));
+
+%patch edge solution
+if kedge>0
+x     = sqrt(s);
+y     = trey(IIT,:);
+IX    = find(x<0.99); 
+IX1   = IX(end);
+IX2   = IX(end-1);
+x1    = x(IX1);
+x2    = x(IX2);
+y1    = y(:,IX1);
+y2    = y(:,IX2);
+a     = (y2/(x2-1)-y1/(x1-1))/(x2-x1);
+b     = y1/(x1-1)-a*(x1-1);
+IX    = find(x>=0.99);
+xn    = x(IX)';
+y(:,IX)      = a*(xn-1).^2 + b*(xn-1);
+trey(IIT,:) = y;
+end
+
+if plot2d==2 & kplot(9,2)==1
+
+II = find(s.^ks>=rleft & s.^ks<=rright);
+pcolor((s(II)).^ks,fac_tm*t,fac_td*trey(:,II)), hold on, shading interp
+xlabel(SLAB,'FontSize',14)
+if kscale==0
+   ylabel('t/\tau_A','FontSize',14)
+   title('T_{REY}','FontSize',14)
+else
+   ylabel('time (ms)','FontSize',14)
+   title('T_{REY} (N/m^2)','FontSize',14)
+end
+colorbar,  %colormap(hot)
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',14,'FontWeight','Bold')
+if kres==1
+a=axis; plot([rs.^ks rs.^ks]',[ones(NS,1)*a(3) ones(NS,1)*a(4)]','w--','LineWidth',1), hold on,
+end
+
+elseif plot2d==1 & kplot(9,2)==1
+
+plot(s.^ks,fac_td*trey(IIT,:)','-'), hold on,
+xlabel(SLAB,'FontSize',18,'FontWeight','Bold')
+if kscale==1
+   ylabel('T_{REY} (N/m^2)','FontSize',18,'FontWeight','Bold')
+else
+   ylabel('T_{REY}','FontSize',18,'FontWeight','Bold')
+end
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+if kres==1
+a=axis; plot([rs.^ks rs.^ks]',[ones(NS,1)*a(3) ones(NS,1)*a(4)]','k--'), hold on,
+end
+
+end
+end
+
+%====================================================================
+%compare time evolution of net torques
+%====================================================================
+if kplot(10,2)==1
+hf = figure(kplot(10,3));
+%ha = subplot(2,1,2);
+
+semilogy(t*fac_tm,abs(fac_tt*ttjxb),'-','Color','b','LineWidth',3), hold on,
+semilogy(t*fac_tm,abs(fac_tt*ttntv),'-','Color','r','LineWidth',3), hold on,
+if knew>1, semilogy(t*fac_tm,abs(fac_tt*ttrey),'-','Color','k','LineWidth',3), hold on, end
+if kscale==1
+   xlabel('time (ms)','FontSize',18,'FontWeight','Bold')
+   ylabel('|net torque| (Nm)','FontSize',18,'FontWeight','Bold')
+   if Axis2>0
+   a=axis; axis([0 Axis2 a(3) a(4)])
+   end
+else
+   xlabel('t/\tau_A','FontSize',18,'FontWeight','Bold')
+   ylabel('|net torque|','FontSize',18,'FontWeight','Bold')
+end
+ha=get(hf,'CurrentAxes'); 
+set(ha,'FontSize',16,'FontWeight','Bold')
+if knew>1, legend('JXB','NTV','REYNOLDS','Location','northwest'), end
+end
+
+%axis([0 30 1e-4 1e+4])
+if kprint>0, print(kplot(10,3),'-depsc',[SDIR 'nettorq' kname]), end
+
+%====================================================================
+%plot time evolution of normal displacement amplitude along plasma surface  
+%====================================================================
+if knew>1 & plot2d>0 & kplot(11,2)==1
+hf = figure(kplot(11,3));
+
+NCHI = size(Xn,2);
+th   = linspace(0,2*pi,NCHI+1)';
+th   = th(1:NCHI);
+II   = find(th>pi);
+th(II)  = th(II)-2*pi;
+[th,II] = sort(th);
+th      = th*180/pi;
+Xn      = Xn(:,II);
+ 
+if plot2d==2 & kplot(11,2)==1
+
+pcolor(th,fac_tm*t,fac_xn*abs(Xn)), hold on, shading interp
+xlabel('poloidal angle (degree)','FontSize',14)
+if kscale==0
+   ylabel('t/\tau_A','FontSize',14)
+   title('|\xi_n|','FontSize',14)
+else
+   ylabel('time (ms)','FontSize',14)
+   title('|\xi_n| (mm)','FontSize',14)
+end
+colorbar,  %colormap(hot)
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',14,'FontWeight','Bold')
+
+elseif plot2d==1 & kplot(11,2)==1
+
+plot(th,fac_xn*abs(Xn(IIT,:))'), hold on,
+xlabel('poloidal angle (degree)','FontSize',18,'FontWeight','Bold')
+if kscale==0
+   ylabel('|\xi_n|','FontSize',18,'FontWeight','Bold')
+else
+   ylabel('|\xi_n| (mm)','FontSize',18,'FontWeight','Bold')
+end
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+
+end
+end
+
+%====================================================================
+%plot the net density pump-out
+%====================================================================
+if knew>2 & kplot(12,2)==1
+hf = figure(kplot(12,3));
+
+d00 = sum(d0.*diff(s1));
+drho0 = drho*diff(s1);
+fdrho0 = drho0/d00;
+x = t*fac_tm;
+y = fdrho0;
+if kdev==30
+   xx = linspace(x(1),x(end),39);
+   yy = spline(x,y,xx);
+   II = find(xx<450 | xx>500);
+   xx = xx(II);
+   yy = yy(II);
+   x2 = linspace(x(1),x(end),301);
+   y2 = spline(xx,yy,x2);
+   x  = x2;
+   y  = y2;
+end
+if kplot(12,2)==1
+plot(x,y,SS,'Color',SCOL,'LineWidth',3), hold on,
+%plot(t*fac_tm,fdmhd,'--','Color',cc(kc,:),'LineWidth',1), hold on,
+%plot(t*fac_tm,fdntv,'-.','Color',cc(kc,:),'LineWidth',1), hold on,
+if kscale==1
+   xlabel('time (ms)','FontSize',18,'FontWeight','Bold')
+else
+   xlabel('t/\tau_A','FontSize',18,'FontWeight','Bold')
+end
+ylabel('\Delta{n}/n_{eq}','FontSize',18,'FontWeight','Bold')
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+%legend('net','MHD','NTV')
+else
+DPHI=360*x*1e-3; II=find(DPHI>360); DPHI(II)=DPHI(II)-360;
+[AX,H1,H2]=plotyy(x,y,x,DPHI);
+xlabel('time (ms)','FontSize',24,'FontWeight','Bold')
+set(H1,'LineStyle','-','Color','b','LineWidth',4),
+set(H2,'LineStyle','--','Color','r','LineWidth',4),
+set(AX(1).YLabel,'String','\Delta{n}/n_{eq}','FontSize',24,'FontWeight','Bold','Color','b')
+set(AX(2).YLabel,'String','\Delta\Phi [deg]','FontSize',24,'FontWeight','Bold','Color','r')
+set(AX(1),'FontSize',24,'FontWeight','Bold','XLim',[0 1100],'YLim',[-0.3 0])
+set(AX(2),'FontSize',24,'FontWeight','Bold','XLim',[0 1100],'YLim',[0 360])
+end
+
+%plot time evolution of density flux associated with MHD
+if plot2d==2 & kplot(13,2)==1
+
+hf = figure(kplot(13,3));
+II = find(s.^ks>=rleft & s.^ks<=rright);
+pcolor((s(II)).^ks,fac_tm*t,dmhd(:,II)), hold on, shading interp
+xlabel(SLAB,'FontSize',14)
+title('\Gamma_{MHD}','FontSize',14)
+if kscale==0
+   ylabel('t/\tau_A','FontSize',14)
+else
+   ylabel('time (ms)','FontSize',14)
+end
+colorbar,  %colormap(hot)
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',14,'FontWeight','Bold')
+if kres==1
+a=axis; plot([rs.^ks rs.^ks]',[ones(NS,1)*a(3) ones(NS,1)*a(4)]','w--','LineWidth',1), hold on,
+end
+
+elseif plot2d==1 & kplot(13,2)==1
+
+hf = figure(kplot(13,3));
+if length(IIT)==1
+   x  = s.^ks;
+   y  = dmhd(IIT,:);
+   xx = linspace(x(1),x(end),2001);
+   yy = spline(x,y,xx);
+   JJ = find(xx>0.993 & xx<1); JJ=JJ-1;
+   for k=1:10
+       yy(JJ) = 0.5*yy(JJ) + 0.25*(yy(JJ-1)+yy(JJ+1));
+   end
+   plot(xx,yy,'b-','LineWidth',4), hold on,
+else   
+   plot(s.^ks,dmhd(IIT,:),'LineWidth',1), hold on,
+   plot(s.^ks,dmhd(IIT(1),:),'b-','LineWidth',2), hold on,
+   plot(s.^ks,dmhd(IIT(end),:),'r-','LineWidth',2), hold on,
+end
+xlabel(SLAB,'FontSize',18,'FontWeight','Bold')
+ylabel('\Gamma_{MHD}','FontSize',18,'FontWeight','Bold')
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+if kres==1
+a=axis; plot([rs.^ks rs.^ks]',[ones(NS,1)*a(3) ones(NS,1)*a(4)]','k--'), hold on,
+end
+end
+
+%plot time evolution of particle flux associated with NTV
+if plot2d==2 & kplot(14,2)==1
+
+hf = figure(kplot(14,3));
+II = find(s.^ks>=rleft & s.^ks<=rright);
+pcolor((s(II)).^ks,fac_tm*t,dntv(:,II)), hold on, shading interp
+xlabel(SLAB,'FontSize',14)
+title('\Gamma_{NTV}','FontSize',14)
+if kscale==0
+   ylabel('t/\tau_A','FontSize',14)
+else
+   ylabel('time (ms)','FontSize',14)
+end
+colorbar,  %colormap(hot)
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',14,'FontWeight','Bold')
+if kres==1
+a=axis; plot([rs.^ks rs.^ks]',[ones(NS,1)*a(3) ones(NS,1)*a(4)]','w--','LineWidth',1), hold on,
+end
+
+elseif plot2d==1 & kplot(14,2)==1
+
+hf = figure(kplot(14,3));
+if length(IIT)==1
+   x  = s.^ks;
+   y  = dntv(IIT,:);
+   xx = linspace(x(1),x(end),2001);
+   yy = spline(x,y,xx);
+   plot(xx,yy,'b-','LineWidth',4), hold on,
+else   
+   plot(s.^ks,dntv(IIT,:),'LineWidth',1), hold on,
+   plot(s.^ks,dntv(IIT(1),:),'b-','LineWidth',2), hold on,
+   plot(s.^ks,dntv(IIT(end),:),'r-','LineWidth',2), hold on,
+end
+xlabel(SLAB,'FontSize',18,'FontWeight','Bold')
+ylabel('\Gamma_{NTV}','FontSize',18,'FontWeight','Bold')
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+if kres==1
+a=axis; plot([rs.^ks rs.^ks]',[ones(NS,1)*a(3) ones(NS,1)*a(4)]','k--'), hold on,
+end
+end
+
+%plot time evolution of radial profile of density change
+if plot2d==2 & kplot(15,2)==1
+
+hf = figure(kplot(15,3));
+II = find(s.^ks>=rleft & s.^ks<=rright);
+pcolor((s(II)).^ks,fac_tm*t,drho(:,II)), hold on, shading interp
+xlabel(SLAB,'FontSize',14)
+title('\Delta{n}/n_{eq}','FontSize',14)
+if kscale==0
+   ylabel('t/\tau_A','FontSize',14)
+else
+   ylabel('time (ms)','FontSize',14)
+end
+colorbar,  %colormap(hot)
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',14,'FontWeight','Bold')
+if kres==1
+a=axis; plot([rs.^ks rs.^ks]',[ones(NS,1)*a(3) ones(NS,1)*a(4)]','w--','LineWidth',1), hold on,
+end
+
+elseif plot2d==1 & kplot(15,2)==1
+
+hf = figure(kplot(15,3));
+plot(s.^ks,drho(IIT,:),'LineWidth',1), hold on,
+xlabel(SLAB,'FontSize',18,'FontWeight','Bold')
+ylabel('\Delta{n}/n','FontSize',18,'FontWeight','Bold')
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+if kres==1
+a=axis; plot([rs.^ks rs.^ks]',[ones(NS,1)*a(3) ones(NS,1)*a(4)]','k--'), hold on,
+end
+end
+
+%plot time evolution of radial profile of total density 
+N  = size(drho,1);
+rhon = ones(N,1)*d0' + drho;
+
+if plot2d==2 & kplot(16,2)==1
+
+hf = figure(kplot(16,3));
+II = find(s.^ks>=rleft & s.^ks<=rright);
+pcolor((s(II)).^ks,fac_tm*t,rhon(:,II)), hold on, shading interp
+xlabel(SLAB,'FontSize',14)
+title('density','FontSize',14)
+if kscale==0
+   ylabel('t/\tau_A','FontSize',14)
+else
+   ylabel('time (ms)','FontSize',14)
+end
+colorbar,  %colormap(hot)
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',14,'FontWeight','Bold')
+if kres==1
+a=axis; plot([rs.^ks rs.^ks]',[ones(NS,1)*a(3) ones(NS,1)*a(4)]','w--','LineWidth',1), hold on,
+end
+
+elseif plot2d==1 & kplot(16,2)==1
+
+hf = figure(kplot(16,3));
+rhonew = rhon;
+for k=1:size(rhonew,1)
+    I=find(diff(rhonew(k,:))>0.005 & rhonew(k,1:end-1)<0.06); 
+    if length(I)>0, 
+       I=I(1); 
+       rhonew(k,I+1:end)=rhonew(k,I);
+    end
+end
+if plotnp~=2, plot(s.^ks,rhonew(IIT,:),'LineWidth',1), hold on, end
+plot(s.^ks,rhonew(1,:),'k-','LineWidth',3), hold on,
+plot(s.^ks,rhonew(end,:),[SCOL '-'],'LineWidth',3), hold on,
+xlabel(SLAB,'FontSize',18,'FontWeight','Bold')
+ylabel('density','FontSize',18,'FontWeight','Bold')
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+res = [s rhon(end,:)'];
+a=axis; axis([0 1 0 a(4)])
+save PROFDEN res -ascii
+if kres==1
+a=axis; plot([rs.^ks rs.^ks]',[ones(NS,1)*a(3) ones(NS,1)*a(4)]','k--'), hold on,
+axis(a)
+end
+end
+
+if kprint>0, print(kplot(16,3),'-depsc',[SDIR 'denprof' kname]), end
+
+end
+
+%====================================================================
+%plot time evolution of sensor field at pickup locations
+%====================================================================
+if knew>3 & NPICK>0 & kplot(17,2)==1
+hf = figure(kplot(17,3));
+
+%hp=plot(t*fac_tm,real(bzpick)*fac_b1,'b-','LineWidth',2); hold on,
+%hp=plot(t*fac_tm,imag(bzpick)*fac_b1,'b--','LineWidth',2); hold on,
+hp=semilogy(t*fac_tm,abs(bzpick)*fac_b1,'r-','LineWidth',3); hold on,
+for khp=1:-length(hp) 
+     set(hp(khp),'LineStyle',SS), 
+     c = get(hp(khp),'Color');
+     [X,I]=max(real(bzpick(:,khp)*fac_b1));
+     text(t(I)*fac_tm,X,int2str(khp),'FontSize',18,'FontWeight','Bold','Color',c)
+end
+
+if kscale==1
+   xlabel('time (ms)','FontSize',18,'FontWeight','Bold')
+   %ylabel('|b_p(pickup)| (Gauss)','FontSize',18,'FontWeight','Bold')
+   ylabel('|{\delta}B| (Gauss)','FontSize',18,'FontWeight','Bold')
+   if Axis2>0
+   a = axis; axis([0 Axis2 0 a(4)])
+   end
+else
+   xlabel('t/\tau_A','FontSize',18,'FontWeight','Bold')
+   ylabel('|b_p(pickup)|','FontSize',18,'FontWeight','Bold')
+end
+ha=get(hf,'CurrentAxes'); 
+set(ha,'FontSize',16,'FontWeight','Bold')
+legend('b_{res}^1','b_p^{pickup}')
+end
+
+%====================================================================
+%compare particle fluxes from different terms at a given time
+%====================================================================
+if knew>3 & kplot(18,2)==1
+hf = figure(kplot(18,3));
+
+Gamma_t0=10; %in [ms]
+CHID0=1.6114e-7;
+CHID = CHID0*(Te/Te(1)).^(-1.5);
+CHID = spline(s1,CHID,s);
+[X,II] = min(abs(t*fac_tm-Gamma_t0));
+ddrho = diff(drho(II,:)); ddrho=ddrho(:);
+Gamma_diff =-CHID(1:end-1).*ddrho./diff(s);
+sx=(s(1:end-1)+s(2:end))/2; Gamma_diff = spline(sx,Gamma_diff,s);
+Gamma_ntv = dntv(II,:);
+Gamma_mhd = dmhd(II,:);
+
+plot(s.^ks,Gamma_diff,'r-','LineWidth',3), hold on,
+plot(s.^ks,Gamma_ntv,'b--','LineWidth',3), hold on,
+plot(s.^ks,Gamma_mhd,'k-.','LineWidth',3), hold on,
+xlabel(SLAB,'FontSize',18,'FontWeight','Bold')
+ylabel('particle flux','FontSize',18,'FontWeight','Bold')
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+if kres==1
+a=axis; plot([rs.^ks rs.^ks]',[ones(NS,1)*a(3) ones(NS,1)*a(4)]','k--'), hold on,
+end
+legend('DIFF','NTV','MHD')
+end
+
+%====================================================================
+%plot time evolution of net particle flux across plasma boundary
+%====================================================================
+if knew>3 & kplot(19,2)==1
+hf = figure(kplot(19,3));
+
+CDEDGE=0.999;
+CHID  = 4.1304e-5;  %CHI_D at CDEDGE for D3D157376
+II = find(s<0.99); II=II(end);
+Gamma_diff = CHID*(drho(:,II)-drho(:,II-1))/(s(II)-s(II-1));
+II = find(s<CDEDGE); II=II(end);
+Gamma_ntv = dntv(:,II);
+Gamma_mhd = dmhd(:,II);
+
+plot(t*fac_tm,Gamma_diff,'r-','LineWidth',3); hold on,
+plot(t*fac_tm,Gamma_ntv,'b--','LineWidth',3); hold on,
+plot(t*fac_tm,Gamma_mhd,'k-.','LineWidth',3); hold on,
+
+if kscale==1
+   xlabel('time (ms)','FontSize',18,'FontWeight','Bold')
+   ylabel('net particle flux','FontSize',18,'FontWeight','Bold')
+   if Axis2>0
+   a = axis; axis([0 Axis2 0 a(4)])
+   end
+else
+   xlabel('t/\tau_A','FontSize',18,'FontWeight','Bold')
+   ylabel('net particle flux','FontSize',18,'FontWeight','Bold')
+end
+ha=get(hf,'CurrentAxes'); 
+set(ha,'FontSize',16,'FontWeight','Bold')
+legend('DIFFUSION','NTV','REYNOLDS')
+end
+
+
+%====================================================================
+%plot time evolution of volume-averaged plasma displacement
+%====================================================================
+if knew>4 & kplot(20,2)==1
+hf = figure(kplot(20,3));
+
+plot(t*fac_tm,real(xirz(:,1))*1e+3,'b-','LineWidth',3); hold on,
+plot(t*fac_tm,imag(xirz(:,2))*1e+3,'b--','LineWidth',3); hold on,
+plot(t*fac_tm,real(xirz(:,3))*1e+3,'r-','LineWidth',3); hold on,
+plot(t*fac_tm,imag(xirz(:,4))*1e+3,'r--','LineWidth',3); hold on,
+
+if kscale==1
+   xlabel('time (ms)','FontSize',18,'FontWeight','Bold')
+   ylabel('displacement ','FontSize',18,'FontWeight','Bold')
+else
+   xlabel('t/\tau_A','FontSize',18,'FontWeight','Bold')
+   ylabel('displacement','FontSize',18,'FontWeight','Bold')
+end
+ha=get(hf,'CurrentAxes'); 
+set(ha,'FontSize',16,'FontWeight','Bold')
+legend('Re(\xi_R)','Im(\xi_R)','Re(\xi_Z)','Im(\xi_Z)')
+end
+
+
+% analytic steady state solution
+%====================================================================
+if kplot(21,2)==1
+a0=2.0; d0=3.0; t0=3.2; alf=1.5; bet=2.3; gam=1.7;
+
+y0 = t0/d0*(alf-bet)/bet/(bet+gam)*(alf/(alf+gam)-alf/(alf-bet)+...
+     gam/(alf+gam)*(exp(gam)-exp(-bet))/(exp(-alf)-exp(-bet)));
+y  = y0*(alf*exp(-bet*s)-bet*exp(-alf*s))/(alf-bet) - ...
+     t0/d0*alf/(bet+gam)*((exp(gam*s)-exp(-alf*s))/(alf+gam)-...
+     (exp(-bet*s)-exp(-alf*s))/(alf-bet));
+
+figure(kplot(21,3))
+plot(s,y,'b-','LineWidth',3), hold on,
+
+figure(kplot(21,3)+1)
+plot([delt(1) sum(delt)],[y0 y0],'k--','LineWidth',2), hold on,
+
+
+% plot relative error in L_2 norm
+hf = figure(kplot(21,3)+2);
+
+N  = size(data,1);
+dy = data-ones(N,1)*y';
+dyL2  = sqrt(dy.^2*diff(s1));
+dyL20 = sqrt(sum(y.^2.*diff(s1)));
+semilogy(t,dyL2/dyL20,'r-+','LineWidth',2,'MarkerSize',8), hold on,
+
+xlabel('time','FontSize',16,'FontWeight','Bold')
+ylabel('||y-y_{ana}||_{L_2} / ||y_{ana}||_{L_2}','FontSize',16,'FontWeight','Bold')
+ha=get(hf,'CurrentAxes'); set(ha,'FontSize',16,'FontWeight','Bold')
+%axis([0 1 1e-4 0.2])
+end
+
+

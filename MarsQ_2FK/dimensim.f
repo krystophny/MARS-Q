@@ -1,0 +1,40 @@
+*COMDECK DIMENSI
+C$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+      MODULE DIMENSIM
+      IMPLICIT NONE
+      INTEGER          NCRAY,NSMAX,MSDIM,MEDIM
+      PARAMETER        (NCRAY=1000,NSMAX=2)
+      INTEGER          NXCOMP,NYCOMP      
+      INTEGER          NRSDIM
+      PARAMETER        (NRSDIM=2000)
+C
+C.....INTEGERS FOR DIMENSIONING OF MATRICES A-HSUBM IN MAIN
+C
+      INTEGER          MSMAT,MXMAT,MYMAT
+C
+C      PARAMETER        (MSMAT=MSDIM)
+C      PARAMETER        (MXMAT=NXCOMP*MSMAT,MYMAT=NYCOMP*MSMAT)
+C
+C.....ARRAY SIZES OF ACTUAL APPLICATION
+C
+      INTEGER          NR,NRP1,NFIT,MSEQ,MSMAX,MXMAX,MYMAX,MSMAT1,
+     &                 NTOT,NTP1,NCHI,NTORQ,NDNTR,NRES,NRESR
+C
+C     VACUUM DIMENSIONS
+C
+      INTEGER          NV,NVP1,NVEQ,NVEQ1,MVMAX
+C      COMMON /VACDIM/  NV,NVP1,NVEQ,NVEQ1,MVMAX
+C
+C-----------------------------------------------------------------------
+C  NR=    # RADIAL GRID POINTS (HALF MESH)
+C  NRP1=  # RADIAL GRID POINTS (INTEGER MESH)
+C  MSEQ=  # EQUILIBRIUM M COMPONENTS
+C  MSMAX= # M COMPONENTS
+C  NSMAX= # N COMPONENTS
+C-----------------------------------------------------------------------
+C
+      END MODULE DIMENSIM
+
+
+
+

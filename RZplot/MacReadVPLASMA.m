@@ -1,0 +1,354 @@
+function [VM1,VM2,VM3,DPSIDS,T,VM1N] = MacReadVPLASMA(filename)
+
+global Mac SDIR
+
+VPLASMA = load(filename);
+
+Mac.Nm1 = VPLASMA(1,1);
+
+if Mac.Ns1 ~= VPLASMA(1,2)
+    disp('Number of radial points is different for equilibrium and stability!')
+end
+
+Mac.n  = round(VPLASMA(1,3));
+Mac.Mm = round(VPLASMA(2:Mac.Nm1+1,1));
+DPSIDS = VPLASMA(Mac.Nm1+2:Mac.Nm1+1+Mac.Ns1,1);
+T      = VPLASMA(Mac.Nm1+2:Mac.Nm1+1+Mac.Ns1,4);
+
+if length(Mac.mm_plot)>0 
+   Mac.mm_true = Mac.mm_plot-Mac.Mm(1)+1;
+else
+   Mac.mm_true = Mac.Mm-Mac.Mm(1)+1;
+end
+
+VM1 = VPLASMA(Mac.Nm1+2+Mac.Ns1:end,1) + VPLASMA(Mac.Nm1+2+Mac.Ns1:end,2)*i;
+VM2 = VPLASMA(Mac.Nm1+2+Mac.Ns1:end,3) + VPLASMA(Mac.Nm1+2+Mac.Ns1:end,4)*i;
+VM3 = VPLASMA(Mac.Nm1+2+Mac.Ns1:end,5) + VPLASMA(Mac.Nm1+2+Mac.Ns1:end,6)*i;
+
+VM1 = reshape(VM1,Mac.Ns1,Mac.Nm1)*Mac.VNORM;
+VM2 = reshape(VM2,Mac.Ns1,Mac.Nm1)*Mac.VNORM;
+VM3 = reshape(VM3,Mac.Ns1,Mac.Nm1)*Mac.VNORM;
+VM1N= VM1;
+
+% note that VM2 and VM3 are defined at half-points, recompute at integer-points
+if 1==0
+x = (Mac.s(1:Mac.Ns1-1) + Mac.s(2:Mac.Ns1))*0.5;
+VM2new = VM2; VM2new(2:end-1,:) = transpose(spline(x',transpose(VM2(1:end-1,:)),Mac.s(2:Mac.Ns1-1)'));
+VM2new(1,:) = VM2new(2,:);  VM2new(end,:) = VM2new(end-1,:);  VM2 = VM2new; clear VM2new
+
+VM3new = VM3; VM3new(2:end-1,:) = transpose(spline(x',transpose(VM3(1:end-1,:)),Mac.s(2:Mac.Ns1-1)'));
+VM3new(1,:) = VM3new(2,:);  VM3new(end,:) = VM3new(end-1,:);  VM3 = VM3new; clear VM3new
+
+%VM1(1,2-Mac.Mm(1)) = VM1(2,2-Mac.Mm(1)); 
+end
+
+if 1==1
+%change the edge points of VM1
+I = find(Mac.s<Mac.edge); I = I(end);
+for k=I+1:Mac.Ns1
+    VM1(k,:) = VM1(I,:);
+    VM2(k,:) = VM2(I,:);
+    VM3(k,:) = VM3(I,:);
+end
+end
+
+if 1==0
+%change the edge points of VM1
+I = Mac.Ns1-1;
+for k=I+1:Mac.Ns1
+    VM1(k,:) = VM1(I,:);
+    VM2(k,:) = VM2(I,:);
+    VM3(k,:) = VM3(I,:);
+end
+end
+
+%change the central point for |m|=1
+%method-I
+if 1==1
+   m=1; k=m-Mac.Mm(1)+1;
+   VM1(2,k) = VM1(3,k);
+   VM1(1,k) = VM1(3,k);
+   m=-1; k=m-Mac.Mm(1)+1;
+   VM1(2,k) = VM1(3,k);
+   VM1(1,k) = VM1(3,k);
+end
+%method-II
+if 1==0
+   m=1; k=m-Mac.Mm(1)+1;
+   VM1(:,k) = spline(Mac.s(4:Mac.Ns1),VM1(4:Mac.Ns1,k),Mac.s(1:Mac.Ns1));
+end
+
+if 1==1
+%change the central points of VM2 & VM3
+I = find(Mac.s>Mac.core); I=I(1);
+for k=1:I-1
+    VM2(k,:) = VM2(I,:);
+    VM3(k,:) = VM3(I,:);
+end
+end
+
+if 1==0
+   %keep only imaginary part of VM1 and real part of VM2&VM3
+   VM1 = imag(VM1)*1i;
+   VM2 = real(VM2);
+   VM3 = real(VM3);
+end
+
+if 1==0
+%change the phase of VM
+m0 = 1 - Mac.Mm(1) + 2;
+[X,I0] = max(abs(VM1(1:Mac.Ns1-1,m0)));
+phasV = -angle(VM1(I0,m0))+pi/2*0
+%phasV = 3.8223e+00;
+VM1 = VM1 * exp(i*phasV);
+VM2 = VM2 * exp(i*phasV);
+VM3 = VM3 * exp(i*phasV);
+end
+
+if Mac.plot_VM > 0 | Mac.plot_VS > 0
+   if 1==1
+   figure(10*Mac.plot_VM+0)
+   SS = Mac.SS;
+   VM = VM1; a = angle(VM); C = max(max(abs(VM)));
+   I = find(abs(VM)/C<0.001); a(I)=0; I = find(a<0); a(I)=a(I)+pi;
+   sr = 0;
+   sss = Mac.s(1:Mac.Ns1);
+   mp=Mac.mm_plot - Mac.Mm(1) + 1;
+   if length(Mac.Iratsurf)>0, sr = Mac.s(Mac.Iratsurf); end
+   %subplot(3,2,1), plot(Mac.s(1:Mac.Ns1),a/pi,SS), hold on,
+   subplot(3,2,1), plot(sss,real(VM1(:,mp)),SS), hold on,
+                   ylabel('Re(V^1_m)','FontSize',14)
+                   a=axis; plot([sr sr],[a(3) a(4)],'k--')
+   subplot(3,2,2), plot(sss,imag(VM1(:,mp)),SS), hold on,
+                   a=axis; plot([sr sr],[a(3) a(4)],'k--')
+   VM = VM2; a = angle(VM); C = max(max(abs(VM)));
+   I = find(abs(VM)/C<0.2); a(I)=0; I = find(a<0); a(I)=a(I)+pi;
+   subplot(3,2,3), plot(sss,real(VM2(:,mp)),SS), hold on,
+                   ylabel('Re(V^2_m)','FontSize',14)
+   subplot(3,2,4), plot(sss,imag(VM2(:,mp)),SS), hold on,
+
+   VM = VM3; a = angle(VM); C = max(max(abs(VM)));
+   I = find(abs(VM)/C<0.2); a(I)=0; I = find(a<0); a(I)=a(I)+pi;
+   subplot(3,2,5), plot(sss,real(VM3(:,mp)),SS), hold on,
+                   ylabel('Re(V^3_m)','FontSize',14)
+                   xlabel('s','FontSize',14), ylabel('Im(V^3_m)','FontSize',14)
+   subplot(3,2,6), plot(sss,imag(VM3(:,mp)),SS), hold on,
+                   xlabel('s','FontSize',14), ylabel('Im(V^3_m)','FontSize',14)
+   end
+
+   MN = Mac.mm_plot;
+   MM = Mac.mm_true;
+
+   if Mac.plot_VM>0
+   hf=figure(10*Mac.plot_VM+1);
+   Y = abs(VM1(:,MM));
+   %Y = real(VM1(:,MM));
+   %q = Mac.q(1:Mac.Ns1);
+   Cn=max(max(abs(Y))); Y = Y/Cn;
+   %if abs(max(max(Y)))<abs(min(min(Y))), Y=-Y; Cn=-Cn; end
+   %hp=plot(Mac.s(1:Mac.Ns1),(Mac.s(1:Mac.Ns1)*ones(1,size(Y,2))).*Y,'-','LineWidth',2); hold on,
+   hp=plot(Mac.s(1:Mac.Ns1),Y,'LineWidth',1); hold on,
+   xlabel('s\equiv\psi_N^{1/2}','FontSize',16,'FontWeight','Bold')
+   %xlabel('\psi_p{\equiv}s^2','FontSize',16,'FontWeight','Bold')
+   %hp=plot(q,Y,'-','LineWidth',2); hold on,
+   %xlabel('q','FontSize',16,'FontWeight','Bold')
+   ylabel('|\xi\cdot\nabla{s}| [a.u.]','FontSize',18,'FontWeight','Bold')
+   %ylabel('\xi\cdot\nabla{s} [a.u.]','FontSize',18,'FontWeight','Bold')
+   ha=get(hf,'CurrentAxes');
+   set(ha,'FontSize',16,'FontWeight','Bold')
+   for k=1:-length(MN)
+       c = get(hp(k),'Color');
+       [X,I]=max(abs(Y(:,k)));
+       %text(Mac.s(I),Y(I,k),int2str(MN(k)),'FontSize',18,'FontWeight','Bold','Color',c)
+   end
+   %text(0.05,0.95,'(c)','FontSize',18,'FontWeight','Bold')
+   axis tight
+   sr = Mac.s(Mac.Iratsurf);
+   a=axis; 
+   for k=1:length(sr)
+       %plot([sr(k).^2 sr(k).^2],[a(3) a(4)],'k--')
+   end
+   %res = [Mac.s(1:Mac.Ns1) Y];
+   %save tmp res -ascii
+   end
+
+   if 1==1
+   hf=figure(10*Mac.plot_VM+2);
+   pcolor(MN,Mac.s(1:Mac.Ns1),Y), hold on, shading interp
+   %axis([min(mk) max(mk) 0 1])
+   %axis([-20 20 0 1])
+   xlabel('m','FontSize',16,'FontWeight','Bold')
+   ylabel('s=\psi_N^{1/2}','FontSize',16,'FontWeight','Bold')
+   title('|\xi\cdot\nabla{s}| [a.u.]','FontSize',16,'FontWeight','Bold')
+   colorbar,  colormap(hot)
+   ha=get(hf,'CurrentAxes'); set(ha,'FontSize',14,'FontWeight','Bold')
+   end
+     
+   if 1==0
+   hf=figure(10*Mac.plot_VM+2);
+   d=load([SDIR 'PROFEQ.OUT']);
+   plot(d(:,1),d(:,2),'LineWidth',3); hold on,
+   xlabel('s\equiv\psi_p^{1/2}','FontSize',16,'FontWeight','Bold')
+   ylabel('safety factor','FontSize',16,'FontWeight','Bold')
+   ha=get(hf,'CurrentAxes');
+   set(ha,'FontSize',16,'FontWeight','Bold')
+   grid on
+   end
+
+
+   if 1==0   
+   hf=figure(10*Mac.plot_VM+2);
+
+   % VV1 = Xi dot grad Ti = VM1*(dTi/ds) ==> ECEI data
+   if 1==0
+   d = load([SDIR 'PROFEQ_n1']);
+   x = d(:,1);
+   y = d(:,10)/d(1,10);
+   xx = linspace(0,1,2001);
+   yy = spline(x,y,xx);
+   dy = diff(yy)./diff(xx);
+   xo = (xx(1:end-1)+xx(2:end))/2;
+   dy = spline(xo,dy,x);
+   VV1 = VM1(:,MM); 
+   for k=1:size(VV1,2)
+       VV1(:,k) = VV1(:,k).*dy;
+   end
+   VM1(:,MM) = VV1;
+   end
+
+   Y = abs(VM1(:,MM));
+   Cn=max(max(abs(Y))); Y = Y/Cn;
+   hp=plot(Mac.s(1:Mac.Ns1),Y,'LineWidth',2); hold on,
+   xlabel('\psi_p^{1/2}','FontSize',16,'FontWeight','Bold')
+   %ylabel('|(\xi\cdot\nabla{s})_m|','FontSize',16,'FontWeight','Bold')
+   ylabel('|(\xi\cdot\nabla T_i)|','FontSize',16,'FontWeight','Bold')
+   ha=get(hf,'CurrentAxes');
+   set(ha,'FontSize',16,'FontWeight','Bold')
+   for k=1:length(MN)
+       c = get(hp(k),'Color');
+       [X,I]=max(abs(Y(:,k)));
+       %text(Mac.s(I),Y(I,k),int2str(MN(k)),'FontSize',18,'FontWeight','Bold','Color',c)
+   end
+   axis tight
+   a=axis; plot([sr sr],[a(3) a(4)],'k--')
+   end
+   
+   if 1==0
+   hf=figure(10*Mac.plot_VM+3);
+   C=max(max(abs(imag(VM1(:,MM))),[],1));
+   C1=max(imag(VM1(:,MM)),[],1);
+   C2=min(imag(VM1(:,MM)),[],1);
+   C3=C1;
+   I=find(abs(C1)<abs(C2));  C3(I)=C2(I);
+   plot(Mac.Mm(MM),C3/C,'r-o','LineWidth',1,'MarkerSize',8), hold on,
+   ylabel('max[Im(\xi_1^{(m)}(r))]','FontSize',16,'FontWeight','Bold')
+   xlabel('m','FontSize',16,'FontWeight','Bold')
+   ha=get(hf,'CurrentAxes');
+   set(ha,'FontSize',16,'FontWeight','Bold')
+   %axis tight
+   end
+
+   if 1==0
+   hf=figure(10*Mac.plot_VM+5);
+   Y = real(VM2(:,MM)); Y = Y/Cn;
+   plot(Mac.s(1:Mac.Ns1),Y,'LineWidth',2), hold on,
+   ylabel('\xi^2','FontSize',16,'FontWeight','Bold')
+   xlabel('\psi_p^{1/2}','FontSize',16,'FontWeight','Bold')
+   ha=get(hf,'CurrentAxes');
+   set(ha,'FontSize',16,'FontWeight','Bold')
+   for k=1:length(MN)
+       c = get(hp(k),'Color');
+       [X,I]=max(abs(Y(:,k)));
+       text(Mac.s(I),Y(I,k),int2str(MN(k)),'FontSize',18,'FontWeight','Bold','Color',c)
+   end
+   axis tight
+   end
+
+   if Mac.kRAW > 0
+      Mac.RAW_X1U = VM1;
+   end
+
+   if Mac.kSVD > 0
+      mleft   = 0;
+      sleft   = 0;
+      SSC     = Mac.SS(1);
+
+      [U,S,V] = svd(VM1); 
+      S_VM1 = diag(S);
+      k_VM1 = Mac.kSVDeigen; 
+      ks    = int2str(k_VM1);
+      SSU   = S_VM1(k_VM1);
+      kplot = 0;
+
+      if kplot==1
+      hf=figure(10*Mac.plot_VS+1);
+      pcolor(Mac.Mm,Mac.s(1:Mac.Ns1).^2,abs(VM1(1:Mac.Ns1,:))), colorbar, shading interp,
+      xlabel('m','FontSize',18,'FontWeight','Bold')
+      ylabel('\psi_p','FontSize',18,'FontWeight','Bold')
+      title('|{\xi}^1_{mn}|','FontSize',14)
+      ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18,'FontWeight','Bold')
+      a=axis; axis([mleft a(2) sleft 1]); %colormap(hot)
+
+      hf=figure(10*Mac.plot_Jpara+3); hold on
+      plot(S_VM1/S_VM1(1),[SSC '--+'],'LineWidth',2,'MarkerSize',9)
+      xlabel('SVD mode #','FontSize',18,'FontWeight','Bold')
+      ylabel('S/S_1','FontSize',18,'FontWeight','Bold')
+      ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18,'FontWeight','Bold')
+      a=axis; axis([0 10 a(3) a(4)]);
+
+      hf=figure(10*Mac.plot_VS+4);
+      plot(Mac.s(1:Mac.Ns1).^2,real(U(:,k_VM1))*SSU,[SSC '-'],'LineWidth',2), hold on
+      plot(Mac.s(1:Mac.Ns1).^2,imag(U(:,k_VM1))*SSU,[SSC '--'],'LineWidth',2), hold on
+      xlabel('\psi_p','FontSize',18,'FontWeight','Bold')
+      ylabel(['U_' ks '*S_' ks],'FontSize',18,'FontWeight','Bold')
+      ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18,'FontWeight','Bold')
+      %legend('Re[U(1)]','Im[U(1)]','Re[U(2)]','Im[U(2)]')
+
+      hf=figure(10*Mac.plot_VS+5);
+      plot(Mac.Mm,real(V(:,k_VM1)),[SSC '-'],'LineWidth',2), hold on
+      plot(Mac.Mm,-imag(V(:,k_VM1)),[SSC '--'],'LineWidth',2), hold on
+      xlabel('m','FontSize',18,'FontWeight','Bold')
+      ylabel(['V_' ks],'FontSize',18,'FontWeight','Bold')
+      ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18,'FontWeight','Bold')
+      a=axis; axis([-33 33 a(3) a(4)])
+      %legend('Re[V(1)]','Im[V(1)]','Re[V(2)]','Im[V(2)]')
+      end
+
+      VM1N = VM1*0;
+      for k=1:Mac.kSVDsum
+          VM1N = VM1N + U(:,k)*transpose(conj(V(:,k)))*S(k,k);
+      end
+      S_VM1 = S_VM1(1:15)
+
+      if Mac.kSVDreconst==1
+	 VPLASMA = zeros(1+Mac.Nm1+Mac.Ns1+Mac.Nm1*Mac.Ns1,6);
+         VPLASMA(1,1) = Mac.Nm1;
+         VPLASMA(1,2) = Mac.Ns1;
+         VPLASMA(1+Mac.Nm1+Mac.Ns1+1:end,:) = [real(VM1N(:)) imag(VM1N(:)) real(VM2(:)) imag(VM2(:)) real(VM3(:)) imag(VM3(:))];
+         save XPLASMA_NEW.OUT VPLASMA -ascii -double
+         movefile('XPLASMA_NEW.OUT',[SDIR 'XPLASMA_NEW.OUT'])
+      end
+
+      %relative error between VM1 and VM1N
+      RE_VM1 = max(max(abs(VM1-VM1N)))/max(max(abs(VM1)))
+
+      %save MoR data
+      if 1==1
+         Mac.SVD_XU  = U(:,1:Mac.kSVDsum);
+         Mac.SVD_XV  = V(:,1:Mac.kSVDsum);
+         Mac.SVD_XS  = S_VM1(1:Mac.kSVDsum);
+         Mac.SVD_XRE = RE_VM1; 
+      end
+
+      if kplot==1
+      hf=figure(10*Mac.plot_VS+6);
+      pcolor(Mac.Mm,Mac.s(1:Mac.Ns1).^2,abs(VM1N(1:Mac.Ns1,:))), colorbar, shading interp,
+      xlabel('m','FontSize',18,'FontWeight','Bold')
+      ylabel('\psi_p','FontSize',18,'FontWeight','Bold')
+      title('|{\xi}^1_{mn}|','FontSize',14)
+      ha=get(hf,'CurrentAxes'); set(ha,'FontSize',18,'FontWeight','Bold')
+      a=axis; axis([mleft a(2) sleft 1]); %colormap(hot)
+      end
+   end
+end
+

@@ -1,0 +1,72 @@
+% patch RE_LOSS_RAW.OUT file grepped from LOG_MPI* files
+% sort ordering and add missing data
+% and save to RE_LOSS.OUT
+% need to add 2 head-data lines after this
+% run the following first:
+% sed -i s/"LOG_MPI....\.OUT:RECORD:"/""/g RE_LOSS_RAW.OUT 
+
+%SDIR = '../Data_RE/IR_I200_P3_T300/';
+%SDIR = '/cscratch/liuy/WorkDong/';
+%SDIR = '~/Work/D3D177038/Data_RE/IR_I200_P3_N/';
+%SDIR = '~/Work/RE_ITER/DataRE_HALO/GrowingdB/76ms_P20/';
+%SDIR = '/home/liuy/Work/RE_IK/Data_RE/FULLuniformS/IK_hybrid_B1e-3/';
+%SDIR = '~/Work/ITER/Data_EP/10MA/EP_P0.5MeV_B1G_4/';
+%SDIR = '~/Work/ITER/Data_RE/Case09_N/';
+%SDIR = '/home/liuy/Work/MAST-U/46943/Data/Case1/dBa0G/';
+%SDIR = '/home/liuy/Work/KSTAR/Data/30306.7850_gpec/';
+%SDIR = '/home/liuy/Work/MAST-U/46943/Data/FIDIST_GC/';
+SDIR = '/home/liuy/Work/DIII-D/D3D177028/Data/RootDR/RE_0.01/';
+
+d = load([SDIR 'RE_LOSS_RAW']);
+N = 3000;
+
+[I1,II]=sort(d(:,1));
+d = d(II,:);
+
+II = setdiff([1:N],d(:,1));
+
+disp(['number of missing data =' int2str(length(II))])
+
+for k=1:length(II)
+    L=II(k);
+    d = [d(1:L-1,:); d(L-1,:); d(L:end,:)];
+end
+
+d = d(:,2:end);
+
+save([SDIR 'RE_LOSS.OUT'],'d','-ascii','-double')
+
+disp(['max time =' num2str(max(d(:,3)))])
+
+% get initial conditions for missing particles 
+if 1==0
+   RE_S0MIN   = 7.071067811865476e-01;
+   RE_S0MAX   = 1.0;
+   RE_SP      = 2;
+   RE_LAMBDA0 = 1.0;
+   HSP1       = 1.0/RE_SP;
+
+   RES = zeros(length(II),3);
+   for j=1:length(II)
+       NRE1 = 30;
+       NRE2 = 30;
+       K    = II(j);
+       K3   = 1;
+       if K>NRE1*NRE2, K3=2; K=K-NRE1*NRE2; end
+       K1   = floor((K-0.5)/NRE2)+1;
+       K2   = K-(K1-1)*NRE2;
+       
+       ARE1 = RE_S0MAX^RE_SP-RE_S0MIN^RE_SP;
+       ARE2 = RE_LAMBDA0;
+       HRE1 = ARE1/(NRE1+1);
+       HRE2 = ARE2/(NRE2+1);
+  
+       RES(j,1)   = (RE_S0MIN^RE_SP+HRE1*K1)^HSP1;
+       RES(j,2)   = HRE2*K2;
+       RES(j,3)   = 2*K3-3;
+    end
+    format long e
+    missing_particles = RES
+end
+
+
