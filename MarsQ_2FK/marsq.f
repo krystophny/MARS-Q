@@ -20044,7 +20044,10 @@ C     STEP 2.2: COMPUTE MATRIX ELEMENTS
       IF (KCHECK.GE.1) WRITE(*,*) 'MAX_EC,IBNM_EC=',MAX_EC,IBNM_EC
 
       ECA = (0.,0.)
-        
+
+!$OMP PARALLEL DO DEFAULT(SHARED)
+!$OMP& PRIVATE(MS,KS,J1,J2,J,CTMP1,CTMP2,TEMP1,TEMP2)
+!$OMP& SCHEDULE(DYNAMIC)
       DO MS=M1_EC-M1+1,M2_EC-M1+1
       IF (KCHECK.GE.2) WRITE(*,*) 'MS=',MS
       DO KS=M1_EC-M1+1,M2_EC-M1+1
@@ -20053,7 +20056,9 @@ C     STEP 2.2: COMPUTE MATRIX ELEMENTS
             CTMP1 = EXP((RM(KS,2)*(J1-1)-RM(MS,2)*(J2-1))*HCHI*CI)
             TEMP1 = (ECR2(J2)-ECR1(J1))**2 + (ECZ2(J2)-ECZ1(J1))**2
             DO J=1,NP_EC
-               TEMP2 = (TEMP1 + 2.*ECR1(J1)*ECR2(J2)*(1.-ECPC(J)))**1.5
+               TEMP2 = TEMP1 +
+     &                 2.*ECR1(J1)*ECR2(J2)*(1.-ECPC(J))
+               TEMP2 = TEMP2*SQRT(TEMP2)
                CTMP2 = (ECDSDR(J2)*(ECR1(J1)*(ECZ1(J1)-ECZ2(J2))*
      &                              ECPC(J)*ECPCN(J)*RM(KS,2)/RNTOR + 
      &                              (ECR1(J1)*ECDZDC(J1)+
@@ -20069,6 +20074,7 @@ C     STEP 2.2: COMPUTE MATRIX ELEMENTS
          ENDDO
       ENDDO
       ENDDO
+!$OMP END PARALLEL DO
       TEMP1 = HCHI**2*HPHI/8.0/PI**2
       ECA   =-ECA*TEMP1*(VCS(IFEED+1)-VCS(IFEED-1))*0.5
 
