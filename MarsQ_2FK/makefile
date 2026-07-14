@@ -8,6 +8,7 @@
 FFLAGS = -OPT:Olimit=0 -m64
 
 PROG =	 marsq.x
+BUILD_DIR ?= ../build
 DIR_LSODE = /lsode
 SRCS_LSODE = daxpy.f   dcopy.f  dewset.f  dgbsl.f  dgesl.f \
              dprepj.f  dsolsy.f  dstode.f  dvnorm.f  iumach.f  lsode.f   xerrwd.f \
@@ -61,6 +62,25 @@ F95FLAGS = -O1 -r8 -openmp
 
 all: $(PROG)
 
+.PHONY: gnu ifx nvhpc
+
+gnu:
+	mkdir -p $(BUILD_DIR)
+	$(MAKE) PROG=$(BUILD_DIR)/marsq-gnu.x F95=mpif90 \
+		F95FLAGS='-O2 -fdefault-real-8 -fdefault-double-8 -fopenmp -ffixed-line-length-none -ffree-line-length-none -fallow-argument-mismatch'
+
+# Source the Intel oneAPI environment before invoking this target.
+ifx:
+	mkdir -p $(BUILD_DIR)
+	$(MAKE) PROG=$(BUILD_DIR)/marsq-ifx.x F95=mpiifx \
+		F95FLAGS='-O2 -real-size 64 -qopenmp -extend-source 132'
+
+# Put the NVIDIA HPC SDK compiler and HPC-X MPI wrapper on PATH first.
+nvhpc:
+	mkdir -p $(BUILD_DIR)
+	$(MAKE) PROG=$(BUILD_DIR)/marsq-nvhpc.x F95=mpifort \
+		F95FLAGS='-O2 -r8 -mp -Mextend'
+
 $(PROG): $(OBJS)
 	$(F95) $(F95FLAGS) -o $@ $(OBJS) $(LIBS) $(INCDIR)
 
@@ -80,5 +100,4 @@ tar:
 
 .f.o:
 	$(F95) $(F95FLAGS) -c $<
-
 
