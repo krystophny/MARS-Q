@@ -62,21 +62,22 @@ F95FLAGS = -O1 -r8 -openmp
 
 all: $(PROG)
 
-.PHONY: gnu ifx nvhpc
+.PHONY: gnu ifx nvhpc clean-objects test test-runtime check
+.NOTPARALLEL: gnu ifx nvhpc
 
-gnu:
+gnu: clean-objects
 	mkdir -p $(BUILD_DIR)
 	$(MAKE) PROG=$(BUILD_DIR)/marsq-gnu.x F95=mpif90 \
 		F95FLAGS='-O2 -fdefault-real-8 -fdefault-double-8 -fopenmp -ffixed-line-length-none -ffree-line-length-none -fallow-argument-mismatch'
 
 # Source the Intel oneAPI environment before invoking this target.
-ifx:
+ifx: clean-objects
 	mkdir -p $(BUILD_DIR)
 	$(MAKE) PROG=$(BUILD_DIR)/marsq-ifx.x F95=mpiifx \
 		F95FLAGS='-O2 -real-size 64 -qopenmp -extend-source 132'
 
 # Put the NVIDIA HPC SDK compiler and HPC-X MPI wrapper on PATH first.
-nvhpc:
+nvhpc: clean-objects
 	mkdir -p $(BUILD_DIR)
 	$(MAKE) PROG=$(BUILD_DIR)/marsq-nvhpc.x F95=mpifort \
 		F95FLAGS='-O1 -r8 -mp -Mextend'
@@ -87,8 +88,21 @@ $(PROG): $(OBJS)
 clean:
 	rm -f $(PROG) *.o *.mod *.d  \lsode\*.o \lsode\*.mod 
 
+# The legacy dependency graph writes compiler-specific modules and objects into
+# the source tree.  Remove only those intermediates before changing compiler;
+# keep the historical tracked executable untouched.
+clean-objects:
+	rm -f *.o *.mod *.d lsode/*.o lsode/*.mod
+
 test:
-	echo $(OBJS) 
+	python -B -m unittest discover -s ../tests -p 'test_*.py'
+
+test-runtime:
+	test -n "$(MARS_EXE)"
+	MARS_EXE="$(MARS_EXE)" python -B -m unittest discover \
+		-s ../tests -p 'test_*.py'
+
+check: test
 
 tar:
 	gtar zcvf ../$(PROG).tar.gz $(SRCS) $(INCS) $(MODS) makefile README
