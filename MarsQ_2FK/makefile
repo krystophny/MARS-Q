@@ -79,7 +79,7 @@ ifx:
 nvhpc:
 	mkdir -p $(BUILD_DIR)
 	$(MAKE) PROG=$(BUILD_DIR)/marsq-nvhpc.x F95=mpifort \
-		F95FLAGS='-O2 -r8 -mp -Mextend'
+		F95FLAGS='-O1 -r8 -mp -Mextend'
 
 $(PROG): $(OBJS)
 	$(F95) $(F95FLAGS) -o $@ $(OBJS) $(LIBS) $(INCDIR)
@@ -100,4 +100,3 @@ tar:
 
 .f.o:
 	$(F95) $(F95FLAGS) -c $<
-
