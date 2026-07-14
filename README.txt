@@ -20,6 +20,7 @@ historical tracked `marsq.x` untouched and write executables under `build/`:
     make -C MarsQ_2FK nvhpc
 
 The GNU target includes the compatibility flags required by this legacy source.
+The NVIDIA target intentionally uses `-O1`; nvfortran 26.5 crashes internally
+while compiling `kinetic.f` at `-O2`.
 The equivalent-current (`KKF=-3`) Biot-Savart kernel uses OpenMP; set
 `OMP_NUM_THREADS` to the desired physical-core count at runtime.
-
