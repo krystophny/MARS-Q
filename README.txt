@@ -7,4 +7,19 @@ Manual: MARS-F/K/Q user manual
 
 
 
+Portable local builds
+=====================
+
+The `MarsQ_2FK/makefile` provides explicit compiler targets which leave the
+historical tracked `marsq.x` untouched and write executables under `build/`:
+
+    make -C MarsQ_2FK gnu
+    source /opt/intel/oneapi/setvars.sh
+    make -C MarsQ_2FK ifx
+    export PATH=/path/to/nvhpc/comm_libs/hpcx/bin:/path/to/nvhpc/compilers/bin:$PATH
+    make -C MarsQ_2FK nvhpc
+
+The GNU target includes the compatibility flags required by this legacy source.
+The equivalent-current (`KKF=-3`) Biot-Savart kernel uses OpenMP; set
+`OMP_NUM_THREADS` to the desired physical-core count at runtime.
 
