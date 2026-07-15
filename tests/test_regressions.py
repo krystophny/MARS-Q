@@ -146,6 +146,27 @@ class SourceContractTests(unittest.TestCase):
             allocator.index("ALLOCATE (INDXDWKC(NSPECIES,5))"),
         )
 
+    def test_dwk_surface_workspace_is_serialized_in_production(self) -> None:
+        """ODWK component files must not depend on optional SFD diagnostics."""
+        coefficient = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE KJPCOEFF") :
+            KINETIC_SOURCE.index("SUBROUTINE KJPFILL")
+        ]
+        calculator = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE CALCDWKCOMP") :
+            KINETIC_SOURCE.index("END SUBROUTINE CALCDWKCOMP")
+        ]
+        self.assertIn("INCSFD = 0", coefficient)
+        self.assertIn(
+            "IF (ODWKCOM) CALL WRITE_SURFACE_QUANTITIES(JS,KGRID)",
+            coefficient,
+        )
+        self.assertNotIn(
+            "IF (INCSFD.GT.0) CALL WRITE_SURFACE_QUANTITIES", coefficient
+        )
+        self.assertIn("CALL READ_SURFACE_QUANTITIES (1,2)", calculator)
+        self.assertIn("CALL READ_SURFACE_QUANTITIES (IS+1,1)", calculator)
+
     def test_external_frozen_perturbation_import_is_strict_and_atomic(self) -> None:
         self.assertIn("KPERTREAD", NEWRUN)
         self.assertIn("SUBROUTINE READPERTURB", MARS_SOURCE)

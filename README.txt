@@ -60,6 +60,13 @@ the supplied perturbation, and is reasserted after `FEEDOUT`, so no discarded
 plasma response has to be solved and no carrier field can leak into NTV.
 JxB, Reynolds, and ergodic torque diagnostics are deliberately skipped in
 this mode because an external B/X pair does not supply their consistent J/V.
+With `ODWKCOM=.true.`, MARS serializes the thread-local kinetic-work
+components for every radial surface before assembling the radial NTV torque
+profile.  This production path is independent of the optional surface
+fraction distribution diagnostic (`INCSFD=0`).  Serialization only preserves
+already computed kinetic-work coefficients for the later radial assembly; it
+does not modify the imported `B1U/B2U/B3U` or `X1U/X2U/X3U` arrays, rerun the
+force solve, or feed the kinetic response back into the frozen MARS-F field.
 Native vector output uses 16 significant digits so an imported perturbation
 can be audited component by component without an eight-digit formatting floor.
 
