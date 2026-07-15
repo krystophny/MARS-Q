@@ -6,8 +6,10 @@ black-box input-validation tests against a built MARS executable.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -20,6 +22,12 @@ KINETIC_SOURCE = (ROOT / "MarsQ_2FK" / "kinetic.f").read_text()
 NEWRUN = (ROOT / "MarsQ_2FK" / "newrun.inc").read_text()
 MAKEFILE = (ROOT / "MarsQ_2FK" / "makefile").read_text()
 CHEASE_MAKEFILE = (ROOT / "CheaseMerge" / "makefile").read_text()
+BUILD_SPEC = importlib.util.spec_from_file_location(
+    "build_with_provenance", ROOT / "tools" / "build_with_provenance.py"
+)
+assert BUILD_SPEC is not None and BUILD_SPEC.loader is not None
+build_provenance = importlib.util.module_from_spec(BUILD_SPEC)
+BUILD_SPEC.loader.exec_module(build_provenance)
 
 
 def executable() -> Path | None:
@@ -73,21 +81,54 @@ class SourceContractTests(unittest.TestCase):
     """Fast tests covering every local change since upstream 8824bb1."""
 
     def test_portable_compiler_targets_are_out_of_tree(self) -> None:
-        for target, executable_name in (
-            ("gnu:", "marsq-gnu.x"),
-            ("ifx:", "marsq-ifx.x"),
-            ("nvhpc:", "marsq-nvhpc.x"),
-        ):
-            self.assertIn(target, MAKEFILE)
-            self.assertIn(f"$(BUILD_DIR)/{executable_name}", MAKEFILE)
-        self.assertIn("-fallow-argument-mismatch", MAKEFILE)
-        self.assertIn("-qopenmp", MAKEFILE)
-        self.assertIn("F95FLAGS='-O1 -r8 -mp -Mextend'", MAKEFILE)
+        for profile in ("gnu", "ifx", "nvhpc"):
+            self.assertIn(f"{profile}:", MAKEFILE)
+            self.assertIn(f"--profile {profile}", MAKEFILE)
+        self.assertIn(
+            "-fallow-argument-mismatch",
+            build_provenance.PROFILES["gnu"]["flags"],
+        )
+        self.assertIn("-qopenmp", build_provenance.PROFILES["ifx"]["flags"])
+        self.assertEqual(
+            build_provenance.PROFILES["nvhpc"]["flags"],
+            ["-O1", "-r8", "-mp", "-Mextend"],
+        )
         self.assertIn(".NOTPARALLEL: gnu ifx nvhpc", MAKEFILE)
-        self.assertIn("gnu: clean-objects", MAKEFILE)
-        self.assertIn("ifx: clean-objects", MAKEFILE)
-        self.assertIn("nvhpc: clean-objects", MAKEFILE)
         self.assertIn("rm -f *.o *.mod *.d lsode/*.o lsode/*.mod", MAKEFILE)
+
+    def test_build_manifest_binds_the_record_to_the_binary(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="mars-manifest-") as temporary:
+            directory = Path(temporary)
+            binary = directory / "marsq-test.x"
+            binary.write_bytes(b"test MARS executable")
+            manifest_path = directory / "marsq-test.x.provenance.json"
+            manifest = {
+                "schema": build_provenance.SCHEMA,
+                "artifact": build_provenance.artifact_record(binary),
+            }
+            build_provenance.write_manifest(manifest_path, manifest)
+            validated = build_provenance.validate_manifest(manifest_path)
+            self.assertEqual(
+                validated["artifact"]["sha256"],
+                build_provenance.sha256_file(binary),
+            )
+            binary.write_bytes(b"tampered MARS executable")
+            with self.assertRaisesRegex(ValueError, "mismatch"):
+                build_provenance.validate_manifest(manifest_path)
+
+    def test_build_profiles_record_compiler_and_exact_flags(self) -> None:
+        for profile in build_provenance.PROFILES.values():
+            self.assertTrue(profile["binary"].startswith("marsq-"))
+            self.assertTrue(profile["compiler"])
+            self.assertGreater(len(profile["flags"]), 3)
+
+    def test_mpi_wrapper_path_preserves_argv_zero_dispatch(self) -> None:
+        wrapper = shutil.which("mpif90")
+        if wrapper is None:
+            self.skipTest("mpif90 is not available")
+        self.assertEqual(
+            build_provenance.resolve_program("mpif90"), Path(wrapper).absolute()
+        )
 
     def test_chease_targets_preserve_required_legacy_initialization(self) -> None:
         self.assertIn("$(BUILD_DIR)/chease-gnu.x", CHEASE_MAKEFILE)

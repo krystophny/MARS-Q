@@ -65,22 +65,19 @@ all: $(PROG)
 .PHONY: gnu ifx nvhpc clean-objects test test-runtime check
 .NOTPARALLEL: gnu ifx nvhpc
 
-gnu: clean-objects
-	mkdir -p $(BUILD_DIR)
-	$(MAKE) PROG=$(BUILD_DIR)/marsq-gnu.x F95=mpif90 \
-		F95FLAGS='-O2 -fdefault-real-8 -fdefault-double-8 -fopenmp -ffixed-line-length-none -ffree-line-length-none -fallow-argument-mismatch'
+gnu:
+	python3 ../tools/build_with_provenance.py --profile gnu \
+		--build-dir $(BUILD_DIR)
 
 # Source the Intel oneAPI environment before invoking this target.
-ifx: clean-objects
-	mkdir -p $(BUILD_DIR)
-	$(MAKE) PROG=$(BUILD_DIR)/marsq-ifx.x F95=mpiifx \
-		F95FLAGS='-O2 -real-size 64 -qopenmp -extend-source 132'
+ifx:
+	python3 ../tools/build_with_provenance.py --profile ifx \
+		--build-dir $(BUILD_DIR)
 
 # Put the NVIDIA HPC SDK compiler and HPC-X MPI wrapper on PATH first.
-nvhpc: clean-objects
-	mkdir -p $(BUILD_DIR)
-	$(MAKE) PROG=$(BUILD_DIR)/marsq-nvhpc.x F95=mpifort \
-		F95FLAGS='-O1 -r8 -mp -Mextend'
+nvhpc:
+	python3 ../tools/build_with_provenance.py --profile nvhpc \
+		--build-dir $(BUILD_DIR)
 
 $(PROG): $(OBJS)
 	$(F95) $(F95FLAGS) -o $@ $(OBJS) $(LIBS) $(INCDIR)

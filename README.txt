@@ -29,6 +29,26 @@ CHEASE has out-of-tree `gnu` and `ifx` targets in `CheaseMerge/makefile`.
 Both retain the zero-initialization and large-memory-model assumptions of the
 legacy source; omitting zero initialization can crash before `EQDATA` is read.
 
+The `gnu`, `ifx`, and `nvhpc` MARS build targets write
+`<executable>.provenance.json` beside every executable.  The manifest records
+the exact compiler wrapper and backend, versions, flags and commands, Git
+commit and dirty-tree fingerprint, linked libraries, and binary SHA-256.  The
+wrapper builds to a temporary path, verifies that the source tree did not
+change during compilation, installs the executable atomically, and validates
+the manifest/artifact pair.  For a production GNU build from a clean checkout:
+
+```
+python3 tools/build_with_provenance.py --profile gnu \
+    --build-dir /mnt/storage/codex-mars/build/production --require-clean
+```
+
+Verify the artifact later without executing MARS:
+
+```
+python3 tools/build_with_provenance.py \
+    --verify-manifest /path/to/marsq-gnu.x.provenance.json
+```
+
 
 Perturbative MARS-K NTV on a frozen MARS-F response
 ===================================================
