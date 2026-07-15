@@ -229,6 +229,10 @@ class SourceContractTests(unittest.TestCase):
         )
         self.assertIn("KEYTORQ.EQ.2.OR.KPERTREAD.EQ.1", MARS_SOURCE)
         self.assertEqual(MARS_SOURCE.count("CALL READPERTURB"), 3)
+        self.assertIn(
+            "IF (INCFEED.GE.0.AND.KPERTREAD.NE.1) CALL FEEDOUT",
+            MARS_SOURCE,
+        )
         self.assertLess(
             MARS_SOURCE.index("CALL FEEDOUT"),
             MARS_SOURCE.index("CALL TORQNTV", MARS_SOURCE.index("CALL FEEDOUT")),
@@ -239,6 +243,18 @@ class SourceContractTests(unittest.TestCase):
         )
         self.assertIn("EXTERNAL B/X FIELD", MARS_SOURCE)
         self.assertIn("1172 FORMAT(14(E24.16E3,1X))", MARS_SOURCE)
+
+    def test_frozen_field_ntv_skips_feedback_postprocessing(self) -> None:
+        """External B/X torque must not enter unrelated feedback diagnostics."""
+        output = MARS_SOURCE[
+            MARS_SOURCE.index("CYQLIU 15/04/1999") :
+            MARS_SOURCE.index("CYQLIU 12/05/2003")
+        ]
+        self.assertIn("KPERTREAD.NE.1", output)
+        self.assertLess(
+            output.index("CALL FEEDOUT"), output.index("CALL READPERTURB")
+        )
+        self.assertLess(output.index("CALL READPERTURB"), output.index("CALL TORQNTV"))
 
 
 class ExecutableInputTests(unittest.TestCase):
