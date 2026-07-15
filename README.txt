@@ -82,6 +82,8 @@ into NTV.  This also avoids requiring feedback-only workspaces in a frozen-field
 postprocessing run.
 JxB, Reynolds, and ergodic torque diagnostics are deliberately skipped in
 this mode because an external B/X pair does not supply their consistent J/V.
+The final `ENERGYMAT` reassembly is skipped for the same reason after the NTV
+output has been written; it assumes and mutates a self-consistent MHD carrier.
 With `ODWKCOM=.true.`, MARS serializes the thread-local kinetic-work
 components for every radial surface before assembling the radial NTV torque
 profile.  This production path is independent of the optional surface
