@@ -75,9 +75,11 @@ are validated; their relative mismatch against the active run equilibrium is
 reported because the active equilibrium remains authoritative.  This is
 supported with `INCKIN>0`, `IPERTURB>0`, and `KNTV=20/21`, or for the Shaing
 `KNTV=10/11` diagnostic.  `INCFEED=4` may be used as a vacuum-only carrier:
-the external import explicitly enables the NTV output path after installing
-the supplied perturbation, and is reasserted after `FEEDOUT`, so no discarded
-plasma response has to be solved and no carrier field can leak into NTV.
+the external import explicitly enables the NTV output path and skips unrelated
+`FEEDOUT` feedback diagnostics before installing the supplied perturbation, so
+no discarded plasma response has to be solved and no carrier field can leak
+into NTV.  This also avoids requiring feedback-only workspaces in a frozen-field
+postprocessing run.
 JxB, Reynolds, and ergodic torque diagnostics are deliberately skipped in
 this mode because an external B/X pair does not supply their consistent J/V.
 With `ODWKCOM=.true.`, MARS serializes the thread-local kinetic-work
