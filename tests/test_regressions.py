@@ -256,6 +256,15 @@ class SourceContractTests(unittest.TestCase):
         )
         self.assertLess(output.index("CALL READPERTURB"), output.index("CALL TORQNTV"))
 
+    def test_frozen_field_ntv_skips_mhd_energy_reassembly(self) -> None:
+        """A frozen MARS-F field must not enter carrier-mutating ENERGYMAT."""
+        energy_guard = MARS_SOURCE[
+            MARS_SOURCE.index("IF (NCASE.NE.6.AND.NCASE.NE.10.AND.KEFORM.NE.0") :
+            MARS_SOURCE.index("WRITE(*,*) 'AFTER ENERGYMAT'")
+        ]
+        self.assertIn("KPERTREAD.NE.1", energy_guard)
+        self.assertIn("CALL ENERGYMAT", energy_guard)
+
 
 class ExecutableInputTests(unittest.TestCase):
     """Black-box tests that stop before equilibrium files are needed."""

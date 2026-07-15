@@ -13,7 +13,7 @@ upstream baseline `8824bb1`:
 | CHEASE legacy initialization | GNU/ifx flag contract | ITER EQDSK-to-OUTRMAR run |
 | perturbative MARS-K NTV | input contracts and unsupported cross-term rejection | paired MARS-F/MARS-K field comparison |
 | external frozen B/X import | strict/atomic parser contract and invalid-mode rejection | exact BPLASMA/XPLASMA round trip plus MARS-K torque |
-| frozen-field feedback isolation | source contract excludes `FEEDOUT` from imported-field NTV | full ITER MARS-K postprocessing reaches `TORQUENTV.OUT` |
+| frozen-field carrier isolation | source contract excludes `FEEDOUT` and `ENERGYMAT` from imported-field NTV | full ITER MARS-K postprocessing reaches `TORQUENTV.OUT` |
 | retained DWK component workspace | idempotent allocation, component-map, and shape contracts | KNTV=21 reaches `TORQUENTV.OUT` after kinetic assembly |
 | executable build provenance | profile/flag and manifest hash/tamper contracts | clean-tree build plus independent manifest verification |
 
