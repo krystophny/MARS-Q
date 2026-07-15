@@ -16,6 +16,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 MARS_SOURCE = (ROOT / "MarsQ_2FK" / "marsq.f").read_text()
+KINETIC_SOURCE = (ROOT / "MarsQ_2FK" / "kinetic.f").read_text()
 NEWRUN = (ROOT / "MarsQ_2FK" / "newrun.inc").read_text()
 MAKEFILE = (ROOT / "MarsQ_2FK" / "makefile").read_text()
 CHEASE_MAKEFILE = (ROOT / "CheaseMerge" / "makefile").read_text()
@@ -124,6 +125,59 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("FLUID RESPONSE IS FROZEN", MARS_SOURCE)
         self.assertIn("WITH IPERTURB=1", NEWRUN)
 
+    def test_dwk_component_workspace_is_reused_only_when_consistent(self) -> None:
+        """KNTV=21 must not allocate the live KJP master workspace twice."""
+        allocator = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE ALLOCATEDWKCOMPMAT") :
+            KINETIC_SOURCE.index("END SUBROUTINE ALLOCATEDWKCOMPMAT")
+        ]
+        self.assertIn("IF (ALLOCATED(INDXDWKC)) THEN", allocator)
+        self.assertIn("ANY(INDXDWKC.NE.EXPECTED)", allocator)
+        self.assertIn("ANY(SHAPE(VQ3PERPC).NE.SHAPE(VX1PARAC))", allocator)
+        self.assertIn("INCOMPLETE DWK COMPONENT WORKSPACE", allocator)
+        self.assertIn("INCONSISTENT DWK COMPONENT MAP", allocator)
+        self.assertIn("INCONSISTENT DWK COMPONENT WORKSPACE", allocator)
+        self.assertLess(
+            allocator.index("IF (ALLOCATED(INDXDWKC)) THEN"),
+            allocator.index("ALLOCATE (INDXDWKC(NSPECIES,5))"),
+        )
+        self.assertLess(
+            allocator.index("RETURN", allocator.index("IF (ALLOCATED(INDXDWKC))")),
+            allocator.index("ALLOCATE (INDXDWKC(NSPECIES,5))"),
+        )
+
+    def test_external_frozen_perturbation_import_is_strict_and_atomic(self) -> None:
+        self.assertIn("KPERTREAD", NEWRUN)
+        self.assertIn("SUBROUTINE READPERTURB", MARS_SOURCE)
+        self.assertIn("BPLASMA_INPUT HEADER MISMATCH", MARS_SOURCE)
+        self.assertIn("XPLASMA_INPUT HEADER MISMATCH", MARS_SOURCE)
+        self.assertIn("BPLASMA_INPUT HAS TRAILING DATA", MARS_SOURCE)
+        self.assertIn("XPLASMA_INPUT HAS TRAILING DATA", MARS_SOURCE)
+        self.assertIn("BPLASMA_INPUT HAS MALFORMED TRAILING DATA", MARS_SOURCE)
+        self.assertIn("XPLASMA_INPUT HAS MALFORMED TRAILING DATA", MARS_SOURCE)
+        self.assertIn("BPLASMA_INPUT HAS NON-FINITE DATA", MARS_SOURCE)
+        self.assertIn("XPLASMA_INPUT HAS NON-FINITE DATA", MARS_SOURCE)
+        self.assertIn("XPLASMA_INPUT PROFILE COLUMNS DISAGREE", MARS_SOURCE)
+        self.assertIn("EXTERNAL XPLASMA PROFILE RELATIVE L2", MARS_SOURCE)
+        self.assertNotIn("NINT(FN).NE.NINT(RNTOR)", MARS_SOURCE)
+        self.assertIn("ASSIGN ONLY AFTER BOTH FILES HAVE PASSED", MARS_SOURCE)
+        self.assertLess(
+            MARS_SOURCE.index("CALL READPERTURB"),
+            MARS_SOURCE.index("CALL OUTPUT(ISWEEP)"),
+        )
+        self.assertIn("KEYTORQ.EQ.2.OR.KPERTREAD.EQ.1", MARS_SOURCE)
+        self.assertEqual(MARS_SOURCE.count("CALL READPERTURB"), 3)
+        self.assertLess(
+            MARS_SOURCE.index("CALL FEEDOUT"),
+            MARS_SOURCE.index("CALL TORQNTV", MARS_SOURCE.index("CALL FEEDOUT")),
+        )
+        self.assertLess(
+            MARS_SOURCE.index("CALL TORQNTV", MARS_SOURCE.index("CALL FEEDOUT")),
+            MARS_SOURCE.rindex("CALL READPERTURB"),
+        )
+        self.assertIn("EXTERNAL B/X FIELD", MARS_SOURCE)
+        self.assertIn("1172 FORMAT(14(E24.16E3,1X))", MARS_SOURCE)
+
 
 class ExecutableInputTests(unittest.TestCase):
     """Black-box tests that stop before equilibrium files are needed."""
@@ -200,6 +254,38 @@ class ExecutableInputTests(unittest.TestCase):
                 )
                 self.assertNotIn("ERROR AT NAMELIST READ: KINETIC", result.stdout)
                 self.assertIn("FLUID RESPONSE IS FROZEN", result.stdout)
+
+    def test_external_import_rejects_unknown_mode(self) -> None:
+        result = run_with_input(
+            minimal_input(
+                kinetic="INCKIN=1, IPERTURB=1, KPERTREAD=2",
+                qlin="KNTV=21, KEYTORQ=0",
+                outopt="ODWKCOM=.TRUE.",
+            )
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("KPERTREAD MUST BE 0 OR 1", result.stdout)
+
+    def test_external_import_requires_perturbative_mars_k_ntv(self) -> None:
+        result = run_with_input(
+            minimal_input(
+                kinetic="INCKIN=1, IPERTURB=0, KPERTREAD=1",
+                qlin="KNTV=21, KEYTORQ=0",
+                outopt="ODWKCOM=.TRUE.",
+            )
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("WITH INCKIN>0 AND IPERTURB>0", result.stdout)
+
+    def test_external_import_is_available_to_shaing_spectrum_diagnostic(self) -> None:
+        result = run_with_input(
+            minimal_input(
+                kinetic="INCKIN=0, KPERTREAD=1",
+                qlin="KNTV=11, KEYTORQ=1",
+            )
+        )
+        self.assertIn("EXTERNAL FROZEN B/X IMPORT ENABLED", result.stdout)
+        self.assertNotIn("ERROR AT MARS-K NTV INPUT", result.stdout)
 
 
 if __name__ == "__main__":

@@ -44,3 +44,27 @@ profiles from independent row runs.  `KEYTORQ=2` cross-coupling is currently
 implemented only for the Shaing-formula path (`KNTV=10/11`); MARS now rejects
 that unsupported combination with `KNTV=20/21` instead of returning empty
 cross terms.
+
+To compute the MARS-K kinetic-work NTV torque on an already calculated
+MARS-F perturbation, set `KPERTREAD=1` and provide `BPLASMA_INPUT` and
+`XPLASMA_INPUT` in native MARS output format.  The importer runs after the
+fluid solve and before the kinetic-work diagnostic, validates dimensions,
+toroidal and poloidal modes, rejects trailing data, and assigns neither field
+unless both inputs pass.  XPLASMA's duplicated equilibrium-profile columns
+are validated; their relative mismatch against the active run equilibrium is
+reported because the active equilibrium remains authoritative.  This is
+supported with `INCKIN>0`, `IPERTURB>0`, and `KNTV=20/21`, or for the Shaing
+`KNTV=10/11` diagnostic.  `INCFEED=4` may be used as a vacuum-only carrier:
+the external import explicitly enables the NTV output path after installing
+the supplied perturbation, and is reasserted after `FEEDOUT`, so no discarded
+plasma response has to be solved and no carrier field can leak into NTV.
+JxB, Reynolds, and ergodic torque diagnostics are deliberately skipped in
+this mode because an external B/X pair does not supply their consistent J/V.
+Native vector output uses 16 significant digits so an imported perturbation
+can be audited component by component without an eight-digit formatting floor.
+
+For `KNTV=21`, the final kinetic-work diagnostic reuses the DWK component
+workspace retained by the master KJP assembly.  The allocator checks the
+complete component map and every array shape before reuse; an inconsistent or
+partially allocated workspace is a fatal error.  This avoids the historical
+second-allocation failure at the end of otherwise successful kinetic runs.
