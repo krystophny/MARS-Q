@@ -333,11 +333,10 @@ class SourceContractTests(unittest.TestCase):
             MARS_SOURCE.index("CALL OUTPUT(ISWEEP,")
         ]
         self.assertIn(
-            "IF (KNTV.EQ.21.AND.INCKIN.GT.0.AND.", pre_output_prepare
+            "IF (KNTV.EQ.21.AND.INCKIN.GT.0.AND.ISWEEP.EQ.NSWEEP) THEN",
+            pre_output_prepare,
         )
-        self.assertIn(
-            "(KPERTREAD.EQ.1.OR.IPERTURB.EQ.1)", pre_output_prepare
-        )
+        self.assertNotIn("IPERTURB.EQ.1", pre_output_prepare)
         self.assertEqual(
             pre_output_prepare.count("CALL PREPAREKINETICENERGYMAT("), 1
         )
@@ -374,7 +373,22 @@ class SourceContractTests(unittest.TestCase):
                 KINETIC_SOURCE.index("SUBROUTINE ENERGYMAT"),
             )
         ]
-        self.assertIn("CALL PREPAREKINETICENERGYMAT(", energy)
+        self.assertNotIn("CALL PREPAREKINETICENERGYMAT(", energy)
+        final_energy = MARS_SOURCE[
+            MARS_SOURCE.index("IF (NCASE.NE.6.AND.NCASE.NE.10.AND.KEFORM.NE.0") :
+            MARS_SOURCE.index("WRITE(*,*) 'AFTER ENERGYMAT'")
+        ]
+        self.assertIn(
+            "IF (.NOT.(KNTV.EQ.21.AND.INCKIN.GT.0))", final_energy
+        )
+        self.assertLess(
+            final_energy.index("CALL PREPAREKINETICENERGYMAT("),
+            final_energy.index("CALL ENERGYMAT"),
+        )
+        self.assertLess(
+            energy.index("CALL CALCDWKCOMP("),
+            energy.index("IF (KENORM.EQ.2) THEN"),
+        )
 
     def test_mars_k_component_contraction_receives_all_matrices(self) -> None:
         """The legacy implicit interface must never permit a bare DWK call."""
