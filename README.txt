@@ -85,11 +85,15 @@ this mode because an external B/X pair does not supply their consistent J/V.
 The full post-output `ENERGYMAT` diagnostic is skipped for the same reason; it
 assumes and mutates a self-consistent MHD carrier.  Before NTV contraction,
 however, MARS must assemble the reciprocal pressure-to-displacement operator
-blocks omitted by `IPERTURB=1` (`KPBKEY=0`).  The frozen-field path therefore
-performs one passive matrix assembly with `KJPKEY=0,KPBKEY=1`, then restores
-the validated external B/X arrays before torque.  This does not recompute the
-kinetic response coefficients, enter the KJP orbit-workspace teardown, or feed
-pressure back into the MARS-F field.
+blocks omitted by `IPERTURB=1` (`KPBKEY=0`).  For `KNTV=21`, this passive
+assembly must occur before `OUTPUT` forms torque, both for the native
+perturbative response and for a reloaded field; the later `ENERGYMAT`
+diagnostic is too late to supply the torque operator.  MARS therefore performs
+one pre-output assembly with `KJPKEY=0,KPBKEY=1`.  A native field remains in
+place, while the frozen-field path restores the validated external B/X arrays
+immediately afterward.  This does not recompute the kinetic response
+coefficients, enter the KJP orbit-workspace teardown, or feed pressure back
+into the MARS-F field.
 With `ODWKCOM=.true.`, MARS serializes the thread-local kinetic-work
 components for every radial surface before assembling the radial NTV torque
 profile.  This production path is independent of the optional surface
