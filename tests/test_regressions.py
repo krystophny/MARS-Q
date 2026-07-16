@@ -208,7 +208,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertNotIn(
             "IF (INCSFD.GT.0) CALL WRITE_SURFACE_QUANTITIES", coefficient
         )
-        self.assertIn("CALL READ_SURFACE_QUANTITIES (1,1)", calculator)
+        self.assertIn("CALL READ_SURFACE_QUANTITIES (1,2)", calculator)
         self.assertIn("CALL READ_SURFACE_QUANTITIES (IS+1,1)", calculator)
         self.assertIn("DWK CACHE/FIELD/OPERATOR/PARA/PERP MAXIMA", calculator)
         self.assertIn("INVALID ZERO DWK CONTRACTION INPUT", calculator)
