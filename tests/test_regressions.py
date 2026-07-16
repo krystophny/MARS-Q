@@ -393,6 +393,18 @@ class SourceContractTests(unittest.TestCase):
     def test_mars_k_component_contraction_receives_all_matrices(self) -> None:
         """The legacy implicit interface must never permit a bare DWK call."""
         self.assertNotIn("CALL CALCDWKCOMP\n", KINETIC_SOURCE + TORQUE_SOURCE)
+
+    def test_hot_ion_frequency_diagnostic_guards_species_three(self) -> None:
+        """A two-species thermal run has no SLAM0(:,3) diagnostic value."""
+        diagnostic = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("LAMH = 0.") :
+            KINETIC_SOURCE.index("FREQK(JS,1)  = AOMEGABPN")
+        ]
+        self.assertIn("IF (NSPECIES.GE.3) THEN", diagnostic)
+        self.assertLess(
+            diagnostic.index("IF (NSPECIES.GE.3) THEN"),
+            diagnostic.index("LAMH = SLAM0(L,3)"),
+        )
         self.assertIn(
             "CALL CALCDWKCOMP(ASUBM,BSUBM,CSUBM,DSUBM,", TORQUE_SOURCE
         )

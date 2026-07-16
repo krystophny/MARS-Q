@@ -17,6 +17,7 @@ upstream baseline `8824bb1`:
 | MARS-K matrix call contract | all `CALCDWKCOMP` callers pass eight live matrices | debug cached continuation reaches all DWK and torque outputs |
 | validated DWK cache recovery | narrow namelist contract and KJP bypass | failed-after-cache ITER runs resume without coefficient regeneration |
 | deterministic frequency diagnostic | `RUU2` is thread-private with its per-surface consumers | repeated OpenMP `FREQUENCIES.OUT` comparison |
+| two-species frequency diagnostic | hot-ion `SLAM0(:,3)` is read only when species three exists | GNU `-fcheck=all` MAST-U run |
 | retained DWK component workspace | idempotent allocation, component-map, and shape contracts | KNTV=21 reaches `TORQUENTV.OUT` after kinetic assembly |
 | executable build provenance | profile/flag and manifest hash/tamper contracts | clean-tree build plus independent manifest verification |
 
