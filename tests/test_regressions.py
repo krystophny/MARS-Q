@@ -210,7 +210,9 @@ class SourceContractTests(unittest.TestCase):
         )
         self.assertIn("CALL READ_SURFACE_QUANTITIES (1,2)", calculator)
         self.assertIn("CALL READ_SURFACE_QUANTITIES (IS+1,1)", calculator)
-        self.assertIn("DWK CACHE/FIELD/OPERATOR/PARA/PERP MAXIMA", calculator)
+        self.assertIn(
+            "DWK CACHE/FIELD/OPPARA/OPPERP/PARA/PERP MAXIMA", calculator
+        )
         self.assertIn("INVALID ZERO DWK CONTRACTION INPUT", calculator)
 
     def test_frequency_scratch_is_thread_private(self) -> None:
@@ -291,6 +293,14 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("KJPKEY = 0", prepare)
         self.assertIn("KPBKEY = 1", prepare)
         self.assertIn("CALL LINEAR(ASUBM,BSUBM,CSUBM,DSUBM,", prepare)
+        linear = MARS_SOURCE[
+            MARS_SOURCE.index("SUBROUTINE LINEAR(") :
+            MARS_SOURCE.index("SUBROUTINE PLASMALIN(")
+        ]
+        self.assertIn(
+            "IF (.NOT.(KDWKREAD.EQ.1.AND.KJPKEY.EQ.0))", linear
+        )
+        self.assertIn("CALL FEEDM(ASUBM,BSUBM,CSUBM,DSUBM,", linear)
         linear_kjp = MARS_SOURCE[
             MARS_SOURCE.index('WRITE (*,\'("CALLING KJP")\'') :
             MARS_SOURCE.index("MULTIPLY EQUATIONS INSIDE PLASMA BY EQFAC")
