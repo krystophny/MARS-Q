@@ -36,6 +36,22 @@ PROFILES = {
             "-fallow-argument-mismatch",
         ],
     },
+    "gnu-debug": {
+        "binary": "marsq-gnu-debug.x",
+        "compiler": "mpif90",
+        "flags": [
+            "-O0",
+            "-g",
+            "-fdefault-real-8",
+            "-fdefault-double-8",
+            "-fopenmp",
+            "-ffixed-line-length-none",
+            "-ffree-line-length-none",
+            "-fallow-argument-mismatch",
+            "-fcheck=all",
+            "-fbacktrace",
+        ],
+    },
     "ifx": {
         "binary": "marsq-ifx.x",
         "compiler": "mpiifx",

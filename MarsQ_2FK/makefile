@@ -62,11 +62,15 @@ F95FLAGS = -O1 -r8 -openmp
 
 all: $(PROG)
 
-.PHONY: gnu ifx nvhpc clean-objects test test-runtime check
-.NOTPARALLEL: gnu ifx nvhpc
+.PHONY: gnu gnu-debug ifx nvhpc clean-objects test test-runtime check
+.NOTPARALLEL: gnu gnu-debug ifx nvhpc
 
 gnu:
 	python3 ../tools/build_with_provenance.py --profile gnu \
+		--build-dir $(BUILD_DIR)
+
+gnu-debug:
+	python3 ../tools/build_with_provenance.py --profile gnu-debug \
 		--build-dir $(BUILD_DIR)
 
 # Source the Intel oneAPI environment before invoking this target.
