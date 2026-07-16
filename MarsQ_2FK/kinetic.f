@@ -8619,17 +8619,51 @@ C     TRAPPED PARTICLES DO NOT HAVE SINGULARITY EITHER
       END
 
 C=======================================================================
+C ASSEMBLE THE PASSIVE KINETIC-PRESSURE ENERGY OPERATOR WITHOUT        =
+C RECOMPUTING KJP RESPONSE COEFFICIENTS.                               =
+C=======================================================================
+      SUBROUTINE PREPAREKINETICENERGYMAT(
+     &                  ASUBM,BSUBM,CSUBM,DSUBM,ESUBM,FSUBM,GSUBM,HSUBM)
+
+      USE RCOMDM
+      USE DIMENSIM
+      USE GLOBALM
+      USE KINETICM
+      IMPLICIT NONE
+      INCLUDE 'specmat.inc'
+      INCLUDE 'compam.inc'
+      INCLUDE 'comioc.inc'
+
+      COMPLEX*16 AL0SAVE
+
+C     IPERTURB=1 SETS KPBKEY=0 SO THE KINETIC PRESSURE DOES NOT ALTER THE
+C     FROZEN FLUID RESPONSE.  THE NTV ENERGY CONTRACTION STILL REQUIRES THE
+C     RECIPROCAL PRESSURE-TO-DISPLACEMENT BLOCKS (ESUBM/HSUBM).  BUILD THAT
+C     PASSIVE OPERATOR WITH KJP DISABLED: THE EXPENSIVE RESPONSE COEFFICIENTS
+C     COME FROM THE VALIDATED PCOEF CACHE AND THE IMPORTED B/X FIELD IS
+C     RESTORED BY THE CALLER IMMEDIATELY AFTER THIS ROUTINE RETURNS.
+      AL0SAVE = AL0
+      AL0 = ALNORM
+      KJPKEY = 0
+      KPBKEY = 1
+      CALL LINEAR(ASUBM,BSUBM,CSUBM,DSUBM,ESUBM,FSUBM,GSUBM,HSUBM)
+      AL0 = AL0SAVE
+
+      RETURN
+      END
+
+C=======================================================================
 C COMPUTE PERTURBED ENERGY USING THE COMPUTED EIGENFUNCTION AND        =
 C THE SYSTEM MATRICES                                                  =
-C INCLUDING:                                                           = 
-C  1) FLUID POTENTIAL ENERGY                                           = 
+C INCLUDING:                                                           =
+C  1) FLUID POTENTIAL ENERGY                                           =
 C  2) FLIUD KINETIC ENERGY DUE TO INERTIAL AND PLASMA ROTATION         =
 C  3) KINETIC ENERGY DUE TO KINETIC PRESSURE PERTURBATION              =
 C SHOULD BE CALLED FROM MARS-F AFTER CALPAM(...)                       =
 C KENORM = 1: NORMALIZE ENERGY BY TOTAL PLASMA INERTIA ENERGY          =
-C          2: NORMALIZE ENERGY BY INERTIA ENERGY ASSOCIATED WITH X1    =
-C KEFORM = 1: RAW FORM FOR ALL DW* TERMS
-C          2: QUADRATIC FORM FOR DWP,DWJ,DWPPAR,DWPPER
+C          2: NORMALIZE ENERGY ASSOCIATED WITH X1                      =
+C KEFORM = 1: RAW FORM FOR ALL DW* TERMS                               =
+C          2: QUADRATIC FORM FOR DWP,DWJ,DWPPAR,DWPPER                 =
 C YQL, 09-2013                                                         =
 C=======================================================================
       SUBROUTINE ENERGYMAT(X,Y,
@@ -8662,18 +8696,14 @@ C=======================================================================
       PARAMETER     (IEXV2 = -1, IEXY=0)
       REAL*8        ZEM,ZEP,ZV2M,ZV2P,z3m,z3p
 
-      COMPLEX*16    AL0SAVE,CTMP
+      COMPLEX*16    CTMP
       CHARACTER*80  LINE
 
       INCLUDE 'integc.inc'
 
 C     FILL IN SYSTEM MATRICES WITH THE CONVERGED EIGENVALUE
-      AL0SAVE = AL0
-      AL0 = ALNORM
-      KJPKEY = 0
-      KPBKEY = 1
-      CALL LINEAR(ASUBM,BSUBM,CSUBM,DSUBM,ESUBM,FSUBM,GSUBM,HSUBM)
-      AL0 = AL0SAVE
+      CALL PREPAREKINETICENERGYMAT(
+     &     ASUBM,BSUBM,CSUBM,DSUBM,ESUBM,FSUBM,GSUBM,HSUBM)
      
       ALLOCATE( DWPX(NTP1), DWPPARX(NTP1), DWPPERX(NTP1), DWJX(NTP1),
      &          DWQX(NTP1), DWVX(NTP1),    DWXIX(NTP1),   DWX2X(NTP1),
