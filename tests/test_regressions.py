@@ -19,6 +19,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 MARS_SOURCE = (ROOT / "MarsQ_2FK" / "marsq.f").read_text()
 KINETIC_SOURCE = (ROOT / "MarsQ_2FK" / "kinetic.f").read_text()
+TORQUE_SOURCE = (ROOT / "MarsQ_2FK" / "torque.f").read_text()
+PAMS_SOURCE = (ROOT / "MarsQ_2FK" / "pams.f").read_text()
 NEWRUN = (ROOT / "MarsQ_2FK" / "newrun.inc").read_text()
 MAKEFILE = (ROOT / "MarsQ_2FK" / "makefile").read_text()
 CHEASE_MAKEFILE = (ROOT / "CheaseMerge" / "makefile").read_text()
@@ -225,7 +227,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("ASSIGN ONLY AFTER BOTH FILES HAVE PASSED", MARS_SOURCE)
         self.assertLess(
             MARS_SOURCE.index("CALL READPERTURB"),
-            MARS_SOURCE.index("CALL OUTPUT(ISWEEP)"),
+            MARS_SOURCE.index("CALL OUTPUT(ISWEEP,"),
         )
         self.assertIn("KEYTORQ.EQ.2.OR.KPERTREAD.EQ.1", MARS_SOURCE)
         self.assertEqual(MARS_SOURCE.count("CALL READPERTURB"), 3)
@@ -264,6 +266,32 @@ class SourceContractTests(unittest.TestCase):
         ]
         self.assertIn("KPERTREAD.NE.1", energy_guard)
         self.assertIn("CALL ENERGYMAT", energy_guard)
+
+    def test_mars_k_component_contraction_receives_all_matrices(self) -> None:
+        """The legacy implicit interface must never permit a bare DWK call."""
+        self.assertNotIn("CALL CALCDWKCOMP\n", KINETIC_SOURCE + TORQUE_SOURCE)
+        self.assertIn(
+            "CALL CALCDWKCOMP(ASUBM,BSUBM,CSUBM,DSUBM,", TORQUE_SOURCE
+        )
+        self.assertIn(
+            "SUBROUTINE TORQNTV(ASUBM,BSUBM,CSUBM,DSUBM,", TORQUE_SOURCE
+        )
+        self.assertEqual(MARS_SOURCE.count("CALL TORQNTV(ASUBM"), 2)
+        self.assertIn("CALL TORQNTV(A,B,C,D,E,F,G,H)", PAMS_SOURCE)
+        self.assertIn("SUBROUTINE OUTPUT(ISW,", MARS_SOURCE)
+        self.assertIn("CALL OUTPUT(ISWEEP,", MARS_SOURCE)
+
+    def test_dwk_cache_restart_is_explicit_and_narrow(self) -> None:
+        self.assertIn("KDWKREAD", NEWRUN)
+        self.assertIn("KDWKREAD MUST BE 0 OR 1", MARS_SOURCE)
+        self.assertIn(
+            "KDWKREAD=1 REQUIRES KPERTREAD=1, KNTV=21,", MARS_SOURCE
+        )
+        self.assertIn("IF (KDWKREAD.EQ.1) THEN", KINETIC_SOURCE)
+        self.assertIn(
+            "KJP: REUSING VALIDATED DWK COMPONENT CACHE", KINETIC_SOURCE
+        )
+        self.assertIn("KDWKREAD.NE.1) CALL KDWKDENSITY", TORQUE_SOURCE)
 
 
 class ExecutableInputTests(unittest.TestCase):
@@ -372,6 +400,28 @@ class ExecutableInputTests(unittest.TestCase):
             )
         )
         self.assertIn("EXTERNAL FROZEN B/X IMPORT ENABLED", result.stdout)
+        self.assertNotIn("ERROR AT MARS-K NTV INPUT", result.stdout)
+
+    def test_dwk_cache_restart_rejects_non_frozen_modes(self) -> None:
+        result = run_with_input(
+            minimal_input(
+                kinetic="INCKIN=1, IPERTURB=1, KDWKREAD=1",
+                qlin="KNTV=21, KEYTORQ=0",
+                outopt="ODWKCOM=.TRUE.",
+            )
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("KDWKREAD=1 REQUIRES KPERTREAD=1", result.stdout)
+
+    def test_dwk_cache_restart_accepts_strict_frozen_mode(self) -> None:
+        result = run_with_input(
+            minimal_input(
+                kinetic="INCKIN=1, IPERTURB=1, KPERTREAD=1, KDWKREAD=1",
+                qlin="KNTV=21, KEYTORQ=0",
+                outopt="ODWKCOM=.TRUE.",
+            )
+        )
+        self.assertIn("VALIDATED DWK COMPONENT CACHE ENABLED", result.stdout)
         self.assertNotIn("ERROR AT MARS-K NTV INPUT", result.stdout)
 
 
