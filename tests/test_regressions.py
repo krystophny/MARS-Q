@@ -289,6 +289,12 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("KJPKEY = 0", prepare)
         self.assertIn("KPBKEY = 1", prepare)
         self.assertIn("CALL LINEAR(ASUBM,BSUBM,CSUBM,DSUBM,", prepare)
+        linear_kjp = MARS_SOURCE[
+            MARS_SOURCE.index('WRITE (*,\'("CALLING KJP")\'') :
+            MARS_SOURCE.index("MULTIPLY EQUATIONS INSIDE PLASMA BY EQFAC")
+        ]
+        self.assertIn("KDWKREAD.EQ.1.AND.KJPKEY.EQ.0", linear_kjp)
+        self.assertIn("CALL KJP(ASUBM,BSUBM,CSUBM,DSUBM,", linear_kjp)
         energy = KINETIC_SOURCE[
             KINETIC_SOURCE.index("SUBROUTINE ENERGYMAT") :
             KINETIC_SOURCE.index(
