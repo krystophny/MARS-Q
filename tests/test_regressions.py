@@ -298,7 +298,7 @@ class SourceContractTests(unittest.TestCase):
             MARS_SOURCE.index("SUBROUTINE PLASMALIN(")
         ]
         self.assertIn(
-            "IF (.NOT.(KDWKREAD.EQ.1.AND.KJPKEY.EQ.0))", linear
+            "IF (.NOT.(KPERTREAD.EQ.1.AND.KJPKEY.EQ.0))", linear
         )
         self.assertIn("CALL FEEDM(ASUBM,BSUBM,CSUBM,DSUBM,", linear)
         linear_kjp = MARS_SOURCE[
