@@ -19,6 +19,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 MARS_SOURCE = (ROOT / "MarsQ_2FK" / "marsq.f").read_text()
 KINETIC_SOURCE = (ROOT / "MarsQ_2FK" / "kinetic.f").read_text()
+KINETIC_MODULE = (ROOT / "MarsQ_2FK" / "kineticm.f").read_text()
 TORQUE_SOURCE = (ROOT / "MarsQ_2FK" / "torque.f").read_text()
 PAMS_SOURCE = (ROOT / "MarsQ_2FK" / "pams.f").read_text()
 NEWRUN = (ROOT / "MarsQ_2FK" / "newrun.inc").read_text()
@@ -209,6 +210,11 @@ class SourceContractTests(unittest.TestCase):
         )
         self.assertIn("CALL READ_SURFACE_QUANTITIES (1,2)", calculator)
         self.assertIn("CALL READ_SURFACE_QUANTITIES (IS+1,1)", calculator)
+
+    def test_frequency_scratch_is_thread_private(self) -> None:
+        """KBTIME's per-surface RUU2 must not race across OpenMP workers."""
+        self.assertIn("THREADPRIVATE( RCHIHK,RSS,RUU,RUU2 )", KINETIC_MODULE)
+        self.assertIn("LAM/RUU2", KINETIC_SOURCE)
 
     def test_external_frozen_perturbation_import_is_strict_and_atomic(self) -> None:
         self.assertIn("KPERTREAD", NEWRUN)
