@@ -236,7 +236,7 @@ class SourceContractTests(unittest.TestCase):
             MARS_SOURCE.index("CALL OUTPUT(ISWEEP,"),
         )
         self.assertIn("KEYTORQ.EQ.2.OR.KPERTREAD.EQ.1", MARS_SOURCE)
-        self.assertEqual(MARS_SOURCE.count("CALL READPERTURB"), 3)
+        self.assertEqual(MARS_SOURCE.count("CALL READPERTURB"), 4)
         self.assertIn(
             "IF (INCFEED.GE.0.AND.KPERTREAD.NE.1) CALL FEEDOUT",
             MARS_SOURCE,
@@ -264,14 +264,39 @@ class SourceContractTests(unittest.TestCase):
         )
         self.assertLess(output.index("CALL READPERTURB"), output.index("CALL TORQNTV"))
 
-    def test_frozen_field_ntv_skips_mhd_energy_reassembly(self) -> None:
-        """A frozen MARS-F field must not enter carrier-mutating ENERGYMAT."""
+    def test_frozen_field_ntv_builds_passive_energy_operator(self) -> None:
+        """Frozen B/X still needs the reciprocal blocks for DWK contraction."""
         energy_guard = MARS_SOURCE[
             MARS_SOURCE.index("IF (NCASE.NE.6.AND.NCASE.NE.10.AND.KEFORM.NE.0") :
             MARS_SOURCE.index("WRITE(*,*) 'AFTER ENERGYMAT'")
         ]
         self.assertIn("KPERTREAD.NE.1", energy_guard)
         self.assertIn("CALL ENERGYMAT", energy_guard)
+        frozen_prepare = MARS_SOURCE[
+            MARS_SOURCE.index("IF (KPERTREAD.EQ.1) CALL READPERTURB") :
+            MARS_SOURCE.index("CALL OUTPUT(ISWEEP,")
+        ]
+        self.assertIn("CALL PREPAREKINETICENERGYMAT(", frozen_prepare)
+        self.assertGreaterEqual(frozen_prepare.count("CALL READPERTURB"), 2)
+        self.assertLess(
+            frozen_prepare.index("CALL PREPAREKINETICENERGYMAT("),
+            frozen_prepare.rindex("CALL READPERTURB"),
+        )
+        prepare = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE PREPAREKINETICENERGYMAT") :
+            KINETIC_SOURCE.index("SUBROUTINE ENERGYMAT")
+        ]
+        self.assertIn("KJPKEY = 0", prepare)
+        self.assertIn("KPBKEY = 1", prepare)
+        self.assertIn("CALL LINEAR(ASUBM,BSUBM,CSUBM,DSUBM,", prepare)
+        energy = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE ENERGYMAT") :
+            KINETIC_SOURCE.index(
+                "SUBROUTINE KDWFMAGP",
+                KINETIC_SOURCE.index("SUBROUTINE ENERGYMAT"),
+            )
+        ]
+        self.assertIn("CALL PREPAREKINETICENERGYMAT(", energy)
 
     def test_mars_k_component_contraction_receives_all_matrices(self) -> None:
         """The legacy implicit interface must never permit a bare DWK call."""
