@@ -287,6 +287,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn(
             "KDWKREAD=1 REQUIRES KPERTREAD=1, KNTV=21,", MARS_SOURCE
         )
+        self.assertIn("NSWEEP.NE.1", MARS_SOURCE)
+        self.assertIn("ISMPIRUN.NE.0", MARS_SOURCE)
         self.assertIn("IF (KDWKREAD.EQ.1) THEN", KINETIC_SOURCE)
         self.assertIn(
             "KJP: REUSING VALIDATED DWK COMPONENT CACHE", KINETIC_SOURCE
@@ -423,6 +425,16 @@ class ExecutableInputTests(unittest.TestCase):
         )
         self.assertIn("VALIDATED DWK COMPONENT CACHE ENABLED", result.stdout)
         self.assertNotIn("ERROR AT MARS-K NTV INPUT", result.stdout)
+
+    def test_dwk_cache_restart_rejects_multiple_sweeps(self) -> None:
+        run_input = minimal_input(
+            kinetic="INCKIN=1, IPERTURB=1, KPERTREAD=1, KDWKREAD=1",
+            qlin="KNTV=21, KEYTORQ=0",
+            outopt="ODWKCOM=.TRUE.",
+        ).replace("&BASIC", "&BASIC\n NSWEEP=2")
+        result = run_with_input(run_input)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("KDWKREAD=1 REQUIRES KPERTREAD=1", result.stdout)
 
 
 if __name__ == "__main__":
