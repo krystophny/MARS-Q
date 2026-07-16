@@ -84,19 +84,25 @@ class SourceContractTests(unittest.TestCase):
     """Fast tests covering every local change since upstream 8824bb1."""
 
     def test_portable_compiler_targets_are_out_of_tree(self) -> None:
-        for profile in ("gnu", "ifx", "nvhpc"):
+        for profile in ("gnu", "gnu-debug", "ifx", "nvhpc"):
             self.assertIn(f"{profile}:", MAKEFILE)
             self.assertIn(f"--profile {profile}", MAKEFILE)
         self.assertIn(
             "-fallow-argument-mismatch",
             build_provenance.PROFILES["gnu"]["flags"],
         )
+        self.assertIn(
+            "-fcheck=all", build_provenance.PROFILES["gnu-debug"]["flags"]
+        )
+        self.assertIn(
+            "-fbacktrace", build_provenance.PROFILES["gnu-debug"]["flags"]
+        )
         self.assertIn("-qopenmp", build_provenance.PROFILES["ifx"]["flags"])
         self.assertEqual(
             build_provenance.PROFILES["nvhpc"]["flags"],
             ["-O1", "-r8", "-mp", "-Mextend"],
         )
-        self.assertIn(".NOTPARALLEL: gnu ifx nvhpc", MAKEFILE)
+        self.assertIn(".NOTPARALLEL: gnu gnu-debug ifx nvhpc", MAKEFILE)
         self.assertIn("rm -f *.o *.mod *.d lsode/*.o lsode/*.mod", MAKEFILE)
 
     def test_build_manifest_binds_the_record_to_the_binary(self) -> None:
