@@ -14,6 +14,7 @@ import subprocess
 import tempfile
 import textwrap
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -91,12 +92,8 @@ class SourceContractTests(unittest.TestCase):
             "-fallow-argument-mismatch",
             build_provenance.PROFILES["gnu"]["flags"],
         )
-        self.assertIn(
-            "-fcheck=all", build_provenance.PROFILES["gnu-debug"]["flags"]
-        )
-        self.assertIn(
-            "-fbacktrace", build_provenance.PROFILES["gnu-debug"]["flags"]
-        )
+        self.assertIn("-fcheck=all", build_provenance.PROFILES["gnu-debug"]["flags"])
+        self.assertIn("-fbacktrace", build_provenance.PROFILES["gnu-debug"]["flags"])
         self.assertIn("-qopenmp", build_provenance.PROFILES["ifx"]["flags"])
         self.assertEqual(
             build_provenance.PROFILES["nvhpc"]["flags"],
@@ -124,6 +121,56 @@ class SourceContractTests(unittest.TestCase):
             binary.write_bytes(b"tampered MARS executable")
             with self.assertRaisesRegex(ValueError, "mismatch"):
                 build_provenance.validate_manifest(manifest_path)
+
+    def test_linked_libraries_use_otool_on_darwin(self) -> None:
+        binary = Path("/tmp/marsq-test.x")
+        with (
+            mock.patch.object(
+                build_provenance.platform, "system", return_value="Darwin"
+            ),
+            mock.patch.object(
+                build_provenance.shutil, "which", return_value="/usr/bin/otool"
+            ),
+            mock.patch.object(
+                build_provenance,
+                "run_output",
+                return_value=(
+                    "/tmp/marsq-test.x:\n"
+                    "\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0)"
+                ),
+            ) as run_output,
+        ):
+            command, libraries = build_provenance.linked_libraries(binary)
+
+        self.assertEqual(command, ["/usr/bin/otool", "-L", str(binary)])
+        self.assertEqual(len(libraries), 2)
+        run_output.assert_called_once_with(command, required=False)
+
+    def test_linked_libraries_use_ldd_on_linux(self) -> None:
+        binary = Path("/tmp/marsq-test.x")
+        with (
+            mock.patch.object(
+                build_provenance.platform, "system", return_value="Linux"
+            ),
+            mock.patch.object(
+                build_provenance.shutil, "which", return_value="/usr/bin/ldd"
+            ),
+            mock.patch.object(
+                build_provenance, "run_output", return_value="libgfortran.so.5"
+            ) as run_output,
+        ):
+            command, libraries = build_provenance.linked_libraries(binary)
+
+        self.assertEqual(command, ["/usr/bin/ldd", str(binary)])
+        self.assertEqual(libraries, ["libgfortran.so.5"])
+        run_output.assert_called_once_with(command, required=False)
+
+    def test_linked_libraries_allow_missing_inspection_tool(self) -> None:
+        with mock.patch.object(build_provenance.shutil, "which", return_value=None):
+            command, libraries = build_provenance.linked_libraries(Path("marsq.x"))
+
+        self.assertIsNone(command)
+        self.assertEqual(libraries, [])
 
     def test_build_profiles_record_compiler_and_exact_flags(self) -> None:
         for profile in build_provenance.PROFILES.values():
@@ -178,8 +225,9 @@ class SourceContractTests(unittest.TestCase):
     def test_dwk_component_workspace_is_reused_only_when_consistent(self) -> None:
         """KNTV=21 must not allocate the live KJP master workspace twice."""
         allocator = KINETIC_SOURCE[
-            KINETIC_SOURCE.index("SUBROUTINE ALLOCATEDWKCOMPMAT") :
-            KINETIC_SOURCE.index("END SUBROUTINE ALLOCATEDWKCOMPMAT")
+            KINETIC_SOURCE.index(
+                "SUBROUTINE ALLOCATEDWKCOMPMAT"
+            ) : KINETIC_SOURCE.index("END SUBROUTINE ALLOCATEDWKCOMPMAT")
         ]
         self.assertIn("IF (ALLOCATED(INDXDWKC)) THEN", allocator)
         self.assertIn("ANY(INDXDWKC.NE.EXPECTED)", allocator)
@@ -199,26 +247,24 @@ class SourceContractTests(unittest.TestCase):
     def test_dwk_surface_workspace_is_serialized_in_production(self) -> None:
         """ODWK component files must not depend on optional SFD diagnostics."""
         coefficient = KINETIC_SOURCE[
-            KINETIC_SOURCE.index("SUBROUTINE KJPCOEFF") :
-            KINETIC_SOURCE.index("SUBROUTINE KJPFILL")
+            KINETIC_SOURCE.index("SUBROUTINE KJPCOEFF") : KINETIC_SOURCE.index(
+                "SUBROUTINE KJPFILL"
+            )
         ]
         calculator = KINETIC_SOURCE[
-            KINETIC_SOURCE.index("SUBROUTINE CALCDWKCOMP") :
-            KINETIC_SOURCE.index("END SUBROUTINE CALCDWKCOMP")
+            KINETIC_SOURCE.index("SUBROUTINE CALCDWKCOMP") : KINETIC_SOURCE.index(
+                "END SUBROUTINE CALCDWKCOMP"
+            )
         ]
         self.assertIn("INCSFD = 0", coefficient)
         self.assertIn(
             "IF (ODWKCOM) CALL WRITE_SURFACE_QUANTITIES(JS,KGRID)",
             coefficient,
         )
-        self.assertNotIn(
-            "IF (INCSFD.GT.0) CALL WRITE_SURFACE_QUANTITIES", coefficient
-        )
+        self.assertNotIn("IF (INCSFD.GT.0) CALL WRITE_SURFACE_QUANTITIES", coefficient)
         self.assertIn("CALL READ_SURFACE_QUANTITIES (1,2)", calculator)
         self.assertIn("CALL READ_SURFACE_QUANTITIES (IS+1,1)", calculator)
-        self.assertIn(
-            "DWK CACHE/FIELD/OPPARA/OPPERP/PARA/PERP MAXIMA", calculator
-        )
+        self.assertIn("DWK CACHE/FIELD/OPPARA/OPPERP/PARA/PERP MAXIMA", calculator)
         self.assertIn("INVALID ZERO DWK CONTRACTION INPUT", calculator)
 
     def test_frequency_scratch_is_thread_private(self) -> None:
@@ -265,76 +311,74 @@ class SourceContractTests(unittest.TestCase):
     def test_frozen_field_ntv_skips_feedback_postprocessing(self) -> None:
         """External B/X torque must not enter unrelated feedback diagnostics."""
         output = MARS_SOURCE[
-            MARS_SOURCE.index("CYQLIU 15/04/1999") :
-            MARS_SOURCE.index("CYQLIU 12/05/2003")
+            MARS_SOURCE.index("CYQLIU 15/04/1999") : MARS_SOURCE.index(
+                "CYQLIU 12/05/2003"
+            )
         ]
         self.assertIn("KPERTREAD.NE.1", output)
-        self.assertLess(
-            output.index("CALL FEEDOUT"), output.index("CALL READPERTURB")
-        )
+        self.assertLess(output.index("CALL FEEDOUT"), output.index("CALL READPERTURB"))
         self.assertLess(output.index("CALL READPERTURB"), output.index("CALL TORQNTV"))
 
     def test_perturbative_ntv_builds_passive_operator_before_output(self) -> None:
         """Native and imported perturbations need reciprocal DWK blocks."""
         energy_guard = MARS_SOURCE[
-            MARS_SOURCE.index("IF (NCASE.NE.6.AND.NCASE.NE.10.AND.KEFORM.NE.0") :
-            MARS_SOURCE.index("WRITE(*,*) 'AFTER ENERGYMAT'")
+            MARS_SOURCE.index(
+                "IF (NCASE.NE.6.AND.NCASE.NE.10.AND.KEFORM.NE.0"
+            ) : MARS_SOURCE.index("WRITE(*,*) 'AFTER ENERGYMAT'")
         ]
         self.assertIn("KPERTREAD.NE.1", energy_guard)
         self.assertIn("CALL ENERGYMAT", energy_guard)
         pre_output_prepare = MARS_SOURCE[
-            MARS_SOURCE.index("IF (KPERTREAD.EQ.1) CALL READPERTURB") :
-            MARS_SOURCE.index("CALL OUTPUT(ISWEEP,")
+            MARS_SOURCE.index(
+                "IF (KPERTREAD.EQ.1) CALL READPERTURB"
+            ) : MARS_SOURCE.index("CALL OUTPUT(ISWEEP,")
         ]
         self.assertIn(
             "IF (KNTV.EQ.21.AND.INCKIN.GT.0.AND.ISWEEP.EQ.NSWEEP) THEN",
             pre_output_prepare,
         )
         self.assertNotIn("IPERTURB.EQ.1", pre_output_prepare)
-        self.assertEqual(
-            pre_output_prepare.count("CALL PREPAREKINETICENERGYMAT("), 1
-        )
+        self.assertEqual(pre_output_prepare.count("CALL PREPAREKINETICENERGYMAT("), 1)
         self.assertGreaterEqual(pre_output_prepare.count("CALL READPERTURB"), 2)
         self.assertLess(
             pre_output_prepare.index("CALL PREPAREKINETICENERGYMAT("),
             pre_output_prepare.rindex("IF (KPERTREAD.EQ.1) CALL READPERTURB"),
         )
         prepare = KINETIC_SOURCE[
-            KINETIC_SOURCE.index("SUBROUTINE PREPAREKINETICENERGYMAT") :
-            KINETIC_SOURCE.index("SUBROUTINE ENERGYMAT")
+            KINETIC_SOURCE.index(
+                "SUBROUTINE PREPAREKINETICENERGYMAT"
+            ) : KINETIC_SOURCE.index("SUBROUTINE ENERGYMAT")
         ]
         self.assertIn("KJPKEY = 0", prepare)
         self.assertIn("KPBKEY = 1", prepare)
         self.assertIn("CALL LINEAR(ASUBM,BSUBM,CSUBM,DSUBM,", prepare)
         linear = MARS_SOURCE[
-            MARS_SOURCE.index("SUBROUTINE LINEAR(") :
-            MARS_SOURCE.index("SUBROUTINE PLASMALIN(")
+            MARS_SOURCE.index("SUBROUTINE LINEAR(") : MARS_SOURCE.index(
+                "SUBROUTINE PLASMALIN("
+            )
         ]
-        self.assertIn(
-            "IF (.NOT.(KPERTREAD.EQ.1.AND.KJPKEY.EQ.0))", linear
-        )
+        self.assertIn("IF (.NOT.(KPERTREAD.EQ.1.AND.KJPKEY.EQ.0))", linear)
         self.assertIn("CALL FEEDM(ASUBM,BSUBM,CSUBM,DSUBM,", linear)
         linear_kjp = MARS_SOURCE[
-            MARS_SOURCE.index('WRITE (*,\'("CALLING KJP")\'') :
-            MARS_SOURCE.index("MULTIPLY EQUATIONS INSIDE PLASMA BY EQFAC")
+            MARS_SOURCE.index("WRITE (*,'(\"CALLING KJP\")'") : MARS_SOURCE.index(
+                "MULTIPLY EQUATIONS INSIDE PLASMA BY EQFAC"
+            )
         ]
         self.assertIn("KDWKREAD.EQ.1.AND.KJPKEY.EQ.0", linear_kjp)
         self.assertIn("CALL KJP(ASUBM,BSUBM,CSUBM,DSUBM,", linear_kjp)
         energy = KINETIC_SOURCE[
-            KINETIC_SOURCE.index("SUBROUTINE ENERGYMAT") :
-            KINETIC_SOURCE.index(
+            KINETIC_SOURCE.index("SUBROUTINE ENERGYMAT") : KINETIC_SOURCE.index(
                 "SUBROUTINE KDWFMAGP",
                 KINETIC_SOURCE.index("SUBROUTINE ENERGYMAT"),
             )
         ]
         self.assertNotIn("CALL PREPAREKINETICENERGYMAT(", energy)
         final_energy = MARS_SOURCE[
-            MARS_SOURCE.index("IF (NCASE.NE.6.AND.NCASE.NE.10.AND.KEFORM.NE.0") :
-            MARS_SOURCE.index("WRITE(*,*) 'AFTER ENERGYMAT'")
+            MARS_SOURCE.index(
+                "IF (NCASE.NE.6.AND.NCASE.NE.10.AND.KEFORM.NE.0"
+            ) : MARS_SOURCE.index("WRITE(*,*) 'AFTER ENERGYMAT'")
         ]
-        self.assertIn(
-            "IF (.NOT.(KNTV.EQ.21.AND.INCKIN.GT.0))", final_energy
-        )
+        self.assertIn("IF (.NOT.(KNTV.EQ.21.AND.INCKIN.GT.0))", final_energy)
         self.assertLess(
             final_energy.index("CALL PREPAREKINETICENERGYMAT("),
             final_energy.index("CALL ENERGYMAT"),
@@ -351,20 +395,17 @@ class SourceContractTests(unittest.TestCase):
     def test_hot_ion_frequency_diagnostic_guards_species_three(self) -> None:
         """A two-species thermal run has no SLAM0(:,3) diagnostic value."""
         diagnostic = KINETIC_SOURCE[
-            KINETIC_SOURCE.index("LAMH = 0.") :
-            KINETIC_SOURCE.index("FREQK(JS,1)  = AOMEGABPN")
+            KINETIC_SOURCE.index("LAMH = 0.") : KINETIC_SOURCE.index(
+                "FREQK(JS,1)  = AOMEGABPN"
+            )
         ]
         self.assertIn("IF (NSPECIES.GE.3) THEN", diagnostic)
         self.assertLess(
             diagnostic.index("IF (NSPECIES.GE.3) THEN"),
             diagnostic.index("LAMH = SLAM0(L,3)"),
         )
-        self.assertIn(
-            "CALL CALCDWKCOMP(ASUBM,BSUBM,CSUBM,DSUBM,", TORQUE_SOURCE
-        )
-        self.assertIn(
-            "SUBROUTINE TORQNTV(ASUBM,BSUBM,CSUBM,DSUBM,", TORQUE_SOURCE
-        )
+        self.assertIn("CALL CALCDWKCOMP(ASUBM,BSUBM,CSUBM,DSUBM,", TORQUE_SOURCE)
+        self.assertIn("SUBROUTINE TORQNTV(ASUBM,BSUBM,CSUBM,DSUBM,", TORQUE_SOURCE)
         self.assertEqual(MARS_SOURCE.count("CALL TORQNTV(ASUBM"), 2)
         self.assertIn("CALL TORQNTV(A,B,C,D,E,F,G,H)", PAMS_SOURCE)
         self.assertIn("SUBROUTINE OUTPUT(ISW,", MARS_SOURCE)
@@ -373,15 +414,11 @@ class SourceContractTests(unittest.TestCase):
     def test_dwk_cache_restart_is_explicit_and_narrow(self) -> None:
         self.assertIn("KDWKREAD", NEWRUN)
         self.assertIn("KDWKREAD MUST BE 0 OR 1", MARS_SOURCE)
-        self.assertIn(
-            "KDWKREAD=1 REQUIRES KPERTREAD=1, KNTV=21,", MARS_SOURCE
-        )
+        self.assertIn("KDWKREAD=1 REQUIRES KPERTREAD=1, KNTV=21,", MARS_SOURCE)
         self.assertIn("NSWEEP.NE.1", MARS_SOURCE)
         self.assertIn("ISMPIRUN.NE.0", MARS_SOURCE)
         self.assertIn("IF (KDWKREAD.EQ.1) THEN", KINETIC_SOURCE)
-        self.assertIn(
-            "KJP: REUSING VALIDATED DWK COMPONENT CACHE", KINETIC_SOURCE
-        )
+        self.assertIn("KJP: REUSING VALIDATED DWK COMPONENT CACHE", KINETIC_SOURCE)
         self.assertIn("KDWKREAD.NE.1) CALL KDWKDENSITY", TORQUE_SOURCE)
 
 

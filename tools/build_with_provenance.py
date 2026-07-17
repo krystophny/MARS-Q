@@ -220,6 +220,23 @@ def artifact_record(binary: Path) -> dict[str, Any]:
     }
 
 
+def linked_libraries(binary: Path) -> tuple[list[str] | None, list[str]]:
+    if platform.system() == "Darwin":
+        program_name = "otool"
+        arguments = ["-L", str(binary)]
+    else:
+        program_name = "ldd"
+        arguments = [str(binary)]
+
+    program = shutil.which(program_name)
+    if program is None:
+        return None, []
+
+    command = [program, *arguments]
+    output = run_output(command, required=False)
+    return command, output.splitlines() if output else []
+
+
 def write_manifest(path: Path, manifest: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
@@ -316,7 +333,7 @@ def build(profile_name: str, build_dir: Path, require_clean: bool) -> Path:
 
     make_version = run_output([str(make), "--version"])
     assert make_version is not None
-    ldd_output = run_output(["ldd", str(binary)], required=False)
+    library_command, library_lines = linked_libraries(binary)
     environment_names = (
         "PATH",
         "LD_LIBRARY_PATH",
@@ -342,9 +359,12 @@ def build(profile_name: str, build_dir: Path, require_clean: bool) -> Path:
             "make": {"path": str(make), "version": make_version},
             "executed_commands": [clean_command, build_command],
             "wrapper_command": wrapper_command,
-            "linked_libraries": ldd_output.splitlines() if ldd_output else [],
+            "linked_libraries_command": library_command,
+            "linked_libraries": library_lines,
             "environment": {
-                name: os.environ[name] for name in environment_names if name in os.environ
+                name: os.environ[name]
+                for name in environment_names
+                if name in os.environ
             },
             "started_at_utc": started_at,
             "completed_at_utc": utc_now(),
