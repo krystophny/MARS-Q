@@ -199,6 +199,18 @@ class SourceContractTests(unittest.TestCase):
             self.assertIn(f"ERROR AT NAMELIST READ: {group}", MARS_SOURCE)
         self.assertIn("IF (IGO.LT.0) STOP 1", MARS_SOURCE)
 
+    def test_exact_zero_experimental_omegae_avoids_zero_over_zero(self) -> None:
+        profile = MARS_SOURCE[
+            MARS_SOURCE.index("ELSEIF (NPROFWE.EQ.4) THEN") :
+            MARS_SOURCE.index("ELSEIF (NPROFWE.EQ.5) THEN")
+        ]
+        self.assertIn("IF (ZTEMP.EQ.0.0) THEN", profile)
+        self.assertIn("MAXVAL(ABS(RPRV)).NE.0.0", profile)
+        self.assertIn("STOP 'NPROFWE=4 ZERO ON-AXIS VALUE'", profile)
+        self.assertIn("ROTWE0 = 0.0", profile)
+        self.assertIn("RPRV    = 0.0", profile)
+        self.assertIn("RPRV = ROTWE0*RPRV/ZTEMP", profile)
+
     def test_input_bnm_header_is_checked_before_integer_conversion(self) -> None:
         self.assertIn("READ(CHOUTP,*) TEMP1,TEMP2", MARS_SOURCE)
         self.assertIn("MAX_EC  = NINT(TEMP1)", MARS_SOURCE)
