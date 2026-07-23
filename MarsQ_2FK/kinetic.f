@@ -943,6 +943,9 @@ C     OUTPUT ALL DRIFT FREQUENCIES
 
       ENDIF
 
+      IF ((ISMPIRUN.EQ.0.OR.RANK.EQ.ROOT).AND.KPITCHOUT.GT.0)
+     &   CALL WRITE_PITCH_FREQUENCIES
+
 
 C     SET DAMPING COEFFICIENTS AT THE MAGNETIC AXIS
       DO MROW=1,MSMAX
@@ -1622,6 +1625,132 @@ C     ENDIF
       CALL ZDEALLOCANISO(1)
 
  2    CONTINUE
+
+      RETURN
+      END
+
+C=======================================================================
+C WRITE THE NATIVE PITCH MESH AND FREQUENCY COEFFICIENTS USED BY THE
+C KINETIC RESPONSE.  THIS DIAGNOSTIC DOES NOT USE FREQKSURF OR THE
+C OPTIONAL SURFACE-FRACTION-DISTRIBUTION PROJECTION.
+C=======================================================================
+      SUBROUTINE WRITE_PITCH_FREQUENCIES
+
+      USE DIMENSIM
+      USE GLOBALM
+      USE KINETICM
+      USE ANISOTROPICM
+      USE ToolBox
+      IMPLICIT NONE
+
+      INTEGER FIDT,FIDP,FIDN,KGRID,JS,KP,I,K,NODE,JFIRST
+      REAL*8  RLAM,RADPOL,RBFAC,RDFAC
+
+      FIDT = ASSIGNFREEFILEUNIT()
+      OPEN(FIDT,FILE='PITCH_TRAPPED_FREQUENCIES.OUT',
+     &     FORM='FORMATTED',STATUS='REPLACE',ACTION='WRITE')
+      WRITE(FIDT,'(A)') '% schema=mars-pitch-trapped-v1'
+      WRITE(FIDT,'(A)') '% native coefficients used by kinetic response'
+      WRITE(FIDT,'(A)') '% grid: 1=full rho_pol=CS; 2=half rho_pol=CSM'
+      WRITE(FIDT,'(A)') '% active: 1=quadrature; 0=spline endpoint'
+      WRITE(FIDT,'(A)') '% columns: grid js rho_pol node active lambda'
+      WRITE(FIDT,'(A)') '%          omega_b_coeff omega_d_coeff'
+
+      FIDP = ASSIGNFREEFILEUNIT()
+      OPEN(FIDP,FILE='PITCH_PASSING_FREQUENCIES.OUT',
+     &     FORM='FORMATTED',STATUS='REPLACE',ACTION='WRITE')
+      WRITE(FIDP,'(A)') '% schema=mars-pitch-passing-v1'
+      WRITE(FIDP,'(A)') '% native coefficients used by kinetic response'
+      WRITE(FIDP,'(A)') '% grid: 1=full rho_pol=CS; 2=half rho_pol=CSM'
+      WRITE(FIDP,'(A)') '% active: 1=quadrature; 0=spline endpoint'
+      WRITE(FIDP,'(A)') '% columns: grid js rho_pol node active lambda'
+      WRITE(FIDP,'(A)') '%          omega_transit_coeff'
+
+      FIDN = ASSIGNFREEFILEUNIT()
+      OPEN(FIDN,FILE='PITCH_FREQUENCY_NORMALIZATION.OUT',
+     &     FORM='FORMATTED',STATUS='REPLACE',ACTION='WRITE')
+      WRITE(FIDN,'(A)') '% schema=mars-pitch-normalization-v1'
+      WRITE(FIDN,'(A)') '% omega_b(x)=coeff*bounce_x1_factor*sqrt(x)'
+      WRITE(FIDN,'(A)') '% omega_d(x)=coeff*drift_x1_factor*x'
+      WRITE(FIDN,'(A)') '% physical rad/s = normalized frequency/TAUA0'
+      WRITE(FIDN,'(A)') '% columns: grid js rho_pol species kinetic'
+      WRITE(FIDN,'(A)') '% T mass charge omegaE bounce_x1_factor'
+      WRITE(FIDN,'(A)') '% drift_x1_factor TAUA0'
+
+      DO KGRID=1,2
+         JFIRST=2
+         IF (KGRID.EQ.2) JFIRST=1
+         DO JS=JFIRST,NR
+            RADPOL=CS(JS)
+            IF (KGRID.EQ.2) RADPOL=CSM(JS)
+
+C           TRAPPED SPLINE LOWER ENDPOINT
+            NODE=1
+            RLAM=HKMIN(JS,KGRID)
+            WRITE(FIDT,1001) KGRID,JS,RADPOL,NODE,0,RLAM,
+     &           ZOMEGABT(JS,NODE,KGRID),ZOMEGADT(JS,NODE,KGRID)
+
+C           TRAPPED GAUSS-LEGENDRE PITCH QUADRATURE NODES
+            DO I=1,NLAMK0(JS,KGRID)-1
+               DO K=0,1
+                  NODE=2*I+K
+                  RLAM=((1+WK)*LAMK0(JS,I+K,KGRID)+
+     &                 (1-WK)*LAMK0(JS,I-K+1,KGRID))/2.
+                  WRITE(FIDT,1001) KGRID,JS,RADPOL,NODE,1,RLAM,
+     &              ZOMEGABT(JS,NODE,KGRID),
+     &              ZOMEGADT(JS,NODE,KGRID)
+               ENDDO
+            ENDDO
+
+C           TRAPPED SPLINE UPPER ENDPOINT
+            NODE=2*NLAMK0(JS,KGRID)
+            RLAM=HKMAX(JS,KGRID)
+            WRITE(FIDT,1001) KGRID,JS,RADPOL,NODE,0,RLAM,
+     &           ZOMEGABT(JS,NODE,KGRID),ZOMEGADT(JS,NODE,KGRID)
+
+C           PASSING SPLINE LOWER ENDPOINT
+            NODE=1
+            RLAM=0.
+            WRITE(FIDP,1002) KGRID,JS,RADPOL,NODE,0,RLAM,
+     &           ZOMEGABP(JS,NODE,KGRID)
+
+C           PASSING GAUSS-LEGENDRE PITCH QUADRATURE NODES
+            DO I=1,NLAMK1(JS,KGRID)-1
+               DO K=0,1
+                  NODE=2*I+K
+                  RLAM=((1+WK)*LAMK1(JS,I+K,KGRID)+
+     &                 (1-WK)*LAMK1(JS,I-K+1,KGRID))/2.
+                  WRITE(FIDP,1002) KGRID,JS,RADPOL,NODE,1,RLAM,
+     &                 ZOMEGABP(JS,NODE,KGRID)
+               ENDDO
+            ENDDO
+
+C           PASSING SPLINE UPPER ENDPOINT
+            NODE=2*NLAMK1(JS,KGRID)
+            RLAM=HKMIN(JS,KGRID)
+            WRITE(FIDP,1002) KGRID,JS,RADPOL,NODE,0,RLAM,
+     &           ZOMEGABP(JS,NODE,KGRID)
+
+            DO KP=1,NSPECIES
+               RBFAC=SQRT(2.*ESPECIES_TEM(JS,KGRID,KP)*
+     &                    ESPECIES_M(1)/ESPECIES_M(KP))
+               RDFAC=ESPECIES_TEM(JS,KGRID,KP)*B0K/OMEGACI0*
+     &                ESPECIES_Z(1)/ESPECIES_Z(KP)
+               WRITE(FIDN,1003) KGRID,JS,RADPOL,KP,ISPECIES_EK(KP),
+     &              ESPECIES_TEM(JS,KGRID,KP),ESPECIES_M(KP),
+     &              ESPECIES_Z(KP),OMEGAE0(JS,KGRID),RBFAC,RDFAC,
+     &              ZTAUA0
+            ENDDO
+         ENDDO
+      ENDDO
+
+      CLOSE(FIDT)
+      CLOSE(FIDP)
+      CLOSE(FIDN)
+
+ 1001 FORMAT(2I6,1X,E24.16,2I6,3(1X,E24.16))
+ 1002 FORMAT(2I6,1X,E24.16,2I6,2(1X,E24.16))
+ 1003 FORMAT(2I6,1X,E24.16,2I6,7(1X,E24.16))
 
       RETURN
       END

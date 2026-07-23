@@ -433,6 +433,33 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("KJP: REUSING VALIDATED DWK COMPONENT CACHE", KINETIC_SOURCE)
         self.assertIn("KDWKREAD.NE.1) CALL KDWKDENSITY", TORQUE_SOURCE)
 
+    def test_pitch_frequency_diagnostic_exposes_response_arrays(self) -> None:
+        diagnostic = KINETIC_SOURCE[
+            KINETIC_SOURCE.index(
+                "SUBROUTINE WRITE_PITCH_FREQUENCIES"
+            ) : KINETIC_SOURCE.index(
+                "COMPUTE X'/X FOR FIRST ORDER FOW CORRECTION"
+            )
+        ]
+        self.assertIn("PITCH_TRAPPED_FREQUENCIES.OUT", diagnostic)
+        self.assertIn("PITCH_PASSING_FREQUENCIES.OUT", diagnostic)
+        self.assertIn("PITCH_FREQUENCY_NORMALIZATION.OUT", diagnostic)
+        self.assertIn("ZOMEGABT(JS,NODE,KGRID)", diagnostic)
+        self.assertIn("ZOMEGADT(JS,NODE,KGRID)", diagnostic)
+        self.assertIn("ZOMEGABP(JS,NODE,KGRID)", diagnostic)
+        self.assertNotIn("FREQKSURF(", diagnostic)
+        self.assertIn(
+            "RBFAC=SQRT(2.*ESPECIES_TEM(JS,KGRID,KP)*",
+            diagnostic,
+        )
+        self.assertIn(
+            "RDFAC=ESPECIES_TEM(JS,KGRID,KP)*B0K/OMEGACI0*",
+            diagnostic,
+        )
+        self.assertIn("KPITCHOUT = 0", MARS_SOURCE)
+        self.assertIn("KPITCHOUT MUST BE 0 OR 1", MARS_SOURCE)
+        self.assertIn("KPITCHOUT=1 REQUIRES INCKIN>0", MARS_SOURCE)
+
 
 class ExecutableInputTests(unittest.TestCase):
     """Black-box tests that stop before equilibrium files are needed."""
@@ -573,6 +600,24 @@ class ExecutableInputTests(unittest.TestCase):
         result = run_with_input(run_input)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("KDWKREAD=1 REQUIRES KPERTREAD=1", result.stdout)
+
+    def test_pitch_frequency_diagnostic_rejects_nonkinetic_run(self) -> None:
+        result = run_with_input(minimal_input(outopt="KPITCHOUT=1"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("KPITCHOUT=1 REQUIRES INCKIN>0", result.stdout)
+
+    def test_pitch_frequency_diagnostic_accepts_kinetic_run(self) -> None:
+        result = run_with_input(
+            minimal_input(
+                kinetic="INCKIN=1",
+                outopt="KPITCHOUT=1",
+            )
+        )
+        self.assertNotIn(
+            "ERROR AT PITCH-FREQUENCY DIAGNOSTIC INPUT",
+            result.stdout,
+        )
+        self.assertNotIn("ERROR AT NAMELIST READ: OUTOPT", result.stdout)
 
 
 if __name__ == "__main__":
