@@ -1673,7 +1673,10 @@ C=======================================================================
       WRITE(FIDN,'(A)') '% omega_b(x)=coeff*bounce_x1_factor*sqrt(x)'
       WRITE(FIDN,'(A)') '% omega_d(x)=coeff*drift_x1_factor*x'
       WRITE(FIDN,'(A)') '% physical rad/s = normalized frequency/TAUA0'
-      WRITE(FIDN,'(A)') '% columns: grid js rho_pol species kinetic'
+      WRITE(FIDN,'(A)') '% columns: grid js rho_pol species'
+      WRITE(FIDN,'(A)') '% finite_birth_energy'
+      WRITE(FIDN,'(A)') '% finite_birth_energy: 0=IF0TYPE 0/4;'
+      WRITE(FIDN,'(A)') '% 1=IF0TYPE 1/3/5/6'
       WRITE(FIDN,'(A)') '% T mass charge omegaE bounce_x1_factor'
       WRITE(FIDN,'(A)') '% drift_x1_factor TAUA0'
 
