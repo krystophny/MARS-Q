@@ -23,7 +23,8 @@ C-----------------------------------------------------------------------
      R          PHIPHASE,       DTRAMPUI,  RAN_STD,VFMAX, FINIC, 
      I		INCFEED, NCOIL,	NSENS,	   IPSIF,  KCOILCURR,  
      I		IFEED,	KKF,    ISENS,     IDYNAM, 
-     I          NCOILT, NSENST, IBOUT,     IBOUT2, KREADECA
+     I          NCOILT, NSENST, IBOUT,     IBOUT2, KREADECA,
+     I          KEEPTFUN
 C-----------------------------------------------------------------------
       NAMELIST /KINETIC/
      C      ATAU,ALTAU,
