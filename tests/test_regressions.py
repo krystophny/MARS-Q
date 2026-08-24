@@ -320,6 +320,22 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("EXTERNAL B/X FIELD", MARS_SOURCE)
         self.assertIn("1172 FORMAT(14(E24.16E3,1X))", MARS_SOURCE)
 
+    def test_keeptfun_is_limited_to_the_kinetic_kjp_window(self) -> None:
+        """The carrier fix must not alter the discarded feedback solve."""
+        self.assertIn("KEEPTFUN", NEWRUN)
+        self.assertIn("KTREST", (ROOT / "MarsQ_2FK" / "feedbackm.f").read_text())
+        self.assertIn("KTREST = 1", (ROOT / "MarsQ_2FK" / "feedback.f").read_text())
+        window = MARS_SOURCE[
+            MARS_SOURCE.index("WRITE (*,'(\"CALLING KJP\")'") : MARS_SOURCE.index(
+                "MULTIPLY EQUATIONS INSIDE PLASMA BY EQFAC"
+            )
+        ]
+        self.assertIn("IF (KTREST.NE.0)", window)
+        self.assertEqual(window.count("T(JKT)  = TSAVE(JKT)"), 1)
+        self.assertEqual(window.count("T(JKT)  = 1.0"), 1)
+        self.assertLess(window.index("T(JKT)  = TSAVE(JKT)"), window.index("CALL KJP"))
+        self.assertLess(window.index("CALL KJP"), window.index("T(JKT)  = 1.0"))
+
     def test_frozen_field_ntv_skips_feedback_postprocessing(self) -> None:
         """External B/X torque must not enter unrelated feedback diagnostics."""
         output = MARS_SOURCE[
