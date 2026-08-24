@@ -75,7 +75,15 @@ are validated; their relative mismatch against the active run equilibrium is
 reported because the active equilibrium remains authoritative.  This is
 supported with `INCKIN>0`, `IPERTURB>0`, and `KNTV=20/21`, or for the Shaing
 `KNTV=10/11` diagnostic.  `INCFEED=4` may be used as a vacuum-only carrier:
-the external import explicitly enables the NTV output path and skips unrelated
+when the supplied equilibrium has a non-constant toroidal field function,
+also set `KEEPTFUN=1` in `&FEEDBACK`.  `FEEDCTRL` still uses `T=TM=1` while
+assembling the discarded feedback carrier, but the fixed MARS-K path restores
+the supplied `F(s)=R B_phi` only around the nested kinetic `KJP` call.  This
+keeps the fluid/feedback carrier bit-identical to the historical
+`KEEPTFUN=0` path while preventing the kinetic operator from silently using
+the vacuum field.  The default remains `KEEPTFUN=0` for backward compatibility.
+
+In this mode the external import explicitly enables the NTV output path and skips unrelated
 `FEEDOUT` feedback diagnostics before installing the supplied perturbation, so
 no discarded plasma response has to be solved and no carrier field can leak
 into NTV.  This also avoids requiring feedback-only workspaces in a frozen-field
