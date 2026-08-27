@@ -2818,7 +2818,7 @@ C=======================================================================
       INTEGER IHE(100),NIHE
       
       KCHECK  = 1
-      KSMOOTH = 1
+      KSMOOTH = KSMOOTHB
 
       KM      = NKSMOOTHB
       ALLOCATE(BMC(KM+1),BMS(KM+1))

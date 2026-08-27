@@ -324,6 +324,15 @@ class SourceContractTests(unittest.TestCase):
         self.assertLess(window.index("T(JKT)  = TSAVE(JKT)"), window.index("CALL KJP"))
         self.assertLess(window.index("CALL KJP"), window.index("T(JKT)  = 1.0"))
 
+    def test_kinetic_equilibrium_filter_is_explicitly_selectable(self) -> None:
+        """KSMOOTHB exposes the edge-spectrum diagnostic without changing defaults."""
+        globalm = (ROOT / "MarsQ_2FK" / "globalm.f").read_text()
+        self.assertIn("KSMOOTHB", NEWRUN)
+        self.assertIn("KSMOOTHB  = 1", MARS_SOURCE)
+        self.assertIn("KSMOOTHB.NE.0.AND.KSMOOTHB.NE.1", MARS_SOURCE)
+        self.assertIn("KSMOOTH = KSMOOTHB", KINETIC_SOURCE)
+        self.assertIn("NKSMOOTHB,NKSMOOTHR,NKSINGULAR,KSMOOTHB", globalm)
+
     def test_frozen_field_ntv_skips_feedback_postprocessing(self) -> None:
         """External B/X torque must not enter unrelated feedback diagnostics."""
         output = MARS_SOURCE[
