@@ -329,6 +329,7 @@ class SourceContractTests(unittest.TestCase):
         globalm = (ROOT / "MarsQ_2FK" / "globalm.f").read_text()
         self.assertIn("KSMOOTHB", NEWRUN)
         self.assertIn("KSMOOTHB  = 1", MARS_SOURCE)
+        self.assertIn("NKSMOOTHB.LT.0", MARS_SOURCE)
         self.assertIn("KSMOOTHB.NE.0.AND.KSMOOTHB.NE.1", MARS_SOURCE)
         self.assertIn("KSMOOTH = KSMOOTHB", KINETIC_SOURCE)
         self.assertIn("NKSMOOTHB,NKSMOOTHR,NKSINGULAR,KSMOOTHB", globalm)
