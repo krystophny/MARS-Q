@@ -9727,6 +9727,14 @@ C     production contraction before CTEDGE clipping or torque smoothing.
          CALL WRITEDWKDRIVELEDGER(DWPPARYD,DWPTERYD,TOTINDX,
      &                            DRIVERESID,DRIVESCALE)
       ENDIF
+
+C     OPTIONAL INDEPENDENT QUADRATIC-FORM CHECK.  Evaluate it before
+C     CTEDGE mutates the assembled work so both sides retain identical
+C     radial support.  This request-file-controlled check never changes
+C     TORQUENTV or any production output profile.
+      INQUIRE(FILE='DWK_DIRECT_CHECK.REQUEST',EXIST=ODIRECT)
+      IF (ODIRECT) CALL CALCDWKDIRECTCHECK(PPARAC,PPERPC,
+     &                                    DWPPARY,DWPPERY,TOTINDX)
       
       DO IS=1,NR
          IF (CSM(IS).GT.CTEDGE) THEN
@@ -9768,15 +9776,6 @@ C     USING: T_NTV = -2*N*IM(DWKA)/(4*PI^2)
       TORQUENTVE = -2.*RNTOR*TORQUENTVE/(4.*PI*PI)
       TORQUENTV  = TORQUENTVI + TORQUENTVE
       ENDIF
-
-C     OPTIONAL INDEPENDENT QUADRATIC-FORM CHECK.  This is deliberately
-C     request-file controlled so accepted production output is unchanged.
-C     The check reconstructs the imported B/X and pressure fields on the
-C     half-mesh and evaluates the historical KDWKDENSITY integrand; it is
-C     not used to alter TORQUENTV or any output profile.
-      INQUIRE(FILE='DWK_DIRECT_CHECK.REQUEST',EXIST=ODIRECT)
-      IF (ODIRECT) CALL CALCDWKDIRECTCHECK(PPARAC,PPERPC,
-     &                                    DWPPARY,DWPPERY,TOTINDX)
 
 C     Optional pre-smoothing work-density breakdown.  This writes the
 C     integer-mesh X contribution, half-mesh Y contribution, their radial
