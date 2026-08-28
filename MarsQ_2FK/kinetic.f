@@ -6937,6 +6937,13 @@ C=======================================================================
       INTEGER KCHECK
       KCHECK = 1
 
+C     KROOTMODE=1 is an explicit A/B path.  Keep the legacy path below
+C     byte-for-byte in behavior when KROOTMODE=0 (the default).
+      IF (KROOTMODE.EQ.1) THEN
+         CALL KLAM0_SAFE(JS,KGRID,KPARTICLE)
+         RETURN
+      ENDIF
+
 C     FIND SLAM0 FOR PASSING PARTICLES
       IF (KPARTICLE.EQ.1) THEN
          SLAM0 =-1.
@@ -7170,6 +7177,186 @@ C=======================================================================
       ELSEIF (KIND.EQ.3.OR.KIND.EQ.4) THEN
          FREQ = ZOMEGADT(JS,J,KGRID)/1000.
       ENDIF
+
+      RETURN
+      END
+
+C=======================================================================
+C SAFEGUARDED KLAM0 PATH.  This path deliberately retains one scalar
+C SLAM0/SLAMD0 consumer: all sign-changing brackets are enumerated, and
+C the first strict-interior spline root that converges is selected.
+C Exact mesh nodes and global endpoints are diagnostics, not roots.
+C=======================================================================
+      SUBROUTINE KLAM0_SAFE(JS,KGRID,KPARTICLE)
+
+      USE GLOBALM
+      USE KINETICM
+      USE ANISOTROPICM
+      IMPLICIT NONE
+      INCLUDE 'compam.inc'
+
+      INTEGER JS,KGRID,KPARTICLE,NN,KP,L,NROOTS,JFIRST
+      REAL*8  RTMP,LAM0,DROOT,RL
+
+      IF (KPARTICLE.EQ.1) THEN
+         SLAM0 = -1.
+         IF (ABS(WFUN(JS,KGRID)).GE.1.0E-13) THEN
+            NN = 2*NLAMK1(JS,KGRID)
+            DO KP=1,NSPECIES
+               IF (ABS(PSPECIES_NP(KP)).GT.0.AND.
+     &             ISPECIES_EK(KP).EQ.1) THEN
+                  DO L=1,MLMAX
+                     RTMP = ABS(RNTOR*OMEGAE0(JS,KGRID)-DREAL(OMEGA)) /
+     &                   ABS(RNTOR*RQK+RLM(L))/SQRT(2.*
+     &                   EPSALPHA(JS,KGRID,KP)/ESPECIES_M(KP)*
+     &                   ESPECIES_M(1))
+                     CALL KLAM0_SAFE_FIND(JS,KGRID,1,NN,RTMP,LAM0,
+     &                                    DROOT,NROOTS,JFIRST)
+                     IF (LAM0.GT.0.) SLAM0(L,KP) = LAM0
+                     IF (KROOTDIAG.GT.0) CALL KLAM0_LOG_SAFE(JS,KGRID,1,
+     &                  KP,L,NN,RTMP,NROOTS,JFIRST,LAM0,DROOT)
+                  ENDDO
+               ENDIF
+            ENDDO
+         ENDIF
+      ENDIF
+
+      IF (KPARTICLE.EQ.0) THEN
+         SLAM0 = -1.
+         IF (ABS(WFUN(JS,KGRID)).GE.1.0E-13) THEN
+            NN = 2*NLAMK0(JS,KGRID)
+            DO KP=1,NSPECIES
+               DO L=1,MLMAX
+                  RL = RLM(L)
+                  IF (ABS(RL).GT.0.1.AND.
+     &                ABS(PSPECIES_NTB(KP)).GT.0.AND.
+     &                ISPECIES_EK(KP).EQ.1) THEN
+                     RTMP = -(RNTOR*OMEGAE0(JS,KGRID)-DREAL(OMEGA)) /
+     &                      RL/SQRT(2.*EPSALPHA(JS,KGRID,KP)/
+     &                      ESPECIES_M(KP)*ESPECIES_M(1))
+                     CALL KLAM0_SAFE_FIND(JS,KGRID,2,NN,RTMP,LAM0,
+     &                                    DROOT,NROOTS,JFIRST)
+                     IF (LAM0.GT.0.) SLAM0(L,KP) = LAM0
+                     IF (KROOTDIAG.GT.0) CALL KLAM0_LOG_SAFE(JS,KGRID,0,
+     &                  KP,L,NN,RTMP,NROOTS,JFIRST,LAM0,DROOT)
+                  ENDIF
+
+                  IF (ABS(RL).LT.0.1.AND.
+     &                ABS(PSPECIES_NTD(KP)).GT.0.AND.
+     &                ISPECIES_EK(KP).EQ.1) THEN
+                     RTMP = -(RNTOR*OMEGAE0(JS,KGRID)-DREAL(OMEGA)) *
+     &                      OMEGACI0*ESPECIES_Z(KP)/(RNTOR*B0K*
+     &                      ESPECIES_Z(1)*EPSALPHA(JS,KGRID,KP))
+                     CALL KLAM0_SAFE_FIND(JS,KGRID,3,NN,RTMP/1000.,LAM0,
+     &                                    DROOT,NROOTS,JFIRST)
+                     IF (LAM0.GT.0.) SLAM0(L,KP) = LAM0
+                     IF (KROOTDIAG.GT.0) CALL KLAM0_LOG_SAFE(JS,KGRID,0,
+     &                  KP,L,NN,RTMP/1000.,NROOTS,JFIRST,LAM0,DROOT)
+                  ENDIF
+               ENDDO
+            ENDDO
+         ENDIF
+      ENDIF
+
+      IF (KPARTICLE.EQ.2) THEN
+         SLAMD0 = -1.
+         IF (ABS(WFUN(JS,KGRID)).GE.1.0E-13) THEN
+            NN = 2*NLAMK0(JS,KGRID)
+            CALL KLAM0_SAFE_FIND(JS,KGRID,4,NN,0.,LAM0,DROOT,
+     &                           NROOTS,JFIRST)
+            IF (LAM0.GT.0.) THEN
+               SLAMD0 = LAM0
+               DPRM = DROOT*1000.
+            ENDIF
+            IF (KROOTDIAG.GT.0) CALL KLAM0_LOG_SAFE(JS,KGRID,2,0,0,
+     &         NN,0.,NROOTS,JFIRST,LAM0,DROOT)
+         ENDIF
+      ENDIF
+
+      RETURN
+      END
+
+C=======================================================================
+C Enumerate every strict sign-changing mesh bracket and retain the first
+C converged strict-interior root.  Full endpoint arrays are passed to the
+C spline; this is intentional and differs from the legacy truncated call.
+C=======================================================================
+      SUBROUTINE KLAM0_SAFE_FIND(JS,KGRID,KIND,NN,TARGET,LAMROOT,DROOT,
+     &                            NROOTS,JFIRST)
+
+      USE GLOBALM
+      USE KINETICM
+      USE ANISOTROPICM
+      IMPLICIT NONE
+
+      INTEGER JS,KGRID,KIND,NN,NROOTS,JFIRST,J,ISTAT
+      REAL*8 TARGET,LAMROOT,DROOT,YF(2*NLAMK+2)
+      REAL*8 FREQ,FLEFT,FRIGHT,FTOL,LAM00,ROOTTMP,DERIVTMP
+
+      LAMROOT = -1.
+      DROOT = 0.
+      NROOTS = 0
+      JFIRST = 0
+      IF (NN.LT.2) RETURN
+
+      DO J=1,NN
+         CALL KLAM0_ROOT_FREQUENCY(JS,KGRID,KIND,J,FREQ)
+         YF(J) = FREQ
+      ENDDO
+
+      DO J=1,NN-1
+         FLEFT = YF(J)-TARGET
+         FRIGHT = YF(J+1)-TARGET
+         FTOL = 1D-12*MAX(1D0,ABS(TARGET),ABS(FLEFT),ABS(FRIGHT))
+         IF (ABS(FLEFT).GT.FTOL.AND.ABS(FRIGHT).GT.FTOL) THEN
+            IF (FLEFT*FRIGHT.LT.0.) THEN
+               NROOTS = NROOTS+1
+               IF (JFIRST.EQ.0) JFIRST = J
+               LAM00 = (LAMM(J)+LAMM(J+1))*0.5
+               CALL SPLINE1DR_SAFE(DERIVTMP,ROOTTMP,TARGET,LAM00,
+     &              YF,LAMM,NN,LAMTMP,J,ISTAT)
+               IF (ISTAT.EQ.1.AND.LAMROOT.LT.0.) THEN
+                  LAMROOT = ROOTTMP
+                  DROOT = DERIVTMP
+               ENDIF
+            ENDIF
+         ENDIF
+      ENDDO
+
+      RETURN
+      END
+
+C=======================================================================
+C Compact runtime summary for the safeguarded path.  Complete bracket
+C decisions remain available from KROOTDIAG on the legacy diagnostic path;
+C this record makes the selected safe-path root and count unambiguous.
+C=======================================================================
+      SUBROUTINE KLAM0_LOG_SAFE(JS,KGRID,KPARTICLE,KP,L,NN,TARGET,
+     &                           NROOTS,JFIRST,LAMROOT,DROOT)
+
+      USE GLOBALM
+      USE MPIENV
+      IMPLICIT NONE
+
+      INTEGER JS,KGRID,KPARTICLE,KP,L,NN,NROOTS,JFIRST
+      REAL*8 TARGET,LAMROOT,DROOT
+      LOGICAL LEXIST
+      CHARACTER*64 FILENAME
+      CHARACTER*24 STATUS
+
+      WRITE(FILENAME,"(A11,I0.4,A4)") "KLAM0_ROOT_",RANK,".OUT"
+C$OMP CRITICAL(KLAM0_ROOT_LOG)
+      INQUIRE(FILE=TRIM(FILENAME),EXIST=LEXIST)
+      OPEN(97,FILE=TRIM(FILENAME),POSITION='APPEND',STATUS='UNKNOWN',
+     &     FORM='FORMATTED')
+      IF (.NOT.LEXIST) WRITE(97,'(A)')
+     &   '# schema=mars-klam0-safe-root-decisions-v1'
+      STATUS = 'NO_STRICT_INTERIOR_ROOT'
+      IF (NROOTS.GT.0) STATUS = 'SELECTED_FIRST_STRICT_ROOT'
+      WRITE(97,*) JS,KGRID,KPARTICLE,KP,L,NN,TARGET,JFIRST,NROOTS,
+     &            LAMROOT,DROOT,STATUS
+      CLOSE(97)
+C$OMP END CRITICAL(KLAM0_ROOT_LOG)
 
       RETURN
       END

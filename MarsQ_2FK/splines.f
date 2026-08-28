@@ -92,6 +92,109 @@ c-----------------------------------------------------------------------
       return
       end
 c=======================================================================
+      subroutine spline1dr_safe(ypnew,xnew,y0,x0,yold,xold,nold,
+     >     y2old,ibracket,istat)
+c-----------------------------------------------------------------------
+c     Safeguarded cubic-spline root solve on one prescribed bracket.
+c     The bracket is never left.  Status 1 is a strict interior root;
+c     status 2/3 is an exact lower/upper mesh node and is rejected by
+c     KLAM0_SAFE; status 0 is not a sign-changing bracket; status 4 is
+c     an iteration failure.  x0 is only an initial point inside the
+c     bracket; bisection remains the governing update.
+c-----------------------------------------------------------------------
+      implicit none
+      real*8 yold(*),xold(*),y2old(*)
+      real*8 ypnew,xnew,y0,x0
+      real*8 xlo,xhi,xmid,flo,fhi,fmid,ymid,ypmid
+      real*8 ftol,xtol,scale
+      integer nold,ibracket,istat,iter
+
+      istat=0
+      ypnew=0.
+      xnew=x0
+      if (nold.lt.2) return
+      if (ibracket.lt.1.or.ibracket.ge.nold) return
+
+      call spline(xold,yold,nold,-1.e30,-1.e30,y2old)
+      xlo=xold(ibracket)
+      xhi=xold(ibracket+1)
+      if (xhi.le.xlo) return
+      scale=max(1d0,abs(y0),abs(yold(ibracket)),
+     >          abs(yold(ibracket+1)))
+      ftol=1d-12*scale
+      xtol=1d-12*max(1d0,abs(xlo),abs(xhi))
+      call spline1dr_eval(xold,yold,y2old,ibracket,xlo,flo,ypnew)
+      flo=flo-y0
+      call spline1dr_eval(xold,yold,y2old,ibracket,xhi,fhi,ypnew)
+      fhi=fhi-y0
+      if (abs(flo).le.ftol) then
+         xnew=xlo
+         istat=2
+         call spline1dr_eval(xold,yold,y2old,ibracket,xnew,
+     >                       fmid,ypnew)
+         return
+      endif
+      if (abs(fhi).le.ftol) then
+         xnew=xhi
+         istat=3
+         call spline1dr_eval(xold,yold,y2old,ibracket,xnew,
+     >                       fmid,ypnew)
+         return
+      endif
+      if (flo*fhi.ge.0.) return
+
+      xmid=0.5*(xlo+xhi)
+      if (x0.gt.xlo.and.x0.lt.xhi) xmid=x0
+      do iter=1,128
+         if (xmid.le.xlo.or.xmid.ge.xhi) xmid=0.5*(xlo+xhi)
+         call spline1dr_eval(xold,yold,y2old,ibracket,xmid,
+     >                       ymid,ypmid)
+         fmid=ymid-y0
+         if (abs(fmid).le.ftol.or.abs(xhi-xlo).le.xtol) then
+            xnew=xmid
+            ypnew=ypmid
+            istat=1
+            return
+         endif
+         if (flo*fmid.lt.0.) then
+            xhi=xmid
+            fhi=fmid
+         else
+            xlo=xmid
+            flo=fmid
+         endif
+         xmid=0.5*(xlo+xhi)
+      enddo
+      xnew=xmid
+      ypnew=ypmid
+      istat=4
+      return
+      end
+c=======================================================================
+      subroutine spline1dr_eval(xa,ya,y2a,k,x,y,yp)
+c-----------------------------------------------------------------------
+c     Evaluate a cubic spline and its derivative on interval k.
+c-----------------------------------------------------------------------
+      implicit none
+      real*8 xa(*),ya(*),y2a(*),x,y,yp
+      real*8 h,a,b
+      integer k
+
+      h=xa(k+1)-xa(k)
+      if (h.eq.0.) then
+         y=0.
+         yp=0.
+         return
+      endif
+      a=(xa(k+1)-x)/h
+      b=(x-xa(k))/h
+      y=a*ya(k)+b*ya(k+1)+
+     >  ((a**3-a)*y2a(k)+(b**3-b)*y2a(k+1))*(h**2)/6.
+      yp=(ya(k+1)-ya(k))/h-(3.*a**2-1.)/6.*h*y2a(k)
+     >   +(3.*b**2-1.)/6.*h*y2a(k+1)
+      return
+      end
+c=======================================================================
       subroutine spline(x,y,n,yp1,ypn,y2)
 c-----------------------------------------------------------------------
 c     spline routine based upon numerical recipes
