@@ -9375,7 +9375,7 @@ C     PERPENDICULAR KINETIC PRESSURE
          ENDDO
       END SUBROUTINE FILLMATDWKCOMP
       
-      SUBROUTINE CALCPRECOMP(I,PPARAC,PPERPC,
+      SUBROUTINE CALCPRECOMP(I,IDRIVE,PPARAC,PPERPC,
      &                       ASUBM,BSUBM,CSUBM,DSUBM,
      &                       ESUBM,FSUBM,GSUBM,HSUBM)
       USE RCOMDM
@@ -9389,7 +9389,7 @@ C     PERPENDICULAR KINETIC PRESSURE
       INCLUDE 'compam.inc'
       INCLUDE 'comioc.inc'
 
-      INTEGER    I,J,MROW,MSA,MSB,MS
+      INTEGER    I,IDRIVE,J,MROW,MSA,MSB,MS
       INTEGER    LXCOL,LYCOL,LXROW,LYROW
       REAL*8     HCHI
       COMPLEX*16 CTMP1
@@ -9406,23 +9406,42 @@ C     PERPENDICULAR KINETIC PRESSURE
       LXCOL = (MSA -1)*NXCOMP
       LYROW = (MROW-1)*NYCOMP
       LYCOL = (MSA -1)*NYCOMP
-C     COMPUTATION OF JPPARA AND JPPERP	  
+C     COMPUTATION OF JPPARA AND JPPERP.  IDRIVE=0 IS THE UNCHANGED
+C     PRODUCTION SUM; 1: X1, 2: X2, 3: B1, 4: B2, 5: B3.
+      IF (IDRIVE.EQ.0.OR.IDRIVE.EQ.1) THEN
       JPPARA(MROW)=JPPARA(MROW)+
      &             FSUBM(KYPPARA+LYROW,KXX1+LXCOL,I)*X1U(I,MSA) +
-     &             GSUBM(KYPPARA+LYROW,KXX1+LXCOL,I)*X1U(I+1,MSA)+
-     &             FSUBM(KYPPARA+LYROW,KXB1+LXCOL,I)*B1U(I,MSA) +
-     &             GSUBM(KYPPARA+LYROW,KXB1+LXCOL,I)*B1U(I+1,MSA)+
-     &             DSUBM(KYPPARA+LYROW,KYX2+LYCOL,I)*X2U(I,MSA)+
-     &             DSUBM(KYPPARA+LYROW,KYB2+LYCOL,I)*B2U(I,MSA)+
-     &             DSUBM(KYPPARA+LYROW,KYB3+LYCOL,I)*B3U(I,MSA)
+     &             GSUBM(KYPPARA+LYROW,KXX1+LXCOL,I)*X1U(I+1,MSA)
       JPPERP(MROW)=JPPERP(MROW)+
      &             FSUBM(KYPPERP+LYROW,KXX1+LXCOL,I)*X1U(I,MSA) +
-     &             GSUBM(KYPPERP+LYROW,KXX1+LXCOL,I)*X1U(I+1,MSA)+
+     &             GSUBM(KYPPERP+LYROW,KXX1+LXCOL,I)*X1U(I+1,MSA)
+      ENDIF
+      IF (IDRIVE.EQ.0.OR.IDRIVE.EQ.2) THEN
+      JPPARA(MROW)=JPPARA(MROW)+
+     &             DSUBM(KYPPARA+LYROW,KYX2+LYCOL,I)*X2U(I,MSA)
+      JPPERP(MROW)=JPPERP(MROW)+
+     &             DSUBM(KYPPERP+LYROW,KYX2+LYCOL,I)*X2U(I,MSA)
+      ENDIF
+      IF (IDRIVE.EQ.0.OR.IDRIVE.EQ.3) THEN
+      JPPARA(MROW)=JPPARA(MROW)+
+     &             FSUBM(KYPPARA+LYROW,KXB1+LXCOL,I)*B1U(I,MSA) +
+     &             GSUBM(KYPPARA+LYROW,KXB1+LXCOL,I)*B1U(I+1,MSA)
+      JPPERP(MROW)=JPPERP(MROW)+
      &             FSUBM(KYPPERP+LYROW,KXB1+LXCOL,I)*B1U(I,MSA) +
-     &             GSUBM(KYPPERP+LYROW,KXB1+LXCOL,I)*B1U(I+1,MSA)+
-     &             DSUBM(KYPPERP+LYROW,KYX2+LYCOL,I)*X2U(I,MSA)+
-     &             DSUBM(KYPPERP+LYROW,KYB2+LYCOL,I)*B2U(I,MSA)+
-     &             DSUBM(KYPPERP+LYROW,KYB3+LYCOL,I)*B3U(I,MSA)					
+     &             GSUBM(KYPPERP+LYROW,KXB1+LXCOL,I)*B1U(I+1,MSA)
+      ENDIF
+      IF (IDRIVE.EQ.0.OR.IDRIVE.EQ.4) THEN
+      JPPARA(MROW)=JPPARA(MROW)+
+     &             DSUBM(KYPPARA+LYROW,KYB2+LYCOL,I)*B2U(I,MSA)
+      JPPERP(MROW)=JPPERP(MROW)+
+     &             DSUBM(KYPPERP+LYROW,KYB2+LYCOL,I)*B2U(I,MSA)
+      ENDIF
+      IF (IDRIVE.EQ.0.OR.IDRIVE.EQ.5) THEN
+      JPPARA(MROW)=JPPARA(MROW)+
+     &             DSUBM(KYPPARA+LYROW,KYB3+LYCOL,I)*B3U(I,MSA)
+      JPPERP(MROW)=JPPERP(MROW)+
+     &             DSUBM(KYPPERP+LYROW,KYB3+LYCOL,I)*B3U(I,MSA)
+      ENDIF
       ENDDO
       ENDDO
 	  
@@ -9554,14 +9573,18 @@ C     COMPUTATION OF PPERP AND PPARA
       INCLUDE 'compam.inc'
       INCLUDE 'comioc.inc'
       
-      INTEGER KP,IS,TOTINDX,INDX,I,J,FID,MROW,MSA,LXROW,LYCOL
-      LOGICAL ODIRECT,OBREAKDOWN,OCACHEFINITE
+      INTEGER KP,IS,TOTINDX,INDX,I,J,FID,MROW,MSA,LXROW,LYCOL,
+     &        IDRIVE
+      LOGICAL ODIRECT,OBREAKDOWN,ODRIVELEDGER,OCACHEFINITE
       REAL*8 PI2,CACHEMAX,FIELDMAX,OPPARAMAX,OPPERPMAX,
-     &       PPARAMAX,PPERPMAX
+     &       PPARAMAX,PPERPMAX,DRIVERESID,DRIVESCALE
       COMPLEX*16,DIMENSION(:),ALLOCATABLE:: DWPPARA,DWPPERP,DWK
       COMPLEX*16,DIMENSION(:,:),ALLOCATABLE::DWPPARX,DWPPERX,
      &                                       DWPPARY,DWPPERY
       COMPLEX*16,DIMENSION(:,:,:),ALLOCATABLE:: PPARAC,PPERPC
+      COMPLEX*16,DIMENSION(:,:,:,:),ALLOCATABLE:: PPARAD,PPERPD
+      COMPLEX*16,DIMENSION(:,:,:),ALLOCATABLE::DWPPARXD,DWPPERXD,
+     &                                        DWPPARYD,DWPTERYD
       COMPLEX*16,DIMENSION(:,:,:,:),ALLOCATABLE,TARGET:: 
      &                  BUFFER_DATA1,BUFFER_DATA2,BUFFER_DATAM
       COMPLEX*16,DIMENSION(:,:,:,:),POINTER:: TMPPOT
@@ -9572,10 +9595,25 @@ C     COMPUTATION OF PPERP AND PPARA
       
       CALL ALLOCATEDWKCOMPMAT
       TOTINDX = SIZE(VX1PARAC,3)
+      INQUIRE(FILE='DWK_DRIVE_LEDGER.REQUEST',EXIST=ODRIVELEDGER)
       ALLOCATE (DWPPARA(TOTINDX),DWPPERP(TOTINDX),DWK(TOTINDX))
       ALLOCATE (DWPPARX(NRP1,TOTINDX),DWPPERX(NRP1,TOTINDX),
      &          DWPPARY(NRP1,TOTINDX),DWPPERY(NRP1,TOTINDX) )
       ALLOCATE (PPARAC(NRP1,MSMAX,TOTINDX),PPERPC(NRP1,MSMAX,TOTINDX))
+      IF (ODRIVELEDGER) THEN
+         ALLOCATE(PPARAD(NRP1,MSMAX,TOTINDX,5),
+     &            PPERPD(NRP1,MSMAX,TOTINDX,5))
+         ALLOCATE(DWPPARXD(NRP1,TOTINDX,5),
+     &            DWPPERXD(NRP1,TOTINDX,5),
+     &            DWPPARYD(NRP1,TOTINDX,5),
+     &            DWPTERYD(NRP1,TOTINDX,5))
+         PPARAD=0.0
+         PPERPD=0.0
+         DWPPARXD=0.0
+         DWPPERXD=0.0
+         DWPPARYD=0.0
+         DWPTERYD=0.0
+      ENDIF
       ALLOCATE (BUFFER_DATA1(MSMAX,MSMAX,TOTINDX,30),
      &          BUFFER_DATA2(MSMAX,MSMAX,TOTINDX,30),
      &          BUFFER_DATAM(MSMAX,MSMAX,TOTINDX,30))
@@ -9628,7 +9666,7 @@ C     FILL IN THE GLOBAL MATRIX FOR PRESSURE CALCULATION
      &                          ASUBM,BSUBM,CSUBM,DSUBM,
      &                          ESUBM,FSUBM,GSUBM,HSUBM)         
 C     CALCULATE THE COMPONENTS OF PRESSURE     
-            CALL CALCPRECOMP(IS,PPARAC(:,:,INDX),PPERPC(:,:,INDX),
+            CALL CALCPRECOMP(IS,0,PPARAC(:,:,INDX),PPERPC(:,:,INDX),
      &                       ASUBM,BSUBM,CSUBM,DSUBM,
      &                       ESUBM,FSUBM,GSUBM,HSUBM)
 C     CALCULATE ENERGY PROFILE OF DIFFERENT COMPONENTS
@@ -9637,6 +9675,24 @@ C     CALCULATE ENERGY PROFILE OF DIFFERENT COMPONENTS
      &                        DWPPARX(:,INDX),DWPPARY(:,INDX),
      &                        ASUBM,BSUBM,CSUBM,DSUBM,
      &                        ESUBM,FSUBM,GSUBM,HSUBM)
+
+            IF (ODRIVELEDGER) THEN
+            DO IDRIVE=1,5
+               CALL CALCPRECOMP(IS,IDRIVE,
+     &                          PPARAD(:,:,INDX,IDRIVE),
+     &                          PPERPD(:,:,INDX,IDRIVE),
+     &                          ASUBM,BSUBM,CSUBM,DSUBM,
+     &                          ESUBM,FSUBM,GSUBM,HSUBM)
+               CALL CALCDWKPROF(IS,PPARAD(:,:,INDX,IDRIVE),
+     &                          PPERPD(:,:,INDX,IDRIVE),
+     &                          DWPPERXD(:,INDX,IDRIVE),
+     &                          DWPTERYD(:,INDX,IDRIVE),
+     &                          DWPPARXD(:,INDX,IDRIVE),
+     &                          DWPPARYD(:,INDX,IDRIVE),
+     &                          ASUBM,BSUBM,CSUBM,DSUBM,
+     &                          ESUBM,FSUBM,GSUBM,HSUBM)
+            ENDDO
+            ENDIF
 	  
          ENDDO
       ENDDO
@@ -9680,7 +9736,35 @@ C     CALCULATE THE TOTAL ENERGY OF EACH COMPONENT
      
          DWPPERY(IS,:) = 
      &   PI2*(DWPPERY(IS,:)+(DWPPERX(IS,:)+DWPPERX(IS+1,:))*0.5)
+         IF (ODRIVELEDGER) THEN
+         DO IDRIVE=1,5
+            DWPPARYD(IS,:,IDRIVE)=PI2*(DWPPARYD(IS,:,IDRIVE)+
+     &         0.5*(DWPPARXD(IS,:,IDRIVE)+
+     &              DWPPARXD(IS+1,:,IDRIVE)))
+            DWPTERYD(IS,:,IDRIVE)=PI2*(DWPTERYD(IS,:,IDRIVE)+
+     &         0.5*(DWPPERXD(IS,:,IDRIVE)+
+     &              DWPPERXD(IS+1,:,IDRIVE)))
+         ENDDO
+         ENDIF
       ENDDO
+
+C     The five selected pressure drives must reconstruct the unchanged
+C     production contraction before CTEDGE clipping or torque smoothing.
+      IF (ODRIVELEDGER) THEN
+         DRIVERESID=MAX(
+     &      MAXVAL(ABS(DWPPARY(1:NR,:)-
+     &                 SUM(DWPPARYD(1:NR,:,:),DIM=3))),
+     &      MAXVAL(ABS(DWPPERY(1:NR,:)-
+     &                 SUM(DWPTERYD(1:NR,:,:),DIM=3))))
+         DRIVESCALE=MAX(MAXVAL(ABS(DWPPARYD(1:NR,:,:))),
+     &                  MAXVAL(ABS(DWPTERYD(1:NR,:,:))))
+         WRITE(*,*) 'DWK DRIVE LEDGER MAX RESIDUAL/SCALE:',
+     &              DRIVERESID,DRIVESCALE
+         IF (DRIVERESID.GT.1.0D-11*MAX(DRIVESCALE,1.0D-300))
+     &      STOP 'DWK DRIVE LEDGER FAILED TO RECONSTRUCT TOTAL'
+         CALL WRITEDWKDRIVELEDGER(DWPPARYD,DWPTERYD,TOTINDX,
+     &                            DRIVERESID,DRIVESCALE)
+      ENDIF
       
       DO IS=1,NR
          IF (CSM(IS).GT.CTEDGE) THEN
@@ -9827,11 +9911,60 @@ C     OUTPUT THE ENERGY COMPONENTS
       DEALLOCATE (DWPPARA,DWPPERP,DWK)
       DEALLOCATE (DWPPARX,DWPPERX,DWPPARY,DWPPERY)
       DEALLOCATE (PPARAC,PPERPC)
+      IF (ODRIVELEDGER) THEN
+         DEALLOCATE(PPARAD,PPERPD,DWPPARXD,DWPPERXD,
+     &              DWPPARYD,DWPTERYD)
+      ENDIF
       DEALLOCATE (BUFFER_DATA1,BUFFER_DATA2,BUFFER_DATAM)
 
       CALL DEALLOCATEDWKCOMPMAT
 
       END SUBROUTINE CALCDWKCOMP
+
+C=======================================================================
+C WRITE AN EXACT LEDGER OF THE FIVE KINETIC PRESSURE DRIVES             =
+C                                                                       =
+C The inputs have already received the same radial finite-element       =
+C combination as the production work density, but no CTEDGE clipping   =
+C or native torque smoothing.  There is no X3 pressure-drive slot in    =
+C CALCPRECOMP.  This diagnostic never changes production arrays.        =
+C=======================================================================
+      SUBROUTINE WRITEDWKDRIVELEDGER(DWPPARYD,DWPTERYD,TOTINDX,
+     &                               DRIVERESID,DRIVESCALE)
+      USE DIMENSIM
+      USE GLOBALM
+      USE RCOMDM
+      USE ToolBox
+      IMPLICIT NONE
+      INTEGER TOTINDX,IS,INDX,IDRIVE,FID
+      REAL*8 DRIVERESID,DRIVESCALE,TORQUEFAC
+      COMPLEX*16,DIMENSION(NRP1,TOTINDX,5)::DWPPARYD,DWPTERYD
+
+      TORQUEFAC=-2.0D0*RNTOR/(4.0D0*PI*PI)
+      FID=ASSIGNFREEFILEUNIT()
+      OPEN(FID,FILE='DWK_DRIVE_LEDGER.OUT',FORM='FORMATTED',
+     &     STATUS='REPLACE',ACTION='WRITE')
+      WRITE(FID,*) '% DRIVE: 1=X1 2=X2 3=B1 4=B2 5=B3; X3 ABSENT'
+      WRITE(FID,*) '% PRE-CTEDGE, PRE-SMOOTHING, EXECUTABLE-NATIVE SIGN'
+      WRITE(FID,*) '% MAX_RECONSTRUCTION_RESIDUAL SCALE',
+     &             DRIVERESID,DRIVESCALE
+      WRITE(FID,*) '% IS INDX DRIVE CSM PARA_RE PARA_IM PERP_RE',
+     &             ' PERP_IM TORQUE_DENSITY'
+      DO IS=1,NR
+         DO INDX=1,TOTINDX
+            DO IDRIVE=1,5
+               WRITE(FID,1000) IS,INDX,IDRIVE,CSM(IS),
+     &            DWPPARYD(IS,INDX,IDRIVE),
+     &            DWPTERYD(IS,INDX,IDRIVE),
+     &            TORQUEFAC*AIMAG(-DWPPARYD(IS,INDX,IDRIVE)-
+     &                                  DWPTERYD(IS,INDX,IDRIVE))
+            ENDDO
+         ENDDO
+      ENDDO
+ 1000 FORMAT(3I7,6(1X,E18.10))
+      CLOSE(FID)
+      WRITE(*,*) 'WROTE DWK_DRIVE_LEDGER.OUT'
+      END SUBROUTINE WRITEDWKDRIVELEDGER
 
 C=======================================================================
 C WRITE THE PRE-SMOOTHING KINETIC WORK-DENSITY BREAKDOWN               =
