@@ -36,7 +36,7 @@
      I                  KJRER,KJRE_INIT,INCDPHI
       REAL*8            ASPCT,Q0,ETA,GAMMA,NUII,PVISC,
      R                  ALPHAP,ALPHAD,ALPHAH,FRACPTH,
-     R                  NUEFFIA,NUEFFEA,
+     R                  NUEFFIA,NUEFFEA,NTVNUMEREFAC,
      R                  P0,P0OLD,R0TYPE4,S0TYPE4,HTYPE4C,HHTYPE4C,
      R                  ETACS1,ETACS2,ETACS3,ETACS4,ETAXIS,
      R                  GAMWID,GAMQ0,TTCCONV0,TTCPARA0,TTCPERP0,
@@ -220,5 +220,15 @@ C-----------------------------------------------------------------------
 C     PARAMETERS FOR RMZM_F
       REAL*8  R0EXP,B0EXP,VOLTOT
       COMPLEX*16 VDEXIR,VDEXIZ
+
+      CONTAINS
+
+      PURE COMPLEX*16 FUNCTION NTVNUMERBASE(RN,WE,W,WEFAC)
+      REAL*8,INTENT(IN) :: RN,WE,WEFAC
+      COMPLEX*16,INTENT(IN) :: W
+
+      NTVNUMERBASE = RN*WEFAC*WE-W
+
+      END FUNCTION NTVNUMERBASE
 
       END MODULE GLOBALM

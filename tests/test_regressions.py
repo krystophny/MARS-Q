@@ -86,6 +86,45 @@ def minimal_input(*, kinetic: str = "", qlin: str = "", outopt: str = "") -> str
 class SourceContractTests(unittest.TestCase):
     """Fast tests covering every local change since upstream 8824bb1."""
 
+    def test_ntv_numerator_electric_factor_has_manufactured_oracle(self) -> None:
+        """Exercise the compiled numerator helper against analytic values."""
+        compiler = shutil.which("gfortran")
+        if compiler is None:
+            self.skipTest("gfortran is required for the manufactured oracle")
+        driver = textwrap.dedent(
+            """
+            program test_ntv_numer
+              use globalm, only: ntvnumerbase
+              implicit none
+              complex*16 :: omega, native, reversed
+              omega = dcmplx(0.25d0, -0.5d0)
+              native = ntvnumerbase(-3.0d0, 2.0d0, omega, 1.0d0)
+              reversed = ntvnumerbase(-3.0d0, 2.0d0, omega, -1.0d0)
+              if (abs(native-dcmplx(-6.25d0,0.5d0)).gt.1d-13) stop 1
+              if (abs(reversed-dcmplx(5.75d0,0.5d0)).gt.1d-13) stop 2
+            end program test_ntv_numer
+            """
+        )
+        with tempfile.TemporaryDirectory(prefix="mars-ntv-numer-") as tmp:
+            source = Path(tmp, "oracle.f90")
+            source.write_text(driver)
+            executable_path = Path(tmp, "oracle")
+            subprocess.run(
+                [
+                    compiler,
+                    "-o",
+                    str(executable_path),
+                    str(ROOT / "MarsQ_2FK" / "globalm.f"),
+                    str(source),
+                ],
+                check=True,
+                cwd=tmp,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            subprocess.run([str(executable_path)], check=True, cwd=tmp)
+
     def test_portable_compiler_targets_are_out_of_tree(self) -> None:
         for profile in ("gnu", "gnu-debug", "ifx", "nvhpc"):
             self.assertIn(f"{profile}:", MAKEFILE)
