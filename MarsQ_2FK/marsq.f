@@ -2061,6 +2061,12 @@ C     =================
 
 C     CONTROL NCASE
       IF (NCASE.LT.-3.OR.NCASE.GT.11) STOP 'NCASE' !here
+      IF (KROOTMODE.NE.0.AND.KROOTMODE.NE.1) THEN
+         WRITE(*,*) ' ERROR AT NUMERIC INPUT'
+         WRITE(*,*) ' KROOTMODE MUST BE 0 OR 1'
+         IGO = -1
+         RETURN
+      ENDIF
 
       IF (NCASE.GE.-3.AND.NCASE.LE.-1) THEN
          CALPHA2 = 1.     
@@ -4015,6 +4021,7 @@ C
       KRE_STAR  = 5
       KRE_FO    = 0
       KRE_ODE   = 1
+      KROOTMODE = 0
       IFOW      = 0
       NORB      = 1000
       NSPECIES  = 2
@@ -4156,6 +4163,7 @@ C     RESET EVERY TIME
       IF (IOS.NE.0) GOTO 250
       IF (NKSMOOTHB.LT.0) GOTO 324
       IF (KSMOOTHB.NE.0.AND.KSMOOTHB.NE.1) GOTO 325
+      IF (KROOTMODE.NE.0.AND.KROOTMODE.NE.1) GOTO 326
       READ(CHNAME,OUTOPT,IOSTAT=IOS,IOMSG=IOMSG)
       IF (IOS.NE.0) GOTO 260
 
@@ -4526,6 +4534,11 @@ C     DERIVED QUANTITIES
 
  325  WRITE(*,*) ' ERROR AT NUMERIC INPUT'
       WRITE(*,*) ' KSMOOTHB MUST BE 0 OR 1'
+      IGO = -1
+      RETURN
+
+ 326  WRITE(*,*) ' ERROR AT NUMERIC INPUT'
+      WRITE(*,*) ' KROOTMODE MUST BE 0 OR 1'
       IGO = -1
       RETURN
 

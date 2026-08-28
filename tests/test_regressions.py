@@ -62,7 +62,9 @@ def run_with_input(run_input: str) -> subprocess.CompletedProcess[str]:
         )
 
 
-def minimal_input(*, kinetic: str = "", qlin: str = "", outopt: str = "") -> str:
+def minimal_input(
+    *, kinetic: str = "", qlin: str = "", numeric: str = "", outopt: str = ""
+) -> str:
     return f"""
         &BASIC
         /
@@ -75,6 +77,7 @@ def minimal_input(*, kinetic: str = "", qlin: str = "", outopt: str = "") -> str
         {qlin}
         /
         &NUMERIC
+        {numeric}
         /
         &OUTOPT
         {outopt}
@@ -501,6 +504,14 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("KROOTDIAG = 0", MARS_SOURCE)
         self.assertIn("KROOTDIAG", (ROOT / "MarsQ_2FK" / "newrun.inc").read_text())
 
+    def test_klam0_safe_mode_is_explicit_and_bracketed(self) -> None:
+        self.assertIn("KROOTMODE", KINETIC_SOURCE)
+        self.assertIn("KLAM0_SAFE_FIND", KINETIC_SOURCE)
+        self.assertIn("SPLINE1DR_SAFE", KINETIC_SOURCE)
+        self.assertIn("KROOTMODE = 0", MARS_SOURCE)
+        self.assertIn("KROOTMODE MUST BE 0 OR 1", MARS_SOURCE)
+        self.assertIn("KROOTMODE", NEWRUN)
+
 
 class ExecutableInputTests(unittest.TestCase):
     """Black-box tests that stop before equilibrium files are needed."""
@@ -517,6 +528,11 @@ class ExecutableInputTests(unittest.TestCase):
             or ("line " in diagnostic and "position" in diagnostic),
             diagnostic,
         )
+
+    def test_klam0_mode_rejects_unknown_value(self) -> None:
+        result = run_with_input(minimal_input(numeric="KROOTMODE=2"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("KROOTMODE MUST BE 0 OR 1", result.stdout)
 
     def test_mars_k_ntv_requires_dwk_components(self) -> None:
         result = run_with_input(

@@ -52,7 +52,8 @@ C-----------------------------------------------------------------------
      R      ADAPSNU,DELRATS,
      I      NFIT,NCONVB1,NCONVCS,NVACJ,NRES,IPDIVB,IOMPNUM,NTORQ,NDNTR,
      I      NADAPS,KADAPS,ADAPSOPT,V2XKEY,NLAMK,NCHI0,NLAMIN,NEPK,NKL0,
-     I      NKSMOOTHB,NKSMOOTHR,NKSINGULAR,KSMOOTHB,NRESR,K_BC_N0
+     I      NKSMOOTHB,NKSMOOTHR,NKSINGULAR,KSMOOTHB,NRESR,K_BC_N0,
+     I      KROOTMODE
 C-----------------------------------------------------------------------
       NAMELIST /OUTOPT/
      C      RE_PERTURB,RE_EIGVAL,
@@ -569,6 +570,11 @@ C NRESR > NFIT : RESISTIVITY SMOOTHLY APPROACHES ZERO AT PLASMA EDGE OVER
 C                LAST NRESR RADIAL POINTS 
 C       = 0    : TRUE SPITZER PROFILE UP TO PLASMA EDGE
 C       =-1    : CAP EDGE RESISTIVITY UP TO ETA*100
+C KROOTMODE = 0: USE THE HISTORICAL FIRST-CROSSING KLAM0 PATH (DEFAULT)
+C             1: ENUMERATE ALL SIGN-CHANGING BRACKETS AND solve each root
+C                WITH A BRACKET-CONTAINED bisection/spline solver. Exact
+C                mesh-node and global-endpoint roots are rejected; the first
+C                strict interior root is retained because SLAM0 is scalar.
 C
 C K_BC_N0 = 10,11,12,13 : FIXED BC ON-AXIS FOR N=0 J2U&J3U
 C           20,21,22,23 : FREE  BC ON-AXIS FOR N=0 J2U&J3U
