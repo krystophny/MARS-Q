@@ -306,6 +306,15 @@ class SourceContractTests(unittest.TestCase):
         self.assertAlmostEqual(historical_density.real, component_density.real)
         self.assertAlmostEqual(historical_density.imag, component_density.imag)
 
+        calculator = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE CALCDWKCOMP") :
+            KINETIC_SOURCE.index("END SUBROUTINE CALCDWKCOMP")
+        ]
+        self.assertLess(
+            calculator.index("CALL CALCDWKDIRECTCHECK"),
+            calculator.index("IF (CSM(IS).GT.CTEDGE)"),
+        )
+
     def test_dwk_drive_ledger_is_linear_and_native_signed(self) -> None:
         """Five isolated pressure drives must reconstruct the native density."""
         calculator = KINETIC_SOURCE[
