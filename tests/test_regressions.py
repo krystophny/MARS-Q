@@ -580,6 +580,14 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("KDWKREAD.NE.1) CALL KDWKDENSITY", TORQUE_SOURCE)
 
 
+    def test_klam0_root_decision_diagnostic_is_opt_in(self) -> None:
+        self.assertIn("KROOTDIAG", KINETIC_SOURCE)
+        self.assertIn("KLAM0_ROOT_", KINETIC_SOURCE)
+        self.assertIn("KLAM0_ROOT_FREQUENCY", KINETIC_SOURCE)
+        self.assertIn("KROOTDIAG = 0", MARS_SOURCE)
+        self.assertIn("KROOTDIAG", (ROOT / "MarsQ_2FK" / "newrun.inc").read_text())
+
+
 class ExecutableInputTests(unittest.TestCase):
     """Black-box tests that stop before equilibrium files are needed."""
 

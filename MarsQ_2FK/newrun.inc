@@ -66,7 +66,7 @@ C-----------------------------------------------------------------------
      I      OSWEEP,NREORBIT,KRE_INIT,KRE_STEP,KRE_SIGMA0,
      I      KRE_TRACE,KRE_STEP_MAX,KRE_VAC,KRE_NMAX,KRE1,KRE2,NRE1,NRE2,
      I      KRE_STAR,KRE_PERTURB_TIME,KRE_FLT,NPHIMAX,KRE_FO,
-     I      KRE_ODE,
+     I      KRE_ODE,KROOTDIAG,
      L      DCONTI,DTERMS,OUTDAT,DPLOLP,DPRINT,ODWKCOM
 
 C=======================================================================
@@ -595,6 +595,10 @@ C=======================================================================
 C  DESCRIPTION OF NAMELIST VARIABLES: OUTOPT
 
 C=======================================================================
+C KROOTDIAG = 1: WRITE COMPLETE KLAM0 ROOT-BRACKET DECISIONS TO
+C                 KLAM0_ROOT_####.OUT (DIAGNOSTIC ONLY)
+C              0: DO NOT WRITE ROOT-BRACKET DIAGNOSTICS (DEFAULT)
+
 C ODWKCOM = .TRUE.: OUTPUT DWK ENERGY COMPONENTS DUE TO DIFFERENT EFFECT
 C                   IN DETAIL. FOR NON_PERTURBATIVE APPROACH, WORKS ONLY
 C                   IN COMBINATION WITH (V2XKEY=1 OR 3)
