@@ -6918,6 +6918,8 @@ C     FIND SLAM0 FOR PASSING PARTICLES
      &                    ZOMEGABP(JS,:,KGRID),LAMM,NN-1,LAMTMP)
                      SLAM0(L,KP) = LAM0
                   ENDIF
+                  IF (KROOTDIAG.GT.0) CALL KLAM0_LOG_ROOTS(JS,KGRID,1,
+     &               KP,L,NN,1,RTMP,J,SLAM0(L,KP))
                ENDDO
             ENDIF
          ENDDO
@@ -6950,6 +6952,8 @@ C     BOUNCE FOR RL.NE.0 AND PRECESSION FOR RL=0
      &                    ZOMEGABT(JS,2:NN,KGRID),LAMM(2),NN-1,LAMTMP)
                      SLAM0(L,KP) = LAM0
                   ENDIF
+                  IF (KROOTDIAG.GT.0) CALL KLAM0_LOG_ROOTS(JS,KGRID,0,
+     &               KP,L,NN,2,RTMP,J,SLAM0(L,KP))
                ENDIF
 
                IF (ABS(RL).LT.0.1.AND.ABS(PSPECIES_NTD(KP)).GT.0.AND.
@@ -6969,6 +6973,8 @@ C     BOUNCE FOR RL.NE.0 AND PRECESSION FOR RL=0
      &               ZOMEGADT(JS,2:NN,KGRID)/1000.,LAMM(2),NN-1,LAMTMP)
                      SLAM0(L,KP) = LAM0
                   ENDIF
+                  IF (KROOTDIAG.GT.0) CALL KLAM0_LOG_ROOTS(JS,KGRID,0,
+     &               KP,L,NN,3,RTMP/1000.,J,SLAM0(L,KP))
 
                   IF (JS.EQ.JS0.AND.KGRID.EQ.1.AND.KCHECK.EQ.2) THEN
                   CALL MPI_OPEN_FILE(RANK)
@@ -7003,6 +7009,8 @@ C     FIND SLAMD0 FOR PRECESSIONAL RESONANCE OF TRAPPED PARTICLES
             SLAMD0 = LAM0
             DPRM   = RTMP1*1000.
          ENDIF
+         IF (KROOTDIAG.GT.0) CALL KLAM0_LOG_ROOTS(JS,KGRID,2,0,0,NN,
+     &      4,0.,J,SLAMD0)
          ENDIF
       ENDIF
 
@@ -7034,6 +7042,91 @@ C     FIND SLAMD0 FOR PRECESSIONAL RESONANCE OF TRAPPED PARTICLES
          CALL MPI_CLOSE_FILE(RANK)
       ENDIF
  200  FORMAT(I2,1X,E10.2,1X,E13.5)
+
+      RETURN
+      END
+
+C=======================================================================
+C OPT-IN COMPLETE ROOT-BRACKET LOG FOR THE LEGACY KLAM0 PATH.
+C The production root selection is unchanged.  Each root search writes
+C every sign-changing bracket, including brackets rejected by the legacy
+C J.GT.2/J.LT.NN-1 guard, plus a summary record.  One file is used per
+C MPI rank and writes are serialized for OpenMP callers.
+C=======================================================================
+      SUBROUTINE KLAM0_LOG_ROOTS(JS,KGRID,KPARTICLE,KP,L,NN,KIND,RTMP,
+     &                            JFIRST,LAMROOT)
+
+      USE GLOBALM
+      USE KINETICM
+      USE MPIENV
+      IMPLICIT NONE
+
+      INTEGER JS,KGRID,KPARTICLE,KP,L,NN,KIND,JFIRST,J,NCOUNT
+      REAL*8  RTMP,LAMROOT,FLEFT,FRIGHT,FREQ
+      LOGICAL LEXIST
+      CHARACTER*64 FILENAME
+      CHARACTER*16 STATUS
+
+      IF (KROOTDIAG.LE.0) RETURN
+
+      WRITE(FILENAME,"(A11,I0.4,A4)") "KLAM0_ROOT_",RANK,".OUT"
+
+C$OMP CRITICAL(KLAM0_ROOT_LOG)
+      INQUIRE(FILE=TRIM(FILENAME),EXIST=LEXIST)
+      OPEN(97,FILE=TRIM(FILENAME),POSITION='APPEND',STATUS='UNKNOWN',
+     &     FORM='FORMATTED')
+      IF (.NOT.LEXIST) WRITE(97,'(A)')
+     &   '# schema=mars-klam0-root-decisions-v1'
+      NCOUNT = 0
+      DO J=1,NN-1
+         CALL KLAM0_ROOT_FREQUENCY(JS,KGRID,KIND,J,FREQ)
+         FLEFT  = FREQ-RTMP
+         CALL KLAM0_ROOT_FREQUENCY(JS,KGRID,KIND,J+1,FREQ)
+         FRIGHT = FREQ-RTMP
+         IF (FLEFT*FRIGHT.LE.0.) THEN
+            NCOUNT = NCOUNT+1
+            STATUS = 'CROSSING'
+            IF (J.EQ.JFIRST) THEN
+               STATUS = 'LEGACY_FIRST'
+               IF (JFIRST.GT.2.AND.JFIRST.LT.NN-1.AND.
+     &             LAMROOT.GT.0.) STATUS = 'LEGACY_SELECTED'
+            ENDIF
+            WRITE(97,*) JS,KGRID,KPARTICLE,KP,L,KIND,NN,RTMP,J,
+     &         LAMM(J),LAMM(J+1),FLEFT,FRIGHT,LAMROOT,STATUS
+         ENDIF
+      ENDDO
+      IF (NCOUNT.EQ.0) WRITE(97,*) JS,KGRID,KPARTICLE,KP,L,KIND,NN,
+     &   RTMP,0,0.,0.,0.,0.,LAMROOT,'NO_SIGN_CROSSING'
+      WRITE(97,*) JS,KGRID,KPARTICLE,KP,L,KIND,NN,RTMP,JFIRST,
+     &            NCOUNT,LAMROOT,'SUMMARY'
+      CLOSE(97)
+C$OMP END CRITICAL(KLAM0_ROOT_LOG)
+
+      RETURN
+      END
+
+C=======================================================================
+C RETURN THE FREQUENCY ARRAY USED BY KLAM0 IN THE SAME NORMALIZATION AS
+C THE TARGET RTMP.  KIND=1 PASSING, 2 BOUNCE, 3 PRECESSION, 4 DRIFT ZERO.
+C=======================================================================
+      SUBROUTINE KLAM0_ROOT_FREQUENCY(JS,KGRID,KIND,J,FREQ)
+
+      USE GLOBALM
+      USE KINETICM
+      USE ANISOTROPICM
+      IMPLICIT NONE
+
+      INTEGER JS,KGRID,KIND,J
+      REAL*8 FREQ
+
+      FREQ = 0.
+      IF (KIND.EQ.1) THEN
+         FREQ = ZOMEGABP(JS,J,KGRID)
+      ELSEIF (KIND.EQ.2) THEN
+         FREQ = ZOMEGABT(JS,J,KGRID)
+      ELSEIF (KIND.EQ.3.OR.KIND.EQ.4) THEN
+         FREQ = ZOMEGADT(JS,J,KGRID)/1000.
+      ENDIF
 
       RETURN
       END
