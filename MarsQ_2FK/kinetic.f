@@ -6889,7 +6889,8 @@ C=======================================================================
       INCLUDE 'compam.inc'
 
       INTEGER    JS,KGRID,KPARTICLE,NN,J,KP,L
-      REAL*8     LAM00,LAM0,RTMP,RTMP1,RL
+      REAL*8     LAM00,LAM0,RTMP,RTMP1,RTMP2,RTMP3,RL
+      REAL*8,DIMENSION(:),ALLOCATABLE::ROOTFUN
 
       INTEGER KCHECK
       KCHECK = 1
@@ -6930,24 +6931,29 @@ C     BOUNCE FOR RL.NE.0 AND PRECESSION FOR RL=0
          SLAM0 =-1.
          IF (ABS(WFUN(JS,KGRID)).GE.1.0E-13) THEN
          NN    = 2*NLAMK0(JS,KGRID)
+         ALLOCATE(ROOTFUN(NN))
          DO KP=1,NSPECIES
             DO L=1,MLMAX
                RL = RLM(L)
                IF (ABS(RL).GT.0.1.AND.ABS(PSPECIES_NTB(KP)).GT.0.AND.
      &             ISPECIES_EK(KP).EQ.1) THEN
-                  RTMP =-(RNTOR*OMEGAE0(JS,KGRID)-DREAL(OMEGA))/
-     &                   RL/SQRT(2.*EPSALPHA(JS,KGRID,KP)/
-     &                   ESPECIES_M(KP)*ESPECIES_M(1))
+                  RTMP2 = RL*SQRT(2.*EPSALPHA(JS,KGRID,KP)/
+     &                    ESPECIES_M(KP)*ESPECIES_M(1))
+                  RTMP3 = PSPECIES_NDB(KP)*RNTOR*B0K/OMEGACI0*
+     &                    EPSALPHA(JS,KGRID,KP)*ESPECIES_Z(1)/
+     &                    ESPECIES_Z(KP)
+                  ROOTFUN = RTMP2*ZOMEGABT(JS,1:NN,KGRID) +
+     &                      RTMP3*ZOMEGADT(JS,1:NN,KGRID) +
+     &                      RNTOR*OMEGAE0(JS,KGRID)-DREAL(OMEGA)
                   J = 1
- 110              IF ((ZOMEGABT(JS,J,KGRID)-RTMP)*
-     &                (ZOMEGABT(JS,J+1,KGRID)-RTMP).GT.0.) THEN
+ 110              IF (ROOTFUN(J)*ROOTFUN(J+1).GT.0.) THEN
                      J = J+1
                      IF (J.LT.NN) GOTO 110
                   ENDIF
                   IF (J.GT.2.AND.J.LT.NN-1) THEN
                      LAM00 = (LAMM(J)+LAMM(J+1))*0.5
-                     CALL SPLINE1DR(RTMP1,LAM0,RTMP,LAM00,
-     &                    ZOMEGABT(JS,2:NN,KGRID),LAMM(2),NN-1,LAMTMP)
+                     CALL SPLINE1DR(RTMP1,LAM0,0.0D0,LAM00,
+     &                    ROOTFUN(2:NN),LAMM(2),NN-1,LAMTMP)
                      SLAM0(L,KP) = LAM0
                   ENDIF
                ENDIF
@@ -6982,6 +6988,7 @@ C     BOUNCE FOR RL.NE.0 AND PRECESSION FOR RL=0
                ENDIF
             ENDDO
          ENDDO
+         DEALLOCATE(ROOTFUN)
          ENDIF
       ENDIF
 
@@ -7885,17 +7892,22 @@ C=======================================================================
       IF (KPARTICLE.EQ.0) THEN
 C     CONTRIBUTION FROM TRAPPED PARTICLES
 
+      N = 2*NLAMK0(JS,KGRID)-1
       DO KP=1,NSPECIES   
       DO L=1,MLMAX
          IF (SLAM0(L,KP).GT.0.) THEN
             LAM = SLAM0(L,KP)
             CALL KDISTRIBF_TYPE(JS,KGRID,KP,LAM)
-            OMEGAB =-(RNTOR*OMEGAE0(JS,KGRID)-DREAL(OMEGA))/
-     &               RLM(L)/SQRT(2.*EPSALPHA(JS,KGRID,KP)/
-     &               ESPECIES_M(KP)*ESPECIES_M(1))
-            DRIFT  =-(RNTOR*OMEGAE0(JS,KGRID)-DREAL(OMEGA))*
-     &               OMEGACI0*ESPECIES_Z(KP)/(RNTOR*B0K*
-     &               ESPECIES_Z(1)*EPSALPHA(JS,KGRID,KP))
+            IF (ABS(RLM(L)).GT.0.1) THEN
+               CALL SPLINE1D(OMEGAB,LAM,1,
+     &              ZOMEGABT(JS,2:,KGRID),LAMM(2),N,LAMTMP)
+               CALL SPLINE1D(DRIFT,LAM,1,
+     &              ZOMEGADT(JS,2:,KGRID),LAMM(2),N,LAMTMP)
+            ELSE
+               DRIFT=-(RNTOR*OMEGAE0(JS,KGRID)-DREAL(OMEGA))*
+     &                OMEGACI0*ESPECIES_Z(KP)/(RNTOR*B0K*
+     &                ESPECIES_Z(1)*EPSALPHA(JS,KGRID,KP))
+            ENDIF
             CALL KIA_TRAP0(JS,KGRID,KP,KOPT,L,LAM,0,ZVI)
             SF0(L,KP,KOPT,1) = ZVI
             IF (INCDPHI.GT.0) THEN
