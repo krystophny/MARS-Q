@@ -9527,7 +9527,7 @@ C     COMPUTATION OF PPERP AND PPARA
       INCLUDE 'comioc.inc'
       
       INTEGER KP,IS,TOTINDX,INDX,I,J,FID,MROW,MSA,LXROW,LYCOL
-      LOGICAL ODIRECT
+      LOGICAL ODIRECT,OBREAKDOWN
       REAL*8 PI2,CACHEMAX,FIELDMAX,OPPARAMAX,OPPERPMAX,
      &       PPARAMAX,PPERPMAX
       COMPLEX*16,DIMENSION(:),ALLOCATABLE:: DWPPARA,DWPPERP,DWK
@@ -9694,6 +9694,15 @@ C     not used to alter TORQUENTV or any output profile.
       IF (ODIRECT) CALL CALCDWKDIRECTCHECK(PPARAC,PPERPC,
      &                                    DWPPARY,DWPPERY,TOTINDX)
 
+C     Optional pre-smoothing work-density breakdown.  This writes the
+C     integer-mesh X contribution, half-mesh Y contribution, their radial
+C     finite-element combination, and the native torque contribution for
+C     every cached kinetic component.  It is diagnostic only and is enabled
+C     by the presence of DWK_BREAKDOWN.REQUEST.
+      INQUIRE(FILE='DWK_BREAKDOWN.REQUEST',EXIST=OBREAKDOWN)
+      IF (OBREAKDOWN) CALL WRITEDWKBREAKDOWN(DWPPARX,DWPPERX,
+     &                                      DWPPARY,DWPPERY,TOTINDX)
+
 C     OUTPUT THE PROFILES OF ENERGY DENSITY
       FID=ASSIGNFREEFILEUNIT () 
       OPEN(FID,FILE='DWK_ENERGY_DENSITY.OUT',FORM='FORMATTED',
@@ -9785,6 +9794,57 @@ C     OUTPUT THE ENERGY COMPONENTS
       CALL DEALLOCATEDWKCOMPMAT
 
       END SUBROUTINE CALCDWKCOMP
+
+C=======================================================================
+C WRITE THE PRE-SMOOTHING KINETIC WORK-DENSITY BREAKDOWN               =
+C                                                                       =
+C Each row is one radial surface and one cached (species,effect) index.
+C PX/PY are the integer/half-mesh terms before radial combination; PARA
+C and PERP are the values after the exact PI^2*CSH finite-element factor.
+C TORQUE is the corresponding native KNTV=21 contribution.  This routine
+C never changes the production arrays and is enabled only by a request
+C file in the run directory.
+C=======================================================================
+      SUBROUTINE WRITEDWKBREAKDOWN(DWPPARX,DWPPERX,DWPPARY,DWPPERY,
+     &                             TOTINDX)
+      USE DIMENSIM
+      USE GLOBALM
+      USE RCOMDM
+      IMPLICIT NONE
+      INTEGER TOTINDX,IS,INDX,FID
+      REAL*8 PI2,TORQUEFAC
+      COMPLEX*16,DIMENSION(NRP1,TOTINDX)::DWPPARX,DWPPERX
+      COMPLEX*16,DIMENSION(NRP1,TOTINDX)::DWPPARY,DWPPERY
+      COMPLEX*16 PARA_X,PERP_X,PARA_Y,PERP_Y,PARA,PERP
+
+      PI2 = ACOS(-1.0D0)**2
+      TORQUEFAC = -2.0D0*RNTOR/(4.0D0*PI2)
+      FID = 97
+      OPEN(FID,FILE='DWK_BREAKDOWN.OUT',FORM='FORMATTED',
+     &     STATUS='REPLACE')
+      WRITE(FID,*) '% IS INDX CSM CSH PX_RE PX_IM PERPX_RE PERPX_IM',
+     &             ' PY_RE PY_IM PERPY_RE PERPY_IM PARA_RE PARA_IM',
+     &             ' PERP_RE PERP_IM TORQUE'
+      DO IS=1,NR
+         DO INDX=1,TOTINDX
+            PARA_X = PI2*0.5D0*(DWPPARX(IS,INDX)+
+     &                           DWPPARX(IS+1,INDX))*CSH(IS)
+            PERP_X = PI2*0.5D0*(DWPPERX(IS,INDX)+
+     &                           DWPPERX(IS+1,INDX))*CSH(IS)
+            PARA_Y = PI2*DWPPARY(IS,INDX)*CSH(IS)
+            PERP_Y = PI2*DWPPERY(IS,INDX)*CSH(IS)
+            PARA = PARA_X + PARA_Y
+            PERP = PERP_X + PERP_Y
+            WRITE(FID,100) IS,INDX,CSM(IS),CSH(IS),
+     &         REAL(PARA_X),AIMAG(PARA_X),REAL(PERP_X),AIMAG(PERP_X),
+     &         REAL(PARA_Y),AIMAG(PARA_Y),REAL(PERP_Y),AIMAG(PERP_Y),
+     &         REAL(PARA),AIMAG(PARA),REAL(PERP),AIMAG(PERP),
+     &         TORQUEFAC*AIMAG(-PARA-PERP)
+         ENDDO
+      ENDDO
+      CLOSE(FID)
+ 100  FORMAT(2I7,2(1X,E16.8),13(1X,E16.8))
+      END SUBROUTINE WRITEDWKBREAKDOWN
 
 C=======================================================================
 C INDEPENDENT CHECK OF THE QUADRATIC DWK WORK DENSITY                 =
