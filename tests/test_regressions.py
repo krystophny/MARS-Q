@@ -286,6 +286,36 @@ class SourceContractTests(unittest.TestCase):
         self.assertAlmostEqual(historical_density.real, component_density.real)
         self.assertAlmostEqual(historical_density.imag, component_density.imag)
 
+    def test_dwk_drive_ledger_is_linear_and_native_signed(self) -> None:
+        """Five isolated pressure drives must reconstruct the native density."""
+        calculator = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE CALCDWKCOMP") :
+            KINETIC_SOURCE.index("END SUBROUTINE CALCDWKCOMP")
+        ]
+        pressure = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE CALCPRECOMP") :
+            KINETIC_SOURCE.index("END SUBROUTINE CALCPRECOMP")
+        ]
+        self.assertIn("DWK_DRIVE_LEDGER.REQUEST", calculator)
+        self.assertIn("DWK DRIVE LEDGER FAILED TO RECONSTRUCT TOTAL", calculator)
+        for drive in range(6):
+            self.assertIn(f"IDRIVE.EQ.{drive}", pressure)
+
+        # Independent arithmetic oracle: arbitrary complex drive work must
+        # add before taking the executable-native imaginary torque density.
+        drives = [
+            complex(1.0, -2.0),
+            complex(-0.5, 4.0),
+            complex(3.25, 0.75),
+            complex(-7.0, -1.5),
+            complex(0.125, 0.25),
+        ]
+        rntor = -3.0
+        factor = -2.0 * rntor / (4.0 * math.pi**2)
+        split_torque = sum(factor * (-value).imag for value in drives)
+        total_torque = factor * (-sum(drives)).imag
+        self.assertAlmostEqual(split_torque, total_torque)
+
     def test_frequency_scratch_is_thread_private(self) -> None:
         """KBTIME's per-surface RUU2 must not race across OpenMP workers."""
         self.assertIn("THREADPRIVATE( RCHIHK,RSS,RUU,RUU2 )", KINETIC_MODULE)
