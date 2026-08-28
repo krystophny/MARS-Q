@@ -119,3 +119,11 @@ workspace retained by the master KJP assembly.  The allocator checks the
 complete component map and every array shape before reuse; an inconsistent or
 partially allocated workspace is a fatal error.  This avoids the historical
 second-allocation failure at the end of otherwise successful kinetic runs.
+
+When `KSMOOTHB=1`, the equilibrium field-strength array `BK` is represented by
+the retained `NKSMOOTHB` Fourier spectrum.  The drift factor `BPK` used by
+`KDRIFTFREQ` must be reconstructed from that same filtered `BK` on both radial
+meshes.  The TC24 consistency branch does this explicitly.  The previous
+implementation mixed filtered trapping geometry with a pre-filter drift
+factor, which can change edge resonance weighting.  `KSMOOTHB=0` remains the
+unfiltered path, and no torque sign or normalization is changed by this fix.

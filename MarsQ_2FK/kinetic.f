@@ -2818,7 +2818,7 @@ C=======================================================================
       INTEGER IHE(100),NIHE
       
       KCHECK  = 1
-      KSMOOTH = 1
+      KSMOOTH = KSMOOTHB
 
       KM      = NKSMOOTHB
       ALLOCATE(BMC(KM+1),BMS(KM+1))
@@ -2896,6 +2896,26 @@ C     SMOOTH EQUILIBRIUM B FIELD FOR BAD EQUILIBRIUM
       ENDDO
       ENDDO
       ENDIF
+
+C     KEEP THE DRIFT GEOMETRY CONSISTENT WITH THE FILTERED FIELD.
+C     BPK IS USED BELOW FOR THE RADIAL AND POLOIDAL DRIFT DERIVATIVES.
+C     It must be rebuilt after BK is filtered; retaining the pre-filter
+C     BPK mixes two different equilibrium spectra in the same operator.
+      DO JS=2,NRP1
+         DO J=1,NCHI
+            BPK(JS,J,1)=RJA(JS,J)**2*BK(JS,J,1)/G22L(JS,J)/
+     &                  DPSIDS(JS)**2
+         ENDDO
+      ENDDO
+      DO JS=1,NR
+         DO J=1,NCHI
+            BPK(JS,J,2)=RJAM(JS,J)**2*BK(JS,J,2)/G22LM(JS,J)/
+     &                  DPSIDSM(JS)**2
+         ENDDO
+      ENDDO
+      DO J=1,NCHI
+         BPK(1,J,1)=BPK(1,J,2)
+      ENDDO
 
       DO J=1,NCHI
          DO JS=1,NRP1
@@ -6056,7 +6076,7 @@ C     FIND INITIAL GUESS
      &   WRITE(*,*) 'HPL,HPU',HPL,HPU,JS,KGRID
 
       IF (HPL.LE.0.0.OR.HPU.GE.0.0)
-     &  STOP 'KINETIC:HPL<0 | HPU>0,TRY KSMOOTH=1'
+     &  STOP 'KINETIC:HPL<0 | HPU>0,TRY KSMOOTHB=1'
       RETURN
       END
       
@@ -6152,7 +6172,7 @@ C     IF (HPU.GT.0.AND.HPL.LT.0.AND.0.EQ.1) THEN
       ENDIF
 
       IF (HPL.LE.0.0.OR.HPU.GE.0.0) 
-     &   STOP 'KINETIC:HPL<0 | HPU>0,TRY KSMOOTH=1'
+     &   STOP 'KINETIC:HPL<0 | HPU>0,TRY KSMOOTHB=1'
 
       RETURN
       END

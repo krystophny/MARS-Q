@@ -324,6 +324,26 @@ class SourceContractTests(unittest.TestCase):
         self.assertLess(window.index("T(JKT)  = TSAVE(JKT)"), window.index("CALL KJP"))
         self.assertLess(window.index("CALL KJP"), window.index("T(JKT)  = 1.0"))
 
+    def test_kinetic_equilibrium_filter_is_explicitly_selectable(self) -> None:
+        """KSMOOTHB exposes the edge-spectrum diagnostic without changing defaults."""
+        globalm = (ROOT / "MarsQ_2FK" / "globalm.f").read_text()
+        self.assertIn("KSMOOTHB", NEWRUN)
+        self.assertIn("KSMOOTHB  = 1", MARS_SOURCE)
+        self.assertIn("NKSMOOTHB.LT.0", MARS_SOURCE)
+        self.assertIn("KSMOOTHB.NE.0.AND.KSMOOTHB.NE.1", MARS_SOURCE)
+        self.assertIn("KSMOOTH = KSMOOTHB", KINETIC_SOURCE)
+        self.assertIn("NKSMOOTHB,NKSMOOTHR,NKSINGULAR,KSMOOTHB", globalm)
+
+    def test_equilibrium_drift_factor_is_rebuilt_after_b_filter(self) -> None:
+        """The drift derivative must use the same filtered B spectrum as H."""
+        marker = "C     SMOOTH EQUILIBRIUM B FIELD FOR BAD EQUILIBRIUM"
+        start = KINETIC_SOURCE.index(marker)
+        end = KINETIC_SOURCE.index("      DO J=1,NCHI\n         DO JS=1,NRP1", start)
+        window = KINETIC_SOURCE[start:end]
+        self.assertIn("BPK(JS,J,1)=RJA(JS,J)**2*BK(JS,J,1)", window)
+        self.assertIn("BPK(JS,J,2)=RJAM(JS,J)**2*BK(JS,J,2)", window)
+        self.assertLess(window.index("ENDIF"), window.index("BPK(JS,J,1)"))
+
     def test_frozen_field_ntv_skips_feedback_postprocessing(self) -> None:
         """External B/X torque must not enter unrelated feedback diagnostics."""
         output = MARS_SOURCE[
