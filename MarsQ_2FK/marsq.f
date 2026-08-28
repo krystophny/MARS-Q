@@ -4057,6 +4057,7 @@ C
       INERT2    = .TRUE.
       INERT3    = .TRUE.
       ODWKCOM   = .FALSE.
+      KROOTDIAG = 0
       ISLSODE   = .TRUE.
 C
       DCONTI = .FALSE.
