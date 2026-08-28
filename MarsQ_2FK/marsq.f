@@ -4042,6 +4042,7 @@ C
       NLAMIN    = 100
       NEPK      = 101
       NKL0      = 0
+      KNTVELL   = 999
       NKSMOOTHB = 20
       NKSMOOTHR = 10
       KSMOOTHB  = 1
@@ -4165,6 +4166,15 @@ C     EMPTY OR MISLEADING OUTPUT.
          IF (KEYTORQ.EQ.2) GOTO 280
          IF (IPERTURB.GT.0) WRITE(*,*)
      &      'MARS-K NTV: PERTURBATIVE MODE; FLUID RESPONSE IS FROZEN'
+      ENDIF
+
+      IF (KNTVELL.NE.999) THEN
+         IF (KNTV.NE.21.OR.INCKIN.LE.0.OR.IFOW.NE.0) THEN
+            WRITE(*,*) ' KNTVELL FILTER REQUIRES KNTV=21, INCKIN>0,'
+            WRITE(*,*) ' AND IFOW=0'
+            STOP
+         ENDIF
+         WRITE(*,*) ' KNTVELL ASSEMBLY FILTER =',KNTVELL
       ENDIF
       IF (KPERTREAD.NE.0) THEN
          IF (KPERTREAD.NE.1) GOTO 290
