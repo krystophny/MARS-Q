@@ -13,10 +13,11 @@ upstream baseline `8824bb1`:
 | CHEASE legacy initialization | GNU/ifx flag contract | ITER EQDSK-to-OUTRMAR run |
 | perturbative MARS-K NTV | input contracts and unsupported cross-term rejection | paired MARS-F/MARS-K field comparison |
 | external frozen B/X import | strict/atomic parser contract and invalid-mode rejection | exact BPLASMA/XPLASMA round trip plus MARS-K torque |
-| frozen-field carrier isolation | source contract excludes `FEEDOUT` and the full `ENERGYMAT` diagnostic while requiring passive `KPBKEY=1` operator assembly followed by B/X restoration | full ITER MARS-K postprocessing reaches a nonzero `TORQUENTV.OUT` |
+| perturbative passive-operator ordering | every final-sweep `KNTV=21` field, including ordinary native `IPERTURB=0`, assembles passive `KPBKEY=1` blocks once before torque; only imported B/X is restored | paired native/reload B/X and DWK equality plus matching nonzero `TORQUENTV.OUT` |
 | MARS-K matrix call contract | all `CALCDWKCOMP` callers pass eight live matrices | debug cached continuation reaches all DWK and torque outputs |
 | validated DWK cache recovery | narrow namelist contract and KJP bypass | failed-after-cache ITER runs resume without coefficient regeneration |
 | deterministic frequency diagnostic | `RUU2` is thread-private with its per-surface consumers | repeated OpenMP `FREQUENCIES.OUT` comparison |
+| two-species frequency diagnostic | hot-ion `SLAM0(:,3)` is read only when species three exists | GNU `-fcheck=all` MAST-U run |
 | retained DWK component workspace | idempotent allocation, component-map, and shape contracts | KNTV=21 reaches `TORQUENTV.OUT` after kinetic assembly |
 | executable build provenance | profile/flag and manifest hash/tamper contracts | clean-tree build plus independent manifest verification |
 

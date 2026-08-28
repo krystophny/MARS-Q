@@ -319,8 +319,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertLess(output.index("CALL FEEDOUT"), output.index("CALL READPERTURB"))
         self.assertLess(output.index("CALL READPERTURB"), output.index("CALL TORQNTV"))
 
-    def test_frozen_field_ntv_builds_passive_energy_operator(self) -> None:
-        """Frozen B/X still needs the reciprocal blocks for DWK contraction."""
+    def test_perturbative_ntv_builds_passive_operator_before_output(self) -> None:
+        """Native and imported perturbations need reciprocal DWK blocks."""
         energy_guard = MARS_SOURCE[
             MARS_SOURCE.index(
                 "IF (NCASE.NE.6.AND.NCASE.NE.10.AND.KEFORM.NE.0"
@@ -328,15 +328,22 @@ class SourceContractTests(unittest.TestCase):
         ]
         self.assertIn("KPERTREAD.NE.1", energy_guard)
         self.assertIn("CALL ENERGYMAT", energy_guard)
-        frozen_prepare = MARS_SOURCE[
+        pre_output_prepare = MARS_SOURCE[
             MARS_SOURCE.index("IF (KPERTREAD.EQ.1) CALL READPERTURB") :
             MARS_SOURCE.index("CALL OUTPUT(ISWEEP,")
         ]
-        self.assertIn("CALL PREPAREKINETICENERGYMAT(", frozen_prepare)
-        self.assertGreaterEqual(frozen_prepare.count("CALL READPERTURB"), 2)
+        self.assertIn(
+            "IF (KNTV.EQ.21.AND.INCKIN.GT.0.AND.ISWEEP.EQ.NSWEEP) THEN",
+            pre_output_prepare,
+        )
+        self.assertNotIn("IPERTURB.EQ.1", pre_output_prepare)
+        self.assertEqual(
+            pre_output_prepare.count("CALL PREPAREKINETICENERGYMAT("), 1
+        )
+        self.assertGreaterEqual(pre_output_prepare.count("CALL READPERTURB"), 2)
         self.assertLess(
-            frozen_prepare.index("CALL PREPAREKINETICENERGYMAT("),
-            frozen_prepare.rindex("CALL READPERTURB"),
+            pre_output_prepare.index("CALL PREPAREKINETICENERGYMAT("),
+            pre_output_prepare.rindex("IF (KPERTREAD.EQ.1) CALL READPERTURB"),
         )
         prepare = KINETIC_SOURCE[
             KINETIC_SOURCE.index(
@@ -366,11 +373,38 @@ class SourceContractTests(unittest.TestCase):
                 KINETIC_SOURCE.index("SUBROUTINE ENERGYMAT"),
             )
         ]
-        self.assertIn("CALL PREPAREKINETICENERGYMAT(", energy)
+        self.assertNotIn("CALL PREPAREKINETICENERGYMAT(", energy)
+        final_energy = MARS_SOURCE[
+            MARS_SOURCE.index("IF (NCASE.NE.6.AND.NCASE.NE.10.AND.KEFORM.NE.0") :
+            MARS_SOURCE.index("WRITE(*,*) 'AFTER ENERGYMAT'")
+        ]
+        self.assertIn(
+            "IF (.NOT.(KNTV.EQ.21.AND.INCKIN.GT.0))", final_energy
+        )
+        self.assertLess(
+            final_energy.index("CALL PREPAREKINETICENERGYMAT("),
+            final_energy.index("CALL ENERGYMAT"),
+        )
+        self.assertLess(
+            energy.index("CALL CALCDWKCOMP("),
+            energy.index("IF (KENORM.EQ.2) THEN"),
+        )
 
     def test_mars_k_component_contraction_receives_all_matrices(self) -> None:
         """The legacy implicit interface must never permit a bare DWK call."""
         self.assertNotIn("CALL CALCDWKCOMP\n", KINETIC_SOURCE + TORQUE_SOURCE)
+
+    def test_hot_ion_frequency_diagnostic_guards_species_three(self) -> None:
+        """A two-species thermal run has no SLAM0(:,3) diagnostic value."""
+        diagnostic = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("LAMH = 0.") :
+            KINETIC_SOURCE.index("FREQK(JS,1)  = AOMEGABPN")
+        ]
+        self.assertIn("IF (NSPECIES.GE.3) THEN", diagnostic)
+        self.assertLess(
+            diagnostic.index("IF (NSPECIES.GE.3) THEN"),
+            diagnostic.index("LAMH = SLAM0(L,3)"),
+        )
         self.assertIn(
             "CALL CALCDWKCOMP(ASUBM,BSUBM,CSUBM,DSUBM,", TORQUE_SOURCE
         )
