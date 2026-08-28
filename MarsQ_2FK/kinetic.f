@@ -9868,7 +9868,7 @@ C=======================================================================
       INCLUDE 'comioc.inc'
 
       INTEGER TOTINDX,INDX,I,J,MS,FID
-      REAL*8 HCHI,PI2,B2MVAL,B2CVAL,B2VALM,B2VALP
+      REAL*8 HCHI,B2MVAL,B2CVAL,B2VALM,B2VALP
       COMPLEX*16,DIMENSION(NRP1,MSMAX,TOTINDX)::PPARAC,PPERPC
       COMPLEX*16,DIMENSION(NRP1,TOTINDX)::DWPPARY,DWPPERY
       COMPLEX*16 OB1,OB2,OB3,OX1,OX2,OPE,OPA,CTMP1,OFW
@@ -9876,7 +9876,6 @@ C=======================================================================
       REAL*8,DIMENSION(:,:),ALLOCATABLE::B2,B2M,B2C
 
       HCHI = 2.*PI/NCHI
-      PI2  = 4.*PI*PI
       ALLOCATE(B2(NRP1,NCHI),B2M(NR,NCHI),B2C(NR,NCHI))
 
 C     Reproduce the equilibrium B^2 and d(B^2)/dchi construction from
@@ -9899,8 +9898,8 @@ C     KDWKDENSITY without reading any serialized diagnostic values.
      &     STATUS='REPLACE',ACTION='WRITE')
       WRITE(FID,*) '% INDX I CSM DIRECT_RE DIRECT_IM ACTUAL_RE',
      &             ' ACTUAL_IM RESIDUAL_RE RESIDUAL_IM'
-      WRITE(FID,*) '% DIRECT = quadratic KDWKDENSITY reconstruction /',
-     &             ' (4*pi^2); ACTUAL = -(DWPPARY+DWPPERY)'
+      WRITE(FID,*) '% DIRECT = quadratic KDWKDENSITY reconstruction;',
+     &             ' ACTUAL = -(DWPPARY+DWPPERY)'
 
       DO INDX=1,TOTINDX
          DO I=1,NR
@@ -9941,7 +9940,7 @@ C     KDWKDENSITY without reading any serialized diagnostic values.
      &              CONJG(OX2)*(OPE+OPA)
                DIRECT=DIRECT+OFW
             ENDDO
-            DIRECT=DIRECT*PI*HCHI/PI2
+            DIRECT=DIRECT*PI*HCHI
             ACTUAL=-(DWPPARY(I,INDX)+DWPPERY(I,INDX))
             RESIDUAL=DIRECT-ACTUAL
             WRITE(FID,1000) INDX,I,CSM(I),DIRECT,ACTUAL,RESIDUAL
