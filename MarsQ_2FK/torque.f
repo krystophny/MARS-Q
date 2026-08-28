@@ -1009,9 +1009,13 @@ C     ==========================================================
       INCLUDE 'compam.inc'
       INCLUDE 'comioc.inc'
       INTEGER KCHECK,I,J,K
+      LOGICAL OBOUNDARY
       REAL*8  TORQ1,TORQFAC,H1,H2,H12,H22,TORQI,TORQE
       REAL*8,DIMENSION(:),ALLOCATABLE::DVDSM,DTMP
       REAL*8,DIMENSION(:),ALLOCATABLE::DPTRANNTVI,DPTRANNTVE
+      REAL*8,DIMENSION(:),ALLOCATABLE::TORQRAW,TORQRAWI,TORQRAWE
+      REAL*8,DIMENSION(:),ALLOCATABLE::TORQSMOOTH,TORQSMOOTHI,
+     &                                  TORQSMOOTHE
       COMPLEX*16 TMP
       COMPLEX*16 ASUBM(MXMAX,MXMAX,*),BSUBM(MXMAX,MXMAX,*),
      &           CSUBM(MXMAX,MXMAX,*),DSUBM(MYMAX,MYMAX,*),
@@ -1029,6 +1033,18 @@ C     ==========================================================
      &                                        DPTRANNTV(NR))
       IF (.NOT.ALLOCATED(DPTRANNTVI)) ALLOCATE(DPTRANNTVI(NR),
      &                                         DPTRANNTVE(NR))
+      OBOUNDARY = .FALSE.
+      INQUIRE(FILE='DWK_BOUNDARY_DIAGNOSTIC.REQUEST',EXIST=OBOUNDARY)
+      IF (OBOUNDARY) OBOUNDARY = KNTV.EQ.21
+      IF (OBOUNDARY) OBOUNDARY = INCKIN.EQ.1
+      IF (OBOUNDARY) OBOUNDARY = ODWKCOM
+      IF (OBOUNDARY) OBOUNDARY = ISWEEP.EQ.NSWEEP
+      IF (OBOUNDARY) OBOUNDARY = KXX1.GT.0
+      IF (OBOUNDARY) OBOUNDARY = KYX2.GT.0
+      IF (OBOUNDARY) THEN
+         ALLOCATE(TORQRAW(NR),TORQRAWI(NR),TORQRAWE(NR),
+     &            TORQSMOOTH(NR),TORQSMOOTHI(NR),TORQSMOOTHE(NR))
+      ENDIF
       TORQUENTV = 0.
       ROTOFFSET = 0.
       DNTRANNTV = 0.
@@ -1073,6 +1089,14 @@ C     DVDSM = DVDSM*VOLTOT*2.0
          CALL CALCDWKCOMP(ASUBM,BSUBM,CSUBM,DSUBM,
      &                    ESUBM,FSUBM,GSUBM,HSUBM)
       ENDIF
+      IF (OBOUNDARY) THEN
+C        CALCDWKCOMP has just formed the raw component sums here.  These
+C        are before the resistive-layer mask, native smoothing, and edge
+C        patches performed below in this routine.
+         TORQRAW  = TORQUENTV
+         TORQRAWI = TORQUENTVI
+         TORQRAWE = TORQUENTVE
+      ENDIF
 C     SET TORQUENTV=0 WITHIN RESISTIVE LAYER
       IF (DELRATS.GT.0..AND.DELRATS.LT.1..AND.NRATSURF.GT.0) THEN
       DO I=1,NR
@@ -1103,6 +1127,13 @@ C     SMOOTHING
      &                       0.8*TORQUENTVE(2:NR-1) +
      &                       0.1*TORQUENTVE(3:NR)
       ENDDO
+      ENDIF
+      IF (OBOUNDARY) THEN
+C        Retain the post-smoothing values before the native axis/edge
+C        patches below.  The final values are written after those patches.
+         TORQSMOOTH  = TORQUENTV
+         TORQSMOOTHI = TORQUENTVI
+         TORQSMOOTHE = TORQUENTVE
       ENDIF
 
 C     COMPUTE PARTICLE FLUX GAMMA FROM NTV TORQUE DENSITY, USING
@@ -1166,6 +1197,9 @@ C     SMOOTHING
          IF (CSM(I).GT.CTEDGE) TORQUENTVE(I) = 0.0
       ENDDO
       ENDIF
+      IF (OBOUNDARY) CALL WRITENTVBOUNDARY(TORQRAW,TORQRAWI,TORQRAWE,
+     &                                     TORQSMOOTH,TORQSMOOTHI,
+     &                                     TORQSMOOTHE)
 
       DO I=1,NDNTR-1
          DNTRANNTV(I) = DNTRANNTV(NDNTR)
@@ -1298,8 +1332,53 @@ C     SAVE CROSS-COUPLING TORQUE ELEMENTS INTO FILES
       ENDIF
 
       DEALLOCATE(DVDSM,DTMP,DPTRANNTVI,DPTRANNTVE)
+      IF (OBOUNDARY) DEALLOCATE(TORQRAW,TORQRAWI,TORQRAWE,
+     &                          TORQSMOOTH,TORQSMOOTHI,TORQSMOOTHE)
 
       RETURN
+      END
+
+C$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+C OPTIONAL KNTV=21 TORQUE STAGE DIAGNOSTIC
+C The raw columns are the component sums returned by CALCDWKCOMP.  The
+C post-smoothing columns retain the result before axis/edge patching, and
+C the final columns are the native TORQUENTV arrays after those patches.
+C$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+      SUBROUTINE WRITENTVBOUNDARY(TORQRAW,TORQRAWI,TORQRAWE,
+     &                            TORQSMOOTH,TORQSMOOTHI,TORQSMOOTHE)
+      USE DIMENSIM
+      USE GLOBALM
+      USE RCOMDM
+      USE TORQUEM
+      USE ToolBox
+      IMPLICIT NONE
+      INTEGER I,FID
+      REAL*8 TORQRAW(NR),TORQRAWI(NR),TORQRAWE(NR)
+      REAL*8 TORQSMOOTH(NR),TORQSMOOTHI(NR),TORQSMOOTHE(NR)
+
+      FID=ASSIGNFREEFILEUNIT ()
+      OPEN(FID,FILE='TORQUENTV_BOUNDARY_DIAGNOSTIC.OUT',
+     &     FORM='FORMATTED',STATUS='REPLACE',ACTION='WRITE')
+      WRITE(FID,*) '% Native KNTV=21 torque-density stages; no SI or sign'
+      WRITE(FID,*) '% conversion is applied in this diagnostic.'
+      WRITE(FID,*) '% RAW is CALCDWKCOMP output after its internal CTEDGE'
+      WRITE(FID,*) '% mask and before DELRATS/smoothing/axis-edge patches.'
+      WRITE(FID,*) '% POSTSMOOTH is after DELRATS and five native smoothers'
+      WRITE(FID,*) '% and before axis/edge patches. FINAL is TORQUENTV.'
+      WRITE(FID,*) '% CSH is the native radial integration weight.'
+      WRITE(FID,*) '% ISWEEP/NSWEEP:', ISWEEP, NSWEEP
+      WRITE(FID,*) '% IS CSM CSH RAW_TOTAL RAW_ION RAW_ELECTRON'//
+     &             ' POSTSMOOTH_TOTAL POSTSMOOTH_ION'//
+     &             ' POSTSMOOTH_ELECTRON FINAL_TOTAL FINAL_ION'//
+     &             ' FINAL_ELECTRON'
+      DO I=1,NR
+         WRITE(FID,100) I,CSM(I),CSH(I),
+     &      TORQRAW(I),TORQRAWI(I),TORQRAWE(I),
+     &      TORQSMOOTH(I),TORQSMOOTHI(I),TORQSMOOTHE(I),
+     &      TORQUENTV(I),TORQUENTVI(I),TORQUENTVE(I)
+      ENDDO
+      CLOSE(FID)
+ 100  FORMAT(I7,11(1X,E20.12))
       END
 
 C$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$

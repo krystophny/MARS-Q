@@ -447,6 +447,20 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("KJP: REUSING VALIDATED DWK COMPONENT CACHE", KINETIC_SOURCE)
         self.assertIn("KDWKREAD.NE.1) CALL KDWKDENSITY", TORQUE_SOURCE)
 
+    def test_kntv21_boundary_diagnostic_is_opt_in_and_staged(self) -> None:
+        """The boundary trace must expose raw, smoothed, and final stages."""
+        self.assertIn("DWK_BOUNDARY_DIAGNOSTIC.REQUEST", TORQUE_SOURCE)
+        self.assertIn("TORQUENTV_BOUNDARY_DIAGNOSTIC.OUT", TORQUE_SOURCE)
+        self.assertIn("IF (OBOUNDARY) OBOUNDARY = KNTV.EQ.21", TORQUE_SOURCE)
+        self.assertIn("IF (OBOUNDARY) OBOUNDARY = ISWEEP.EQ.NSWEEP", TORQUE_SOURCE)
+        self.assertIn("IF (OBOUNDARY) OBOUNDARY = ODWKCOM", TORQUE_SOURCE)
+        raw = TORQUE_SOURCE[TORQUE_SOURCE.index("CALL CALCDWKCOMP(") :]
+        self.assertLess(raw.index("TORQRAW  = TORQUENTV"),
+                        raw.index("C     SMOOTHING"))
+        self.assertLess(raw.index("TORQSMOOTH  = TORQUENTV"),
+                        raw.index("DO I=1,NTORQ-1"))
+        self.assertIn("RAW_TOTAL RAW_ION RAW_ELECTRON", TORQUE_SOURCE)
+
 
 class ExecutableInputTests(unittest.TestCase):
     """Black-box tests that stop before equilibrium files are needed."""
