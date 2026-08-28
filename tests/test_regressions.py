@@ -267,6 +267,9 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("CALL READ_SURFACE_QUANTITIES (IS+1,1)", calculator)
         self.assertIn("DWK CACHE/FIELD/OPPARA/OPPERP/PARA/PERP MAXIMA", calculator)
         self.assertIn("INVALID ZERO DWK CONTRACTION INPUT", calculator)
+        self.assertIn("NON-FINITE DWK COEFFICIENT CACHE", calculator)
+        self.assertIn("CACHEMAX = MAX(CACHEMAX", calculator)
+        self.assertNotIn("IS.EQ.MAX(1,NR/2)", calculator)
 
     def test_direct_dwk_check_compares_like_density_normalizations(self) -> None:
         """The independent and component paths must both retain the DWK density."""
