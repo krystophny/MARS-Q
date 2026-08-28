@@ -18317,6 +18317,7 @@ C     NOTE THAT OMEGAS*N INVOLVES DRHO/DPSI=(DRHO/DS)/(DPSI/DS)
       DLNRHO(J)  = DLNRHO(J+1)
       J = NRP1
       OMEGASI(J) = OMEGASI(J-1)
+      OMEGASE(J) = OMEGASE(J-1)
       DLNRHO(J)  = DLNRHO(J-1)
       OMEGASIM(J)= 0.
       OMEGASEM(J)= 0.
@@ -21227,4 +21228,3 @@ C ===
 
       RETURN
       END
-
