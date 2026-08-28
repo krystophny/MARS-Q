@@ -9728,6 +9728,14 @@ C     CALCULATE ENERGY PROFILE OF DIFFERENT COMPONENTS
      &    MAX(PPARAMAX,PPERPMAX).LE.0.0)
      &   STOP 'INVALID ZERO DWK CONTRACTION INPUT'
 
+C     Optional integer/half-mesh work breakdown.  It must consume the raw
+C     arrays before the production radial combination below; the writer
+C     applies that combination once and does not apply the radial integration
+C     weight CSH to a torque density.
+      INQUIRE(FILE='DWK_BREAKDOWN.REQUEST',EXIST=OBREAKDOWN)
+      IF (OBREAKDOWN) CALL WRITEDWKBREAKDOWN(DWPPARX,DWPPERX,
+     &                                      DWPPARY,DWPPERY,TOTINDX)
+
       PI2 = PI*PI*2.0
 C     CALCULATE THE TOTAL ENERGY OF EACH COMPONENT
       DO IS=1,NR
@@ -9814,15 +9822,6 @@ C     USING: T_NTV = -2*N*IM(DWKA)/(4*PI^2)
       TORQUENTVE = -2.*RNTOR*TORQUENTVE/(4.*PI*PI)
       TORQUENTV  = TORQUENTVI + TORQUENTVE
       ENDIF
-
-C     Optional pre-smoothing work-density breakdown.  This writes the
-C     integer-mesh X contribution, half-mesh Y contribution, their radial
-C     finite-element combination, and the native torque contribution for
-C     every cached kinetic component.  It is diagnostic only and is enabled
-C     by the presence of DWK_BREAKDOWN.REQUEST.
-      INQUIRE(FILE='DWK_BREAKDOWN.REQUEST',EXIST=OBREAKDOWN)
-      IF (OBREAKDOWN) CALL WRITEDWKBREAKDOWN(DWPPARX,DWPPERX,
-     &                                      DWPPARY,DWPPERY,TOTINDX)
 
 C     OUTPUT THE PROFILES OF ENERGY DENSITY
       FID=ASSIGNFREEFILEUNIT () 
@@ -9970,7 +9969,7 @@ C WRITE THE PRE-SMOOTHING KINETIC WORK-DENSITY BREAKDOWN               =
 C                                                                       =
 C Each row is one radial surface and one cached (species,effect) index.
 C PX/PY are the integer/half-mesh terms before radial combination; PARA
-C and PERP are the values after the exact PI^2*CSH finite-element factor.
+C and PERP are the values after the exact 2*PI^2 finite-element combination.
 C TORQUE is the corresponding native KNTV=21 contribution.  This routine
 C never changes the production arrays and is enabled only by a request
 C file in the run directory.
@@ -9987,8 +9986,8 @@ C=======================================================================
       COMPLEX*16,DIMENSION(NRP1,TOTINDX)::DWPPARY,DWPPERY
       COMPLEX*16 PARA_X,PERP_X,PARA_Y,PERP_Y,PARA,PERP
 
-      PI2 = ACOS(-1.0D0)**2
-      TORQUEFAC = -2.0D0*RNTOR/(4.0D0*PI2)
+      PI2 = 2.0D0*ACOS(-1.0D0)**2
+      TORQUEFAC = -2.0D0*RNTOR/(2.0D0*PI2)
       FID = 97
       OPEN(FID,FILE='DWK_BREAKDOWN.OUT',FORM='FORMATTED',
      &     STATUS='REPLACE')
@@ -9998,11 +9997,11 @@ C=======================================================================
       DO IS=1,NR
          DO INDX=1,TOTINDX
             PARA_X = PI2*0.5D0*(DWPPARX(IS,INDX)+
-     &                           DWPPARX(IS+1,INDX))*CSH(IS)
+     &                           DWPPARX(IS+1,INDX))
             PERP_X = PI2*0.5D0*(DWPPERX(IS,INDX)+
-     &                           DWPPERX(IS+1,INDX))*CSH(IS)
-            PARA_Y = PI2*DWPPARY(IS,INDX)*CSH(IS)
-            PERP_Y = PI2*DWPPERY(IS,INDX)*CSH(IS)
+     &                           DWPPERX(IS+1,INDX))
+            PARA_Y = PI2*DWPPARY(IS,INDX)
+            PERP_Y = PI2*DWPPERY(IS,INDX)
             PARA = PARA_X + PARA_Y
             PERP = PERP_X + PERP_Y
             WRITE(FID,100) IS,INDX,CSM(IS),CSH(IS),

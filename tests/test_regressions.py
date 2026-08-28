@@ -345,6 +345,30 @@ class SourceContractTests(unittest.TestCase):
         total_torque = factor * (-sum(drives)).imag
         self.assertAlmostEqual(split_torque, total_torque)
 
+    def test_dwk_breakdown_combines_raw_mesh_terms_once(self) -> None:
+        calculator = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE CALCDWKCOMP") :
+            KINETIC_SOURCE.index("END SUBROUTINE CALCDWKCOMP")
+        ]
+        writer = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE WRITEDWKBREAKDOWN") :
+            KINETIC_SOURCE.index("END SUBROUTINE WRITEDWKBREAKDOWN")
+        ]
+        self.assertLess(
+            calculator.index("CALL WRITEDWKBREAKDOWN"),
+            calculator.index("PI2 = PI*PI*2.0"),
+        )
+        self.assertNotIn("*CSH(IS)", writer)
+
+        x_left, x_right, y_half = 1.0 + 2.0j, 3.0 - 1.0j, -0.5 + 4.0j
+        expected = 2.0 * math.pi**2 * (y_half + 0.5 * (x_left + x_right))
+        separated = (
+            2.0 * math.pi**2 * y_half
+            + math.pi**2 * (x_left + x_right)
+        )
+        self.assertAlmostEqual(expected.real, separated.real)
+        self.assertAlmostEqual(expected.imag, separated.imag)
+
     def test_frequency_scratch_is_thread_private(self) -> None:
         """KBTIME's per-surface RUU2 must not race across OpenMP workers."""
         self.assertIn("THREADPRIVATE( RCHIHK,RSS,RUU,RUU2 )", KINETIC_MODULE)
