@@ -19,6 +19,7 @@ upstream baseline `8824bb1`:
 | deterministic frequency diagnostic | `RUU2` is thread-private with its per-surface consumers | repeated OpenMP `FREQUENCIES.OUT` comparison |
 | two-species frequency diagnostic | hot-ion `SLAM0(:,3)` is read only when species three exists | GNU `-fcheck=all` MAST-U run |
 | retained DWK component workspace | idempotent allocation, component-map, and shape contracts | KNTV=21 reaches `TORQUENTV.OUT` after kinetic assembly |
+| independent DWK density check | numerical angular-quadrature oracle and source normalization contract | opt-in direct check closes against the component density without an extra `4*pi^2` factor |
 | executable build provenance | profile/flag and manifest hash/tamper contracts | clean-tree build plus independent manifest verification |
 
 Run fast tests with:
