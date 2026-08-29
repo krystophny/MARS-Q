@@ -117,6 +117,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("CRITICAL(ELL_TRACE_WRITE)", ANISOTROPIC_SOURCE)
         self.assertIn("ELL=-1 TRACE REQUIRES INUTYPE=1", trap)
         self.assertIn("FNUMSOURCE=FNUMSOURCE/RTMP", trap)
+        self.assertIn("DO K=1,2*(NEPK-1)", ANISOTROPIC_SOURCE)
         self.assertIn("KJP: TRACE-ONLY SELECTED-SURFACE CACHE REPLAY", KINETIC_SOURCE)
         self.assertIn("ODWKCOM.AND.KDWKREAD.NE.1", KINETIC_SOURCE)
         self.assertIn("KELLTRACEACTIVE(PRIVATEJS,1)", KINETIC_SOURCE)
