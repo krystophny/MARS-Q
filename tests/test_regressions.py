@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MARS_SOURCE = (ROOT / "MarsQ_2FK" / "marsq.f").read_text()
 KINETIC_SOURCE = (ROOT / "MarsQ_2FK" / "kinetic.f").read_text()
 KINETIC_MODULE = (ROOT / "MarsQ_2FK" / "kineticm.f").read_text()
+ANISOTROPIC_SOURCE = (ROOT / "MarsQ_2FK" / "anisotropic.f").read_text()
 TORQUE_SOURCE = (ROOT / "MarsQ_2FK" / "torque.f").read_text()
 PAMS_SOURCE = (ROOT / "MarsQ_2FK" / "pams.f").read_text()
 NEWRUN = (ROOT / "MarsQ_2FK" / "newrun.inc").read_text()
@@ -102,6 +103,23 @@ class SourceContractTests(unittest.TestCase):
         )
         self.assertIn(".NOTPARALLEL: gnu gnu-debug ifx nvhpc", MAKEFILE)
         self.assertIn("rm -f *.o *.mod *.d lsode/*.o lsode/*.mod", MAKEFILE)
+
+    def test_ell_minus_one_trace_is_default_off_and_on_the_executed_path(self) -> None:
+        """The production KFASTRUN=0 trace must live in KIA_TRAP only."""
+        trap_start = ANISOTROPIC_SOURCE.index("SUBROUTINE KIA_TRAP(")
+        trap_end = ANISOTROPIC_SOURCE.index("END SUBROUTINE KIA_TRAP", trap_start)
+        trap = ANISOTROPIC_SOURCE[trap_start:trap_end]
+        self.assertIn("CALL KELLTRACESELECT(JS,KGRID,OTRACE)", trap)
+        self.assertIn("INQUIRE(FILE='ELL_M1_TRACE.REQUEST',EXIST=OEXIST)", ANISOTROPIC_SOURCE)
+        self.assertIn("INTEGER, SAVE :: NTRACE=-1", ANISOTROPIC_SOURCE)
+        self.assertIn("IF (OEXIST) THEN", ANISOTROPIC_SOURCE)
+        self.assertIn("CRITICAL(ELL_TRACE_REQUEST)", ANISOTROPIC_SOURCE)
+        self.assertIn("CRITICAL(ELL_TRACE_WRITE)", ANISOTROPIC_SOURCE)
+        self.assertIn("ELL=-1 TRACE REQUIRES INUTYPE=1", trap)
+        self.assertIn("FNUMSOURCE=FNUMSOURCE/RTMP", trap)
+        self.assertIn("KJP: TRACE-ONLY SELECTED-SURFACE CACHE REPLAY", KINETIC_SOURCE)
+        self.assertIn("ODWKCOM.AND.KDWKREAD.NE.1", KINETIC_SOURCE)
+        self.assertIn("KELLTRACEACTIVE(PRIVATEJS,1)", KINETIC_SOURCE)
 
     def test_build_manifest_binds_the_record_to_the_binary(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mars-manifest-") as temporary:
@@ -258,10 +276,8 @@ class SourceContractTests(unittest.TestCase):
             )
         ]
         self.assertIn("INCSFD = 0", coefficient)
-        self.assertIn(
-            "IF (ODWKCOM) CALL WRITE_SURFACE_QUANTITIES(JS,KGRID)",
-            coefficient,
-        )
+        self.assertIn("IF (ODWKCOM.AND.KDWKREAD.NE.1)", coefficient)
+        self.assertIn("CALL WRITE_SURFACE_QUANTITIES(JS,KGRID)", coefficient)
         self.assertNotIn("IF (INCSFD.GT.0) CALL WRITE_SURFACE_QUANTITIES", coefficient)
         self.assertIn("CALL READ_SURFACE_QUANTITIES (1,2)", calculator)
         self.assertIn("CALL READ_SURFACE_QUANTITIES (IS+1,1)", calculator)
