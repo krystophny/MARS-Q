@@ -5057,6 +5057,8 @@ C=======================================================================
             X1DPHI(KP,R) = X1DPHI(KP,R) + CTM3*VDPHI1(K,L)*VX1(M,L)
             X2PARA(KP,R) = X2PARA(KP,R) + CTMP*VPARA1(K,L)*VX2(M,L)
             X2PERP(KP,R) = X2PERP(KP,R) + CTMP*VPERP1(K,L)*VX2(M,L)
+            X3PARA(KP,R) = X3PARA(KP,R) + CTMP*VPARA1(K,L)*VX3(M,L)
+            X3PERP(KP,R) = X3PERP(KP,R) + CTMP*VPERP1(K,L)*VX3(M,L)
             X2DPHI(KP,R) = X2DPHI(KP,R) + CTM3*VDPHI1(K,L)*VX2(M,L)
             Q1PARA(KP,R) = Q1PARA(KP,R) + CTMP*VPARA1(K,L)*VQ1(M,L)
             Q1PERP(KP,R) = Q1PERP(KP,R) + CTMP*VPERP1(K,L)*VQ1(M,L)
@@ -5364,6 +5366,8 @@ C=======================================================================
             X1DPHI(KP,R) = X1DPHI(KP,R) + CTM3*VDPHI1(K,L)*VX1(M,L)
             X2PARA(KP,R) = X2PARA(KP,R) + CTMP*VPARA1(K,L)*VX2(M,L)
             X2PERP(KP,R) = X2PERP(KP,R) + CTMP*VPERP1(K,L)*VX2(M,L)
+            X3PARA(KP,R) = X3PARA(KP,R) + CTMP*VPARA1(K,L)*VX3(M,L)
+            X3PERP(KP,R) = X3PERP(KP,R) + CTMP*VPERP1(K,L)*VX3(M,L)
             X2DPHI(KP,R) = X2DPHI(KP,R) + CTM3*VDPHI1(K,L)*VX2(M,L)
             Q1PARA(KP,R) = Q1PARA(KP,R) + CTMP*VPARA1(K,L)*VQ1(M,L)
             Q1PERP(KP,R) = Q1PERP(KP,R) + CTMP*VPERP1(K,L)*VQ1(M,L)
@@ -8413,7 +8417,7 @@ C=======================================================================
       REAL*8     PHASE,PHASE0,DIFPI,OMEGAE,DPSIS
       COMPLEX*16 EPHASE,CTMP,CTMPL,CTMPU,CALPHA,
      &           FLX1,FLX2,FLQ1,FLQ2,FLQ3,FLDP,
-     &           FUX1,FUX2,FUQ1,FUQ2,FUQ3,FUDP
+     &           FUX1,FUX2,FUX3,FUQ1,FUQ2,FUQ3,FUDP,FLX3
      
       REAL*8 DIFFERCHI
       
@@ -8421,6 +8425,7 @@ C=======================================================================
 
       VX1 = 0.0
       VX2 = 0.0
+      VX3 = 0.0
       VQ1 = 0.0
       VQ2 = 0.0
       VQ3 = 0.0
@@ -8480,6 +8485,7 @@ C     PASSING PARTICLE DOES NOT HAVE SINGULAR INTEGRATION
          CTMP = SQRT(LAM)*EXP(CI*RM(M,2)*CHIL)*2.0/SQRT(HPL)
          FLX1 = (RX1BK(1)-RX1RK(1)*CALPHA)*CTMP
          FLX2 = RX2K(1)*CTMP
+         FLX3 = RX3K(1)*CTMP
          FLQ1 = RQ1K(1)*LAM*CTMP
          FLQ2 = RQ2K(1)*LAM*CTMP
          FLQ3 = RQ3K*LAM*CTMP
@@ -8489,6 +8495,7 @@ C     PASSING PARTICLE DOES NOT HAVE SINGULAR INTEGRATION
      &          2.0*COS(RLM(L)*PI)/SQRT(-HPU)
          FUX1 = (RX1BK(NCHI2+2)-RX1RK(NCHI2+2)*CALPHA)*CTMP
          FUX2 = RX2K(NCHI2+2)*CTMP
+         FUX3 = RX3K(NCHI2+2)*CTMP
          FUQ1 = RQ1K(NCHI2+2)*LAM*CTMP
          FUQ2 = RQ2K(NCHI2+2)*LAM*CTMP
          FUQ3 = RQ3K*LAM*CTMP
@@ -8502,6 +8509,7 @@ C     PASSING PARTICLE DOES NOT HAVE SINGULAR INTEGRATION
             VX1(M,L)=VX1(M,L)+EPHASE*
      &             (RVAK1(J)-RVAK6(J)*CALPHA)-CTMPL*FLX1-CTMPU*FUX1 
             VX2(M,L)=VX2(M,L)+EPHASE*RVAK2(J)-CTMPL*FLX2-CTMPU*FUX2
+            VX3(M,L)=VX3(M,L)+EPHASE*RVAK8(J)-CTMPL*FLX3-CTMPU*FUX3
             VQ1(M,L)=VQ1(M,L)+EPHASE*RVAK3(J)-CTMPL*FLQ1-CTMPU*FUQ1
             VQ2(M,L)=VQ2(M,L)+EPHASE*RVAK4(J)-CTMPL*FLQ2-CTMPU*FUQ2
             VQ3(M,L)=VQ3(M,L)+EPHASE*RVAK5(J)-CTMPL*FLQ3-CTMPU*FUQ3
@@ -8509,6 +8517,7 @@ C     PASSING PARTICLE DOES NOT HAVE SINGULAR INTEGRATION
          ENDDO
          VX1(M,L) = VX1(M,L) + (FLX1+FUX1)*PHASE0
          VX2(M,L) = VX2(M,L) + (FLX2+FUX2)*PHASE0
+         VX3(M,L) = VX3(M,L) + (FLX3+FUX3)*PHASE0
          VQ1(M,L) = VQ1(M,L) + (FLQ1+FUQ1)*PHASE0
          VQ2(M,L) = VQ2(M,L) + (FLQ2+FUQ2)*PHASE0
          VQ3(M,L) = VQ3(M,L) + (FLQ3+FUQ3)*PHASE0
