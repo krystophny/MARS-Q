@@ -104,3 +104,62 @@ against an independent oracle, never against its own plausibility:
 3. Only then is the torque difference attributable to `S1`.
 
 Until 1 and 2 pass, no run from this branch is a TC24 result.
+
+## Coefficient correction (2026-08-29): RX3 was wrong by B0K squared
+
+The first campaign (`tc24-marsk-x3-drive-20260829`) passed its inertness gate
+— `prod_x3off` reproduced the accepted `phiI010-l5` torque byte for byte — and
+`KX3DRIVE=1` then changed the radial structure exactly as the diagnosis
+predicted: outer-radius sign changes fell from 4 to 1, the `q=8/3` neighbour
+ratio from 59.4 to 3.08 and `q=3` from 140 to 2.21, reproduced independently
+on the fast and production decks.
+
+But the magnitude was absurd. Converted to SI against the canonical NEO-RT
+MARS-field NTVTOK control, the peak `|dT/drho|` went from 8.93e4 N m (within
+12% of NEO-RT's 1.02e5) to 2.45e7, a factor of 274 above NEO-RT. A correction
+term cannot be 274 times the thing it corrects, so the coefficient was
+re-derived from scratch rather than defended.
+
+The original derivation asserted a common factor `B0*J/(DPSIDS*B0K)` by
+inspection. That was wrong. Deriving it instead of guessing:
+
+`HK = B0K/B` (`kinetic.f:2955`), and `RW2 = dHK/dchi`, so
+
+```
+dB/dchi = -RW2*B0K/HK**2
+```
+
+Write the known-good `RX2 = -RW2*RJA*T/DPSIDS/B0K` as `gg2*(dB/dchi)*C` with
+`gg2 = F/B**2` and `T = F`, using `B**2 = B0K**2/HK**2`:
+
+```
+gg2*(dB/dchi)*C = (F*HK**2/B0K**2)*(-RW2*B0K/HK**2)*C = -F*RW2*C/B0K
+```
+
+Matching against `-RW2*F*RJA/DPSIDS/B0K` gives
+
+```
+C = RJA/DPSIDS
+```
+
+with no leftover field factor at all. That same `C` reproduces the `gg1` term
+of `RX1B` exactly — `gg1 = -(DPSIDS/(RJA*B))**2*g_schi` yields
+`RW2*DPSIDS*G12L/RJA/B0K`, which is the second term of `RX1B` verbatim — so
+`C` is pinned by two independent coefficients, not fitted to one.
+
+Then `gg3 = DPSIDS/RJA` cancels `C` outright:
+
+```
+RX3 = gg3*(dB/dchi)*C = (DPSIDS/RJA)*(-RW2*B0K/HK**2)*(RJA/DPSIDS)
+    = -RW2*B0K/HK**2
+```
+
+The committed coefficient was `-RW2/HK**2/B0K`. It **divided** by `B0K` where
+it must **multiply**, an error of `B0K**2`, which is the right order to
+explain a two-orders-of-magnitude overshoot.
+
+The shape result from the first campaign still stands as evidence that the
+`X3` channel is the right lever — a mis-scaled term cannot invent the
+smoothing of both rational-surface features. The magnitude does not, and no
+`KX3DRIVE=1` number is quotable until the corrected coefficient reruns behind
+its own inertness gate.

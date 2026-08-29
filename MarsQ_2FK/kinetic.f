@@ -6444,18 +6444,19 @@ C     COEFFICIENTS FOR XI^2 IN H-FACTOR
       RX2(NCHI+1)=RX2(1)
 
 C     COEFFICIENTS FOR XI^3 IN H-FACTOR
-C     xi^chi carries gg3 = dpsids/J alongside gg2 = F/B**2, and RX2 above
-C     is gg2*(dB/dchi) times the common factor B0*J/(DPSIDS*B0K).  Carrying
-C     that factor to gg3 cancels J and DPSIDS exactly and leaves
-C     RX3 = (dB/dchi)*B0/B0K = -RW2/HK**2/B0K, since RW2 = d(B0/B)/dchi
-C     and HK = B0/B.  See doc/TC24_X3_DRIVE_PATCH.md.
+C     HK = B0K/B (kinetic.f:2955), so RW2 = dHK/dchi gives
+C     dB/dchi = -RW2*B0K/HK**2.  Writing RX2 = gg2*(dB/dchi)*C with
+C     gg2 = F/B**2 fixes the common factor at C = RJA/DPSIDS, and the same C
+C     reproduces the gg1 term of RX1B above exactly, so it is pinned twice
+C     over.  Then gg3 = DPSIDS/RJA cancels C outright and leaves
+C     RX3 = -RW2*B0K/HK**2.  See doc/TC24_X3_DRIVE_PATCH.md.
       IF (KGRID.EQ.1) THEN
          DO J=1,NCHI
-            RX3(J)=-RW2(J)/HK(JS,J,1)**2/B0K
+            RX3(J)=-RW2(J)*B0K/HK(JS,J,1)**2
          ENDDO
       ELSEIF (KGRID.EQ.2) THEN
          DO J=1,NCHI
-            RX3(J)=-RW2(J)/HK(JS,J,2)**2/B0K
+            RX3(J)=-RW2(J)*B0K/HK(JS,J,2)**2
          ENDDO
       ENDIF
       RX3(NCHI+1)=RX3(1)
