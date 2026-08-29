@@ -50,22 +50,26 @@
                 
         VX1PARA = 0.
         VX2PARA = 0.
+        VX3PARA = 0.
         VQ1PARA = 0.
         VQ2PARA = 0.
         VQ3PARA = 0.
         VX1PERP = 0.
         VX2PERP = 0.
+        VX3PERP = 0.
         VQ1PERP = 0.
         VQ2PERP = 0.
         VQ3PERP = 0.
         
         VX1PARAM= 0.
         VX2PARAM= 0.
+        VX3PARAM= 0.
         VQ1PARAM= 0.
         VQ2PARAM= 0.
         VQ3PARAM= 0.
         VX1PERPM= 0.
         VX2PERPM= 0.
+        VX3PERPM= 0.
         VQ1PERPM= 0.
         VQ2PERPM= 0.
         VQ3PERPM= 0.
