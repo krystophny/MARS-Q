@@ -3978,6 +3978,7 @@ C
       IPERTURB  = 1
       KPERTREAD = 0
       KDWKREAD  = 0
+      KX3DRIVE  = 0
       KENORM    = 2
       KEFORM    = 2
       IVISC     = 0

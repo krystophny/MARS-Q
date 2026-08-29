@@ -81,7 +81,9 @@ C     THE FILE CHANEL FOR OUTPUT KINETIC QUANTITY IN 2D PLOT
      &          VX1PARA(MSMAX,MSMAX,1), VX1PARAM(MSMAX,MSMAX,1),
      &          VX1PERP(MSMAX,MSMAX,1), VX1PERPM(MSMAX,MSMAX,1),
      &          VX2PARA(MSMAX,MSMAX,1), VX2PARAM(MSMAX,MSMAX,1),
+     &          VX3PARA(MSMAX,MSMAX,1), VX3PARAM(MSMAX,MSMAX,1),
      &          VX2PERP(MSMAX,MSMAX,1), VX2PERPM(MSMAX,MSMAX,1),
+     &          VX3PERP(MSMAX,MSMAX,1), VX3PERPM(MSMAX,MSMAX,1),
      &          VQ1PARA(MSMAX,MSMAX,1), VQ1PARAM(MSMAX,MSMAX,1),
      &          VQ1PERP(MSMAX,MSMAX,1), VQ1PERPM(MSMAX,MSMAX,1),
      &          VQ2PARA(MSMAX,MSMAX,1), VQ2PARAM(MSMAX,MSMAX,1),
@@ -94,7 +96,9 @@ C     THE FILE CHANEL FOR OUTPUT KINETIC QUANTITY IN 2D PLOT
           VX1PARA  = 0.     
           VX1PERP  = 0.     
           VX2PARA  = 0.     
+          VX3PARA  = 0.     
           VX2PERP  = 0.     
+          VX3PERP  = 0.     
           VQ1PARA  = 0.     
           VQ1PERP  = 0.     
           VQ2PARA  = 0.     
@@ -107,7 +111,9 @@ C     THE FILE CHANEL FOR OUTPUT KINETIC QUANTITY IN 2D PLOT
           VX1PARAM = 0.     
           VX1PERPM = 0.     
           VX2PARAM = 0.     
+          VX3PARAM = 0.     
           VX2PERPM = 0.     
+          VX3PERPM = 0.     
           VQ1PARAM = 0.     
           VQ1PERPM = 0.     
           VQ2PARAM = 0.     
@@ -189,7 +195,9 @@ C     THE FILE CHANEL FOR OUTPUT KINETIC QUANTITY IN 2D PLOT
      &          VX1PARA(MSMAX,MSMAX,NRP1), VX1PARAM(MSMAX,MSMAX,NR),
      &          VX1PERP(MSMAX,MSMAX,NRP1), VX1PERPM(MSMAX,MSMAX,NR),
      &          VX2PARA(MSMAX,MSMAX,NRP1), VX2PARAM(MSMAX,MSMAX,NR),
+     &          VX3PARA(MSMAX,MSMAX,NRP1), VX3PARAM(MSMAX,MSMAX,NR),
      &          VX2PERP(MSMAX,MSMAX,NRP1), VX2PERPM(MSMAX,MSMAX,NR),
+     &          VX3PERP(MSMAX,MSMAX,NRP1), VX3PERPM(MSMAX,MSMAX,NR),
      &          VQ1PARA(MSMAX,MSMAX,NRP1), VQ1PARAM(MSMAX,MSMAX,NR),
      &          VQ1PERP(MSMAX,MSMAX,NRP1), VQ1PERPM(MSMAX,MSMAX,NR),
      &          VQ2PARA(MSMAX,MSMAX,NRP1), VQ2PARAM(MSMAX,MSMAX,NR),
@@ -202,7 +210,9 @@ C     THE FILE CHANEL FOR OUTPUT KINETIC QUANTITY IN 2D PLOT
           VX1PARA  = 0.     
           VX1PERP  = 0.     
           VX2PARA  = 0.     
+          VX3PARA  = 0.     
           VX2PERP  = 0.     
+          VX3PERP  = 0.     
           VQ1PARA  = 0.     
           VQ1PERP  = 0.     
           VQ2PARA  = 0.     
@@ -215,7 +225,9 @@ C     THE FILE CHANEL FOR OUTPUT KINETIC QUANTITY IN 2D PLOT
           VX1PARAM = 0.     
           VX1PERPM = 0.     
           VX2PARAM = 0.     
+          VX3PARAM = 0.     
           VX2PERPM = 0.     
+          VX3PERPM = 0.     
           VQ1PARAM = 0.     
           VQ1PERPM = 0.     
           VQ2PARAM = 0.     
@@ -309,7 +321,8 @@ C     SERIALIZED RECORDS.  RDNAME RESTRICTS THIS TO FROZEN-FIELD KNTV=21.
       ALLOCATE( RCHI(NCHI+1), RCHI2(NCHI+1), RW1(NCHI+1),
      &          RW2(NCHI+1),
      &          RJB(NCHI+1),  RX1P(NCHI+1),  RX1B(NCHI+1), 
-     &          RX1R(NCHI+1), RX2(NCHI+1),   RQ1(NCHI+1),   
+     &          RX1R(NCHI+1), RX2(NCHI+1),   RX3(NCHI+1),
+     &          RQ1(NCHI+1),   
      &          RQ2(NCHI+1),  RBT(NCHI+1),   RPHI(NCHI+1),  
      &          RDMU(NCHI+1), RDB(NCHI+1) )
 
@@ -348,12 +361,13 @@ C     NUMBER OF INTEGRATION POINTS ALONG CHI
 
       ALLOCATE( RCHIK(NCHIT+2), RPHIK(NCHIT+2), RTK(NCHIT+2),
      &          RHK(NCHIT+2),   RJBK(NCHIT+2),  RX1PK(NCHIT+2),
-     &          RX1BK(NCHIT+2), RX1RK(NCHIT+2), RX2K(NCHIT+2),  
+     &          RX1BK(NCHIT+2), RX1RK(NCHIT+2), RX2K(NCHIT+2),
+     &          RX3K(NCHIT+2),  
      &          RQ1K(NCHIT+2),  RQ2K(NCHIT+2),  RVALK(NCHIT+2) )
 
       ALLOCATE( RVAK1(NCHIT+2), RVAK2(NCHIT+2), RVAK3(NCHIT+2), 
      &          RVAK4(NCHIT+2), RVAK5(NCHIT+2), RVAK6(NCHIT+2),
-     &          RVAK7(NCHIT+2) )
+     &          RVAK7(NCHIT+2), RVAK8(NCHIT+2) )
 
       ALLOCATE( RCHIN(2*NCHIT+2), RVALN(2*NCHIT+2), RHN(2*NCHIT+2) )
 
@@ -377,6 +391,7 @@ C     CALCULATE RLM
       ALLOCATE( VPARA(MSMAX,MLMAX), VPERP(MSMAX,MLMAX),
      &          VDPHI(MSMAX,MLMAX), 
      &          VX1(MSMAX,MLMAX),   VX2(MSMAX,MLMAX), 
+     &          VX3(MSMAX,MLMAX), 
      &          VQ1(MSMAX,MLMAX),   VQ2(MSMAX,MLMAX), 
      &          VQ3(MSMAX,MLMAX),   VDP(MSMAX,MLMAX),  
      &          VI(4,MLMAX,NSPECIES) ) 
@@ -550,12 +565,14 @@ C               SET MATRIX
             IF(MPIKGRID.EQ.1) THEN
                 VX1PARA(:,:,MPIJS) = BUFFER_DATA(:,:,1) 
                 VX2PARA(:,:,MPIJS) = BUFFER_DATA(:,:,2) 
+                VX3PARA(:,:,MPIJS) = BUFFER_DATA(:,:,19)
                 VQ1PARA(:,:,MPIJS) = BUFFER_DATA(:,:,3)  
                 VQ2PARA(:,:,MPIJS) = BUFFER_DATA(:,:,4)  
                 VQ3PARA(:,:,MPIJS) = BUFFER_DATA(:,:,5)  
                 VDPPARA(:,:,MPIJS) = BUFFER_DATA(:,:,6)  
                 VX1PERP(:,:,MPIJS) = BUFFER_DATA(:,:,7) 
                 VX2PERP(:,:,MPIJS) = BUFFER_DATA(:,:,8)  
+                VX3PERP(:,:,MPIJS) = BUFFER_DATA(:,:,20)
                 VQ1PERP(:,:,MPIJS) = BUFFER_DATA(:,:,9)  
                 VQ2PERP(:,:,MPIJS) = BUFFER_DATA(:,:,10)   
                 VQ3PERP(:,:,MPIJS) = BUFFER_DATA(:,:,11) 
@@ -588,12 +605,14 @@ C               SET MATRIX
             ELSE
                 VX1PARAM(:,:,MPIJS) = BUFFER_DATA(:,:,1) 
                 VX2PARAM(:,:,MPIJS) = BUFFER_DATA(:,:,2)
+                VX3PARAM(:,:,MPIJS) = BUFFER_DATA(:,:,19)
                 VQ1PARAM(:,:,MPIJS) = BUFFER_DATA(:,:,3)
                 VQ2PARAM(:,:,MPIJS) = BUFFER_DATA(:,:,4)
                 VQ3PARAM(:,:,MPIJS) = BUFFER_DATA(:,:,5) 
                 VDPPARAM(:,:,MPIJS) = BUFFER_DATA(:,:,6) 
                 VX1PERPM(:,:,MPIJS) = BUFFER_DATA(:,:,7) 
                 VX2PERPM(:,:,MPIJS) = BUFFER_DATA(:,:,8) 
+                VX3PERPM(:,:,MPIJS) = BUFFER_DATA(:,:,20)
                 VQ1PERPM(:,:,MPIJS) = BUFFER_DATA(:,:,9) 
                 VQ2PERPM(:,:,MPIJS) = BUFFER_DATA(:,:,10) 
                 VQ3PERPM(:,:,MPIJS) = BUFFER_DATA(:,:,11) 
@@ -709,12 +728,14 @@ C       START KINETIC CALCULATION
             IF(BUFFER_SEND(2).EQ.1) THEN
                 BUFFER_DATA(:,:,1)  = VX1PARA(:,:,1)
                 BUFFER_DATA(:,:,2)  = VX2PARA(:,:,1)
+                BUFFER_DATA(:,:,19) = VX3PARA(:,:,1)
                 BUFFER_DATA(:,:,3)  = VQ1PARA(:,:,1)
                 BUFFER_DATA(:,:,4)  = VQ2PARA(:,:,1)
                 BUFFER_DATA(:,:,5)  = VQ3PARA(:,:,1)
                 BUFFER_DATA(:,:,6)  = VDPPARA(:,:,1)
                 BUFFER_DATA(:,:,7)  = VX1PERP(:,:,1)
                 BUFFER_DATA(:,:,8)  = VX2PERP(:,:,1)
+                BUFFER_DATA(:,:,20) = VX3PERP(:,:,1)
                 BUFFER_DATA(:,:,9)  = VQ1PERP(:,:,1)
                 BUFFER_DATA(:,:,10) = VQ2PERP(:,:,1)
                 BUFFER_DATA(:,:,11) = VQ3PERP(:,:,1)
@@ -747,12 +768,14 @@ C       START KINETIC CALCULATION
             ELSE
                 BUFFER_DATA(:,:,1)  = VX1PARAM(:,:,1)
                 BUFFER_DATA(:,:,2)  = VX2PARAM(:,:,1)
+                BUFFER_DATA(:,:,19) = VX3PARAM(:,:,1)
                 BUFFER_DATA(:,:,3)  = VQ1PARAM(:,:,1)
                 BUFFER_DATA(:,:,4)  = VQ2PARAM(:,:,1)
                 BUFFER_DATA(:,:,5)  = VQ3PARAM(:,:,1)
                 BUFFER_DATA(:,:,6)  = VDPPARAM(:,:,1)
                 BUFFER_DATA(:,:,7)  = VX1PERPM(:,:,1)
                 BUFFER_DATA(:,:,8)  = VX2PERPM(:,:,1)
+                BUFFER_DATA(:,:,20) = VX3PERPM(:,:,1)
                 BUFFER_DATA(:,:,9)  = VQ1PERPM(:,:,1)
                 BUFFER_DATA(:,:,10) = VQ2PERPM(:,:,1)
                 BUFFER_DATA(:,:,11) = VQ3PERPM(:,:,1)
@@ -950,7 +973,9 @@ C     SET DAMPING COEFFICIENTS AT THE MAGNETIC AXIS
             VX1PARA(MROW,MSA,1) = VX1PARAM(MROW,MSA,1)
             VX1PERP(MROW,MSA,1) = VX1PERPM(MROW,MSA,1)
             VX2PARA(MROW,MSA,1) = VX2PARAM(MROW,MSA,1)
+            VX3PARA(MROW,MSA,1) = VX3PARAM(MROW,MSA,1)
             VX2PERP(MROW,MSA,1) = VX2PERPM(MROW,MSA,1)
+            VX3PERP(MROW,MSA,1) = VX3PERPM(MROW,MSA,1)
             VQ1PARA(MROW,MSA,1) = VQ1PARAM(MROW,MSA,1)
             VQ1PERP(MROW,MSA,1) = VQ1PERPM(MROW,MSA,1)
             VQ2PARA(MROW,MSA,1) = VQ2PARAM(MROW,MSA,1)
@@ -995,7 +1020,9 @@ C     SET DAMPING COEFFICIENTS AT PLASMA SURFACE
             VX1PARA(MROW,MSA,I) = VX1PARAM(MROW,MSA,J)
             VX1PERP(MROW,MSA,I) = VX1PERPM(MROW,MSA,J)
             VX2PARA(MROW,MSA,I) = VX2PARAM(MROW,MSA,J)
+            VX3PARA(MROW,MSA,I) = VX3PARAM(MROW,MSA,J)
             VX2PERP(MROW,MSA,I) = VX2PERPM(MROW,MSA,J)
+            VX3PERP(MROW,MSA,I) = VX3PERPM(MROW,MSA,J)
             VQ1PARA(MROW,MSA,I) = VQ1PARAM(MROW,MSA,J)
             VQ1PERP(MROW,MSA,I) = VQ1PERPM(MROW,MSA,J)
             VQ2PARA(MROW,MSA,I) = VQ2PARAM(MROW,MSA,J)
@@ -1036,7 +1063,9 @@ C     SET OVERALL FRACTION ALPHAD FOR KINETIC CONTRIBUTIONS
       VX1PARA  = VX1PARA*ALPHAD
       VX1PERP  = VX1PERP*ALPHAD
       VX2PARA  = VX2PARA*ALPHAD
+      VX3PARA  = VX3PARA*ALPHAD
       VX2PERP  = VX2PERP*ALPHAD
+      VX3PERP  = VX3PERP*ALPHAD
       VQ1PARA  = VQ1PARA*ALPHAD
       VQ1PERP  = VQ1PERP*ALPHAD
       VQ2PARA  = VQ2PARA*ALPHAD
@@ -1049,7 +1078,9 @@ C     SET OVERALL FRACTION ALPHAD FOR KINETIC CONTRIBUTIONS
       VX1PARAM = VX1PARAM*ALPHAD
       VX1PERPM = VX1PERPM*ALPHAD
       VX2PARAM = VX2PARAM*ALPHAD
+      VX3PARAM = VX3PARAM*ALPHAD
       VX2PERPM = VX2PERPM*ALPHAD
+      VX3PERPM = VX3PERPM*ALPHAD
       VQ1PARAM = VQ1PARAM*ALPHAD
       VQ1PERPM = VQ1PERPM*ALPHAD
       VQ2PARAM = VQ2PARAM*ALPHAD
@@ -3933,6 +3964,8 @@ C     ============================================================
       VX1PERPC = 0.
       VX2PARAC = 0.
       VX2PERPC = 0.
+      VX3PARAC = 0.
+      VX3PERPC = 0.
       VQ1PARAC = 0.
       VQ1PERPC = 0.
       VQ2PARAC = 0.
@@ -4460,7 +4493,8 @@ C=======================================================================
       REAL*8     LAMH,LAM1,LAM2,H1,H3,H4
       COMPLEX*16 CTMP,CTM2,CTM3,CTM4
       COMPLEX*16,DIMENSION(:,:),ALLOCATABLE:: 
-     &           X1PARA,X2PARA,Q1PARA,Q2PARA,Q3PARA,DPPARA,
+     &           X1PARA,X2PARA,X3PARA,X3PERP,
+     &           Q1PARA,Q2PARA,Q3PARA,DPPARA,
      &           X1PERP,X2PERP,Q1PERP,Q2PERP,Q3PERP,DPPERP,
      &           X1DPHI,X2DPHI,Q1DPHI,Q2DPHI,Q3DPHI,DPDPHI
       INTEGER KCHECK
@@ -4471,6 +4505,7 @@ C=======================================================================
       H3     = WFUN (JS,KGRID)
 
       ALLOCATE ( X1PARA(NSPECIES,2),X2PARA(NSPECIES,2),
+     &           X3PARA(NSPECIES,2),X3PERP(NSPECIES,2),
      &           Q1PARA(NSPECIES,2),Q2PARA(NSPECIES,2),
      &           Q3PARA(NSPECIES,2),X1PERP(NSPECIES,2),
      &           X2PERP(NSPECIES,2),Q1PERP(NSPECIES,2),
@@ -4487,6 +4522,8 @@ C=======================================================================
       X1DPHI = 0.
       X2PARA = 0.
       X2PERP = 0.
+      X3PARA = 0.
+      X3PERP = 0.
       X2DPHI = 0.
       Q1PARA = 0.
       Q1PERP = 0.
@@ -4520,6 +4557,8 @@ C=======================================================================
             X1DPHI(KP,R) = X1DPHI(KP,R) + CTM3*VDPHI(K,L)*VX1(M,L)
             X2PARA(KP,R) = X2PARA(KP,R) + CTMP*VPARA(K,L)*VX2(M,L)
             X2PERP(KP,R) = X2PERP(KP,R) + CTMP*VPERP(K,L)*VX2(M,L)
+            X3PARA(KP,R) = X3PARA(KP,R) + CTMP*VPARA(K,L)*VX3(M,L)
+            X3PERP(KP,R) = X3PERP(KP,R) + CTMP*VPERP(K,L)*VX3(M,L)
             X2DPHI(KP,R) = X2DPHI(KP,R) + CTM3*VDPHI(K,L)*VX2(M,L)
             Q1PARA(KP,R) = Q1PARA(KP,R) + CTMP*VPARA(K,L)*VQ1(M,L)
             Q1PERP(KP,R) = Q1PERP(KP,R) + CTMP*VPERP(K,L)*VQ1(M,L)
@@ -4584,6 +4623,8 @@ C=======================================================================
             X1DPHI(KP,R)=X1DPHI(KP,R)+CTM3*VDPHI(K,L)*VX1(M,L)
             X2PARA(KP,R)=X2PARA(KP,R)+CTMP*VPARA(K,L)*VX2(M,L)
             X2PERP(KP,R)=X2PERP(KP,R)+CTMP*VPERP(K,L)*VX2(M,L)
+            X3PARA(KP,R)=X3PARA(KP,R)+CTMP*VPARA(K,L)*VX3(M,L)
+            X3PERP(KP,R)=X3PERP(KP,R)+CTMP*VPERP(K,L)*VX3(M,L)
             X2DPHI(KP,R)=X2DPHI(KP,R)+CTM3*VDPHI(K,L)*VX2(M,L)
             Q1PARA(KP,R)=Q1PARA(KP,R)+CTMP*VPARA(K,L)*VQ1(M,L)
             Q1PERP(KP,R)=Q1PERP(KP,R)+CTMP*VPERP(K,L)*VQ1(M,L)
@@ -4752,6 +4793,8 @@ C=======================================================================
          VX1PERP(K,M,JS_MAT)=VX1PERP(K,M,JS_MAT)+SUM(SUM(X1PERP,1),1)
          VX2PARA(K,M,JS_MAT)=VX2PARA(K,M,JS_MAT)+SUM(SUM(X2PARA,1),1)
          VX2PERP(K,M,JS_MAT)=VX2PERP(K,M,JS_MAT)+SUM(SUM(X2PERP,1),1) 
+         VX3PARA(K,M,JS_MAT)=VX3PARA(K,M,JS_MAT)+SUM(SUM(X3PARA,1),1)
+         VX3PERP(K,M,JS_MAT)=VX3PERP(K,M,JS_MAT)+SUM(SUM(X3PERP,1),1)
          VQ1PARA(K,M,JS_MAT)=VQ1PARA(K,M,JS_MAT)+SUM(SUM(Q1PARA,1),1)
          VQ1PERP(K,M,JS_MAT)=VQ1PERP(K,M,JS_MAT)+SUM(SUM(Q1PERP,1),1)
          VQ2PARA(K,M,JS_MAT)=VQ2PARA(K,M,JS_MAT)+SUM(SUM(Q2PARA,1),1) 
@@ -4835,14 +4878,14 @@ C        ADIABATIC COMPONENT
          CALL SETDWKCOMPMAT ( KP,2,K,M,
      &   X1PARA(KP,R),X1PERP(KP,R),X2PARA(KP,R),X2PERP(KP,R),
      &   Q1PARA(KP,R),Q1PERP(KP,R),Q2PARA(KP,R),Q2PERP(KP,R),
-     &   Q3PARA(KP,R),Q3PERP(KP,R))
+     &   Q3PARA(KP,R),Q3PERP(KP,R),X3PARA(KP,R),X3PERP(KP,R))
          ENDIF         
          IF (ICASE.EQ.1.OR.ICASE.EQ.2.OR.ICASE.EQ.3) THEN
 C        BOUNCE COMPONENT             
          CALL SETDWKCOMPMAT ( KP,4,K,M,
      &   X1PARA(KP,R),X1PERP(KP,R),X2PARA(KP,R),X2PERP(KP,R),
      &   Q1PARA(KP,R),Q1PERP(KP,R),Q2PARA(KP,R),Q2PERP(KP,R),
-     &   Q3PARA(KP,R),Q3PERP(KP,R))
+     &   Q3PARA(KP,R),Q3PERP(KP,R),X3PARA(KP,R),X3PERP(KP,R))
          ENDIF
          IF (ICASE.EQ.1.OR.ICASE.EQ.2.OR.ICASE.EQ.3.OR.ICASE.EQ.4) THEN
 C        PRECESSION COMPONENT     
@@ -4850,7 +4893,7 @@ C        PRECESSION COMPONENT
          CALL SETDWKCOMPMAT ( KP,5,K,M,
      &   X1PARA(KP,R),X1PERP(KP,R),X2PARA(KP,R),X2PERP(KP,R),
      &   Q1PARA(KP,R),Q1PERP(KP,R),Q2PARA(KP,R),Q2PERP(KP,R),
-     &   Q3PARA(KP,R),Q3PERP(KP,R))
+     &   Q3PARA(KP,R),Q3PERP(KP,R),X3PARA(KP,R),X3PERP(KP,R))
          ENDIF
       ELSE
 C        PASSING PARTICLES
@@ -4915,7 +4958,8 @@ C=======================================================================
       REAL*8     LAMH,LAM1,LAM2,H1,H2,H3,H4
       COMPLEX*16 CTMP,CTM2,CTM3,CTM4,CTMP1
       COMPLEX*16,DIMENSION(:,:),ALLOCATABLE:: 
-     &           X1PARA,X2PARA,Q1PARA,Q2PARA,Q3PARA,DPPARA,
+     &           X1PARA,X2PARA,X3PARA,X3PERP,
+     &           Q1PARA,Q2PARA,Q3PARA,DPPARA,
      &           X1PERP,X2PERP,Q1PERP,Q2PERP,Q3PERP,DPPERP,
      &           X1DPHI,X2DPHI,Q1DPHI,Q2DPHI,Q3DPHI,DPDPHI
       INTEGER KCHECK
@@ -4925,6 +4969,7 @@ C=======================================================================
       LAM2   = HKMAX(JS,KGRID)
       H3     = WFUN (JS,KGRID)
       ALLOCATE ( X1PARA(NSPECIES,2),X2PARA(NSPECIES,2),
+     &           X3PARA(NSPECIES,2),X3PERP(NSPECIES,2),
      &           Q1PARA(NSPECIES,2),Q2PARA(NSPECIES,2),
      &           Q3PARA(NSPECIES,2),X1PERP(NSPECIES,2),
      &           X2PERP(NSPECIES,2),Q1PERP(NSPECIES,2),
@@ -4941,6 +4986,8 @@ C=======================================================================
       X1DPHI = 0.
       X2PARA = 0.
       X2PERP = 0.
+      X3PARA = 0.
+      X3PERP = 0.
       X2DPHI = 0.
       Q1PARA = 0.
       Q1PERP = 0.
@@ -4982,6 +5029,8 @@ C=======================================================================
             X1DPHI(KP,R) = X1DPHI(KP,R) + CTM3*VDPHI(K,L)*VX1(M,L)
             X2PARA(KP,R) = X2PARA(KP,R) + CTMP*VPARA(K,L)*VX2(M,L)
             X2PERP(KP,R) = X2PERP(KP,R) + CTMP*VPERP(K,L)*VX2(M,L)
+            X3PARA(KP,R) = X3PARA(KP,R) + CTMP*VPARA(K,L)*VX3(M,L)
+            X3PERP(KP,R) = X3PERP(KP,R) + CTMP*VPERP(K,L)*VX3(M,L)
             X2DPHI(KP,R) = X2DPHI(KP,R) + CTM3*VDPHI(K,L)*VX2(M,L)
             Q1PARA(KP,R) = Q1PARA(KP,R) + CTMP*VPARA(K,L)*VQ1(M,L)
             Q1PERP(KP,R) = Q1PERP(KP,R) + CTMP*VPERP(K,L)*VQ1(M,L)
@@ -5268,6 +5317,8 @@ C=======================================================================
             X1DPHI(KP,R)=X1DPHI(KP,R)+CTM3*VDPHI(K,L)*VX1(M,L)
             X2PARA(KP,R)=X2PARA(KP,R)+CTMP*VPARA(K,L)*VX2(M,L)
             X2PERP(KP,R)=X2PERP(KP,R)+CTMP*VPERP(K,L)*VX2(M,L)
+            X3PARA(KP,R)=X3PARA(KP,R)+CTMP*VPARA(K,L)*VX3(M,L)
+            X3PERP(KP,R)=X3PERP(KP,R)+CTMP*VPERP(K,L)*VX3(M,L)
             X2DPHI(KP,R)=X2DPHI(KP,R)+CTM3*VDPHI(K,L)*VX2(M,L)
             Q1PARA(KP,R)=Q1PARA(KP,R)+CTMP*VPARA(K,L)*VQ1(M,L)
             Q1PERP(KP,R)=Q1PERP(KP,R)+CTMP*VPERP(K,L)*VQ1(M,L)
@@ -5863,6 +5914,8 @@ C=======================================================================
          VX1PERP(K,M,JS_MAT)=VX1PERP(K,M,JS_MAT)+SUM(SUM(X1PERP,1),1)
          VX2PARA(K,M,JS_MAT)=VX2PARA(K,M,JS_MAT)+SUM(SUM(X2PARA,1),1)
          VX2PERP(K,M,JS_MAT)=VX2PERP(K,M,JS_MAT)+SUM(SUM(X2PERP,1),1) 
+         VX3PARA(K,M,JS_MAT)=VX3PARA(K,M,JS_MAT)+SUM(SUM(X3PARA,1),1)
+         VX3PERP(K,M,JS_MAT)=VX3PERP(K,M,JS_MAT)+SUM(SUM(X3PERP,1),1)
          VQ1PARA(K,M,JS_MAT)=VQ1PARA(K,M,JS_MAT)+SUM(SUM(Q1PARA,1),1)
          VQ1PERP(K,M,JS_MAT)=VQ1PERP(K,M,JS_MAT)+SUM(SUM(Q1PERP,1),1)
          VQ2PARA(K,M,JS_MAT)=VQ2PARA(K,M,JS_MAT)+SUM(SUM(Q2PARA,1),1) 
@@ -5946,14 +5999,14 @@ C        ADIABATIC COMPONENT
          CALL SETDWKCOMPMAT ( KP,2,K,M,
      &   X1PARA(KP,R),X1PERP(KP,R),X2PARA(KP,R),X2PERP(KP,R),
      &   Q1PARA(KP,R),Q1PERP(KP,R),Q2PARA(KP,R),Q2PERP(KP,R),
-     &   Q3PARA(KP,R),Q3PERP(KP,R))
+     &   Q3PARA(KP,R),Q3PERP(KP,R),X3PARA(KP,R),X3PERP(KP,R))
          ENDIF         
          IF (ICASE.EQ.1.OR.ICASE.EQ.2.OR.ICASE.EQ.3) THEN
 C        BOUNCE COMPONENT             
          CALL SETDWKCOMPMAT ( KP,4,K,M,
      &   X1PARA(KP,R),X1PERP(KP,R),X2PARA(KP,R),X2PERP(KP,R),
      &   Q1PARA(KP,R),Q1PERP(KP,R),Q2PARA(KP,R),Q2PERP(KP,R),
-     &   Q3PARA(KP,R),Q3PERP(KP,R))
+     &   Q3PARA(KP,R),Q3PERP(KP,R),X3PARA(KP,R),X3PERP(KP,R))
          ENDIF
          IF (ICASE.EQ.1.OR.ICASE.EQ.2.OR.ICASE.EQ.3.OR.ICASE.EQ.4) THEN
 C        PRECESSION COMPONENT     
@@ -5961,7 +6014,7 @@ C        PRECESSION COMPONENT
          CALL SETDWKCOMPMAT ( KP,5,K,M,
      &   X1PARA(KP,R),X1PERP(KP,R),X2PARA(KP,R),X2PERP(KP,R),
      &   Q1PARA(KP,R),Q1PERP(KP,R),Q2PARA(KP,R),Q2PERP(KP,R),
-     &   Q3PARA(KP,R),Q3PERP(KP,R))
+     &   Q3PARA(KP,R),Q3PERP(KP,R),X3PARA(KP,R),X3PERP(KP,R))
          ENDIF
       ELSE
 C        PASSING PARTICLES
@@ -6382,6 +6435,23 @@ C     COEFFICIENTS FOR XI^2 IN H-FACTOR
       ENDIF
       RX2(NCHI+1)=RX2(1)
 
+C     COEFFICIENTS FOR XI^3 IN H-FACTOR
+C     xi^chi carries gg3 = dpsids/J alongside gg2 = F/B**2, and RX2 above
+C     is gg2*(dB/dchi) times the common factor B0*J/(DPSIDS*B0K).  Carrying
+C     that factor to gg3 cancels J and DPSIDS exactly and leaves
+C     RX3 = (dB/dchi)*B0/B0K = -RW2/HK**2/B0K, since RW2 = d(B0/B)/dchi
+C     and HK = B0/B.  See doc/TC24_X3_DRIVE_PATCH.md.
+      IF (KGRID.EQ.1) THEN
+         DO J=1,NCHI
+            RX3(J)=-RW2(J)/HK(JS,J,1)**2/B0K
+         ENDDO
+      ELSEIF (KGRID.EQ.2) THEN
+         DO J=1,NCHI
+            RX3(J)=-RW2(J)/HK(JS,J,2)**2/B0K
+         ENDDO
+      ENDIF
+      RX3(NCHI+1)=RX3(1)
+
 C     COEFFICIENTS FOR Q^1 IN H-FACTOR
       IF (KGRID.EQ.1) THEN
          DO J=1,NCHI
@@ -6526,6 +6596,9 @@ C     COEFFICIENTS FOR XI^1 IN H-FACTOR
       
 C     COEFFICIENTS FOR XI^2 IN H-FACTOR
       CALL SPLINE1D(RX2K,RCHIK,NCHI2+2,RX2,RCHI,NCHI+1,RCHI2)
+
+C     COEFFICIENTS FOR XI^3 IN H-FACTOR
+      CALL SPLINE1D(RX3K,RCHIK,NCHI2+2,RX3,RCHI,NCHI+1,RCHI2)
 
 C     COEFFICIENTS FOR Q^1 IN H-FACTOR
       CALL SPLINE1D(RQ1K,RCHIK,NCHI2+2,RQ1,RCHI,NCHI+1,RCHI2)
@@ -8371,6 +8444,7 @@ C        OMEGAE = OMEGAE0(JS,2)
      &                     (2-LAM/RHK(J))*RX1BK(J))
          RVAK6(J) = PHASE*(2-LAM/RHK(J))*RX1RK(J)
          RVAK2(J) = PHASE*(2-LAM/RHK(J))*RX2K(J)
+         RVAK8(J) = PHASE*(2-LAM/RHK(J))*RX3K(J)
          RVAK3(J) = PHASE*LAM*RQ1K(J)
          RVAK4(J) = PHASE*LAM*RQ2K(J)
          RVAK5(J) = PHASE*LAM*RQ3K
@@ -8388,6 +8462,7 @@ C     PASSING PARTICLE DOES NOT HAVE SINGULAR INTEGRATION
             VX1(M,L) = VX1(M,L) + EPHASE*
      &                           (RVAK1(J)-RVAK6(J)*CALPHA)
             VX2(M,L) = VX2(M,L) + EPHASE*RVAK2(J)
+            VX3(M,L) = VX3(M,L) + EPHASE*RVAK8(J)
             VQ1(M,L) = VQ1(M,L) + EPHASE*RVAK3(J)
             VQ2(M,L) = VQ2(M,L) + EPHASE*RVAK4(J)
             VQ3(M,L) = VQ3(M,L) + EPHASE*RVAK5(J)
@@ -8589,6 +8664,7 @@ C        OMEGAE = OMEGAE0(JS,2)
      &                     (2-LAM/RHK(J))*RX1BK(J))
          RVAK6(J) = PHASE*(2-LAM/RHK(J))*RX1RK(J)
          RVAK2(J) = PHASE*(2-LAM/RHK(J))*RX2K(J)
+         RVAK8(J) = PHASE*(2-LAM/RHK(J))*RX3K(J)
          RVAK3(J) = PHASE*LAM*RQ1K(J)
          RVAK4(J) = PHASE*LAM*RQ2K(J)
          RVAK5(J) = PHASE*LAM*RQ3K
@@ -9247,7 +9323,9 @@ C    &                  ,DWJ+DWQ+DWP+DWPPAR+DWPPER+DWV+DWXI+DWRHO
      &                                   VQ2PARAI,VQ2PARAMI,VQ2PARAI1,
      &                                   VQ2PERPI,VQ2PERPMI,VQ2PERPI1,
      &                                   VQ3PARAI,VQ3PARAMI,VQ3PARAI1,
-     &                                   VQ3PERPI,VQ3PERPMI,VQ3PERPI1
+     &                                   VQ3PERPI,VQ3PERPMI,VQ3PERPI1,
+     &                                   VX3PARAI,VX3PARAMI,VX3PARAI1,
+     &                                   VX3PERPI,VX3PERPMI,VX3PERPI1
       
       VX1PARAI => BUFFER_I(:,:,INDX,1)
       VX1PERPI => BUFFER_I(:,:,INDX,2)
@@ -9259,6 +9337,8 @@ C    &                  ,DWJ+DWQ+DWP+DWPPAR+DWPPER+DWV+DWXI+DWRHO
       VQ2PERPI => BUFFER_I(:,:,INDX,8)
       VQ3PARAI => BUFFER_I(:,:,INDX,9)
       VQ3PERPI => BUFFER_I(:,:,INDX,10)
+      VX3PARAI => BUFFER_I(:,:,INDX,11)
+      VX3PERPI => BUFFER_I(:,:,INDX,12)
       
       VX1PARAMI => BUFFERM_I(:,:,INDX,1)
       VX1PERPMI => BUFFERM_I(:,:,INDX,2)
@@ -9270,6 +9350,8 @@ C    &                  ,DWJ+DWQ+DWP+DWPPAR+DWPPER+DWV+DWXI+DWRHO
       VQ2PERPMI => BUFFERM_I(:,:,INDX,8)
       VQ3PARAMI => BUFFERM_I(:,:,INDX,9)
       VQ3PERPMI => BUFFERM_I(:,:,INDX,10)
+      VX3PARAMI => BUFFERM_I(:,:,INDX,11)
+      VX3PERPMI => BUFFERM_I(:,:,INDX,12)
       
       VX1PARAI1 => BUFFER_I1(:,:,INDX,1)
       VX1PERPI1 => BUFFER_I1(:,:,INDX,2)
@@ -9281,6 +9363,8 @@ C    &                  ,DWJ+DWQ+DWP+DWPPAR+DWPPER+DWV+DWXI+DWRHO
       VQ2PERPI1 => BUFFER_I1(:,:,INDX,8)
       VQ3PARAI1 => BUFFER_I1(:,:,INDX,9)
       VQ3PERPI1 => BUFFER_I1(:,:,INDX,10)
+      VX3PARAI1 => BUFFER_I1(:,:,INDX,11)
+      VX3PERPI1 => BUFFER_I1(:,:,INDX,12)
       
 C     FILL IN MATRICES FOR EQUATIONS FOR PARALLEL AND 
 C     PERPENDICULAR KINETIC PRESSURE
@@ -9315,6 +9399,16 @@ C     PERPENDICULAR KINETIC PRESSURE
                DSUBM(KYPPERP+LYROW, KYX2+LYCOL,I)=
      &           GG(VX2PERPMI(MROW,MSA), VX2PERPI(MROW,MSA)*ZV2M,
      &           VX2PERPI1(MROW,MSA)*ZV2P)
+
+               IF (KX3DRIVE.EQ.1 .AND. KYX3.GT.0) THEN
+               DSUBM(KYPPARA+LYROW, KYX3+LYCOL,I)=
+     &           GG(VX3PARAMI(MROW,MSA), VX3PARAI(MROW,MSA)*ZV2M,
+     &           VX3PARAI1(MROW,MSA)*ZV2P)
+
+               DSUBM(KYPPERP+LYROW, KYX3+LYCOL,I)=
+     &           GG(VX3PERPMI(MROW,MSA), VX3PERPI(MROW,MSA)*ZV2M,
+     &           VX3PERPI1(MROW,MSA)*ZV2P)
+               ENDIF
 
                FSUBM(KYPPARA+LYROW, KXB1+LXCOL,I)=
      &           GF(VQ1PARAI(MROW,MSA), VQ1PARAMI(MROW,MSA))    
@@ -9387,6 +9481,9 @@ C     COMPUTATION OF JPPARA AND JPPERP
      &             DSUBM(KYPPARA+LYROW,KYX2+LYCOL,I)*X2U(I,MSA)+
      &             DSUBM(KYPPARA+LYROW,KYB2+LYCOL,I)*B2U(I,MSA)+
      &             DSUBM(KYPPARA+LYROW,KYB3+LYCOL,I)*B3U(I,MSA)
+      IF (KX3DRIVE.EQ.1 .AND. KYX3.GT.0)
+     &   JPPARA(MROW)=JPPARA(MROW)+
+     &             DSUBM(KYPPARA+LYROW,KYX3+LYCOL,I)*X3U(I,MSA)
       JPPERP(MROW)=JPPERP(MROW)+
      &             FSUBM(KYPPERP+LYROW,KXX1+LXCOL,I)*X1U(I,MSA) +
      &             GSUBM(KYPPERP+LYROW,KXX1+LXCOL,I)*X1U(I+1,MSA)+
@@ -9394,7 +9491,10 @@ C     COMPUTATION OF JPPARA AND JPPERP
      &             GSUBM(KYPPERP+LYROW,KXB1+LXCOL,I)*B1U(I+1,MSA)+
      &             DSUBM(KYPPERP+LYROW,KYX2+LYCOL,I)*X2U(I,MSA)+
      &             DSUBM(KYPPERP+LYROW,KYB2+LYCOL,I)*B2U(I,MSA)+
-     &             DSUBM(KYPPERP+LYROW,KYB3+LYCOL,I)*B3U(I,MSA)					
+     &             DSUBM(KYPPERP+LYROW,KYB3+LYCOL,I)*B3U(I,MSA)
+      IF (KX3DRIVE.EQ.1 .AND. KYX3.GT.0)
+     &   JPPERP(MROW)=JPPERP(MROW)+
+     &             DSUBM(KYPPERP+LYROW,KYX3+LYCOL,I)*X3U(I,MSA)					
       ENDDO
       ENDDO
 	  
@@ -9807,6 +9907,8 @@ C$OMP CRITICAL(WRITE_FILE)
       WRITE (FID) VQ2PERPC*ALPHAD
       WRITE (FID) VQ3PARAC*ALPHAD
       WRITE (FID) VQ3PERPC*ALPHAD
+      WRITE (FID) VX3PARAC*ALPHAD
+      WRITE (FID) VX3PERPC*ALPHAD
       FLUSH (FID)
       CLOSE (FID)
 C$OMP END CRITICAL(WRITE_FILE)    
@@ -9838,7 +9940,7 @@ C      WRITE (*,*) 'SUCCESS OF WRITE:', FILENAME
       OPEN (UNIT=FID, ACCESS='SEQUENTIAL',FILE=TRIM(FILENAME),
      &FORM='UNFORMATTED',STATUS='OLD',ACTION ='READ')
       REWIND(FID) 
-      DO IVAL=1,10
+      DO IVAL=1,12
          READ (FID) READ_DATA
          BUFFERT(:,:,:,IVAL)=READ_DATA
       ENDDO
@@ -9891,6 +9993,7 @@ C     ITS COMPLETE SHAPE AND COMPONENT MAP STILL MATCH THIS RUN.
          IF (.NOT.ALLOCATED(VX1PARAC).OR.
      &       .NOT.ALLOCATED(VX1PERPC).OR.
      &       .NOT.ALLOCATED(VX2PARAC).OR.
+     &       .NOT.ALLOCATED(VX3PARAC).OR.
      &       .NOT.ALLOCATED(VX2PERPC).OR.
      &       .NOT.ALLOCATED(VQ1PARAC).OR.
      &       .NOT.ALLOCATED(VQ1PERPC).OR.
@@ -9908,6 +10011,7 @@ C     ITS COMPLETE SHAPE AND COMPONENT MAP STILL MATCH THIS RUN.
      &       SIZE(VX1PARAC,3).NE.INDX.OR.
      &       ANY(SHAPE(VX1PERPC).NE.SHAPE(VX1PARAC)).OR.
      &       ANY(SHAPE(VX2PARAC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VX3PARAC).NE.SHAPE(VX1PARAC)).OR.
      &       ANY(SHAPE(VX2PERPC).NE.SHAPE(VX1PARAC)).OR.
      &       ANY(SHAPE(VQ1PARAC).NE.SHAPE(VX1PARAC)).OR.
      &       ANY(SHAPE(VQ1PERPC).NE.SHAPE(VX1PARAC)).OR.
@@ -9924,6 +10028,7 @@ C     ITS COMPLETE SHAPE AND COMPONENT MAP STILL MATCH THIS RUN.
 
       ALLOCATE ( VX1PARAC(MSMAX,MSMAX,INDX), VX1PERPC(MSMAX,MSMAX,INDX),
      &           VX2PARAC(MSMAX,MSMAX,INDX), VX2PERPC(MSMAX,MSMAX,INDX),
+     &           VX3PARAC(MSMAX,MSMAX,INDX), VX3PERPC(MSMAX,MSMAX,INDX),
      &           VQ1PARAC(MSMAX,MSMAX,INDX), VQ1PERPC(MSMAX,MSMAX,INDX),
      &           VQ2PARAC(MSMAX,MSMAX,INDX), VQ2PERPC(MSMAX,MSMAX,INDX),
      &           VQ3PARAC(MSMAX,MSMAX,INDX), VQ3PERPC(MSMAX,MSMAX,INDX))
@@ -9931,6 +10036,8 @@ C     ITS COMPLETE SHAPE AND COMPONENT MAP STILL MATCH THIS RUN.
       VX1PERPC = 0.
       VX2PARAC = 0.
       VX2PERPC = 0.
+      VX3PARAC = 0.
+      VX3PERPC = 0.
       VQ1PARAC = 0.
       VQ1PERPC = 0.
       VQ2PARAC = 0.
@@ -9956,7 +10063,8 @@ C     ITS COMPLETE SHAPE AND COMPONENT MAP STILL MATCH THIS RUN.
       
       SUBROUTINE SETDWKCOMPMAT ( KP,COMP,K,M,
      &                           X1PARA,X1PERP,X2PARA,X2PERP,Q1PARA,
-     &                           Q1PERP,Q2PARA,Q2PERP,Q3PARA,Q3PERP )
+     &                           Q1PERP,Q2PARA,Q2PERP,Q3PARA,Q3PERP,
+     &                           X3PARA,X3PERP )
 	USE KINETICM
       USE GLOBALM
 	  
@@ -9964,7 +10072,8 @@ C     ITS COMPLETE SHAPE AND COMPONENT MAP STILL MATCH THIS RUN.
       
       INTEGER KP,COMP,K,M
       COMPLEX*16 X1PARA,X1PERP,X2PARA,X2PERP,Q1PARA,
-     &           Q1PERP,Q2PARA,Q2PERP,Q3PARA,Q3PERP
+     &           Q1PERP,Q2PARA,Q2PERP,Q3PARA,Q3PERP,
+     &           X3PARA,X3PERP
       INTEGER INDX
       IF (.NOT. ODWKCOM) RETURN      
       IF (ISWEEP.NE.NSWEEP) RETURN
@@ -9975,7 +10084,9 @@ C     ITS COMPLETE SHAPE AND COMPONENT MAP STILL MATCH THIS RUN.
       VX1PARAC(K,M,INDX)=VX1PARAC(K,M,INDX)+X1PARA
       VX1PERPC(K,M,INDX)=VX1PERPC(K,M,INDX)+X1PERP
       VX2PARAC(K,M,INDX)=VX2PARAC(K,M,INDX)+X2PARA
+      VX3PARAC(K,M,INDX)=VX3PARAC(K,M,INDX)+X3PARA
       VX2PERPC(K,M,INDX)=VX2PERPC(K,M,INDX)+X2PERP
+      VX3PERPC(K,M,INDX)=VX3PERPC(K,M,INDX)+X3PERP
       VQ1PARAC(K,M,INDX)=VQ1PARAC(K,M,INDX)+Q1PARA
       VQ1PERPC(K,M,INDX)=VQ1PERPC(K,M,INDX)+Q1PERP
       VQ2PARAC(K,M,INDX)=VQ2PARAC(K,M,INDX)+Q2PARA
@@ -10533,13 +10644,15 @@ C=======================================================================
       ALLOCATE( RCHI2(NCHI+1), RW1(NCHI+1),
      &          RW2(NCHI+1),
      &          RJB(NCHI+1),  RX1P(NCHI+1),  RX1B(NCHI+1), 
-     &          RX1R(NCHI+1), RX2(NCHI+1),   RQ1(NCHI+1),   
+     &          RX1R(NCHI+1), RX2(NCHI+1),   RX3(NCHI+1),
+     &          RQ1(NCHI+1),   
      &          RQ2(NCHI+1),  RBT(NCHI+1),   RPHI(NCHI+1),  
      &          RDMU(NCHI+1), RDB(NCHI+1) )
      
       ALLOCATE( RCHIK(NCHIT+2), RPHIK(NCHIT+2), RTK(NCHIT+2),
      &          RHK(NCHIT+2),   RJBK(NCHIT+2),  RX1PK(NCHIT+2),
-     &          RX1BK(NCHIT+2), RX1RK(NCHIT+2), RX2K(NCHIT+2),  
+     &          RX1BK(NCHIT+2), RX1RK(NCHIT+2), RX2K(NCHIT+2),
+     &          RX3K(NCHIT+2),  
      &          RQ1K(NCHIT+2),  RQ2K(NCHIT+2),  RVALK(NCHIT+2) )
       
       ALLOCATE( RCHIN(2*NCHIT+2), RVALN(2*NCHIT+2), RHN(2*NCHIT+2) )
@@ -10549,12 +10662,13 @@ C=======================================================================
       ALLOCATE( VPARA(MSMAX,MLMAX), VPERP(MSMAX,MLMAX),
      &          VDPHI(MSMAX,MLMAX),
      &          VX1(MSMAX,MLMAX),   VX2(MSMAX,MLMAX), 
+     &          VX3(MSMAX,MLMAX), 
      &          VQ1(MSMAX,MLMAX),   VQ2(MSMAX,MLMAX), 
      &          VQ3(MSMAX,MLMAX),   VDP(MSMAX,MLMAX) )
 
       ALLOCATE( RVAK1(NCHIT+2), RVAK2(NCHIT+2), RVAK3(NCHIT+2), 
      &          RVAK4(NCHIT+2), RVAK5(NCHIT+2), RVAK6(NCHIT+2),
-     &          RVAK7(NCHIT+2) )
+     &          RVAK7(NCHIT+2), RVAK8(NCHIT+2) )
       
       CALL ALLOCATEDWKCOMPMAT
       
