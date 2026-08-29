@@ -36,7 +36,7 @@ C-----------------------------------------------------------------------
      I      INCKIN,NNSCAN,KFASTRUN,NPROFR4,NPROFS4,NPROFUI,NPROFUE,
      I      NPROFK,NUMODEL,IPERTURB,KENORM,KEFORM,IFOWPSI0,INUTYPE,KNBI,
      I      IORBIT,IFOW,NORB,NSPECIES,ISPECIES_F0,IGAMMADIVV,KSMTYPE4,
-     I      INCDPHI,KEPSALPHA,KPERTREAD,KDWKREAD,KX3DRIVE
+     I      INCDPHI,KEPSALPHA,KPERTREAD,KDWKREAD
 C-----------------------------------------------------------------------
       NAMELIST /QLIN/
      C      TALPHA4,TALPHA5,
@@ -52,6 +52,7 @@ C-----------------------------------------------------------------------
      R      ADAPSNU,DELRATS,
      I      NFIT,NCONVB1,NCONVCS,NVACJ,NRES,IPDIVB,IOMPNUM,NTORQ,NDNTR,
      I      NADAPS,KADAPS,ADAPSOPT,V2XKEY,NLAMK,NCHI0,NLAMIN,NEPK,NKL0,
+     I      KX3DRIVE,
      I      NKSMOOTHB,NKSMOOTHR,NKSINGULAR,KSMOOTHB,NRESR,K_BC_N0
 C-----------------------------------------------------------------------
       NAMELIST /OUTOPT/
