@@ -3378,15 +3378,18 @@ C     RESCALE THERMAL PRESSURE WITH THE EXPERIMENTAL TEMPERATURE PROFILES
           ENDDO
           ESPECIES_PRE(:,1,1) = PEQ-ESPECIES_PRE(:,1,2)
           ESPECIES_PRE(:,2,1) = PEQM-ESPECIES_PRE(:,2,2)
-          TI0_TMP=ALPHAP*ESPECIES_PRE(1,1,1)/ESPECIES_DEN(1,1,1)
-          TE0_TMP=(1-ALPHAP)*ESPECIES_PRE(1,1,1)/ESPECIES_DEN(1,1,2)
           IF (KPROFTAUTH.EQ.1) THEN
-C           NPROFIE=4 has already set FRACPTH from dimensional Ti0+Te0.
-C           Legacy initialization omits that factor and then forces the
-C           supplied temperature shapes back onto PEQ.  The opt-in path keeps
-C           both experimental amplitudes and shapes instead.
-             TI0_TMP=TI0_TMP*FRACPTH
-             TE0_TMP=TE0_TMP*FRACPTH
+C           NPROFIE=4,NEXPV=1 retain the dimensional input amplitudes in
+C           ZTI0/ZTE0. Convert temperature directly to MARS pressure/density
+C           units; do not reconstruct it through PEQ, ALPHAP, or species
+C           density, which would make temperature authority charge-specific.
+             TI0_TMP=ZTI0*ZNE0*ZQE/B0EXP**2*ZQMU0
+             TE0_TMP=ZTE0*ZNE0*ZQE/B0EXP**2*ZQMU0
+          ELSE
+             TI0_TMP=ALPHAP*ESPECIES_PRE(1,1,1)
+     &              /ESPECIES_DEN(1,1,1)
+             TE0_TMP=(1-ALPHAP)*ESPECIES_PRE(1,1,1)
+     &              /ESPECIES_DEN(1,1,2)
           ENDIF
           ESPECIES_TEM(:,1,1) = TI0_TMP*TEMPI  
           ESPECIES_TEM(:,2,1) = TI0_TMP*TEMPIM  
