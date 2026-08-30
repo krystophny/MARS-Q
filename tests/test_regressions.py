@@ -569,6 +569,16 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("SUBROUTINE OUTPUT(ISW,", MARS_SOURCE)
         self.assertIn("CALL OUTPUT(ISWEEP,", MARS_SOURCE)
 
+    def test_thermal_bounce_denominator_honors_ndb_multiplier(self) -> None:
+        """The documented NDB switch also controls isotropic thermal ions."""
+        bounce = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE KI_BOUNCE") : KINETIC_SOURCE.index(
+                "SUBROUTINE KI_TRANSIT",
+                KINETIC_SOURCE.index("SUBROUTINE KI_BOUNCE"),
+            )
+        ]
+        self.assertIn("RNTOR*PSPECIES_NDB(KP)*DRIFT*", bounce)
+
     def test_dwk_cache_restart_is_explicit_and_narrow(self) -> None:
         self.assertIn("KDWKREAD", NEWRUN)
         self.assertIn("KDWKREAD MUST BE 0 OR 1", MARS_SOURCE)
