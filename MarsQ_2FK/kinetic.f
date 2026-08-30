@@ -4089,7 +4089,7 @@ C        PARTCILE ENERGY INTEGRATION AT ZERO ORBIT WIDTH
          CALL KI(JS,KGRID,1,0)
 
 C        COMPUTE G-FACTORS
-         CALL KG(1)
+         CALL KG(JS,KGRID,1)
 
 C        COMPUTE H-FACTORS
          CALL KH(JS,KGRID,1)
@@ -4280,7 +4280,7 @@ C        ENERGY INTEGRATION AT ZERO ORBIT WIDTH
          CALL KI(JS,KGRID,0,0)
 
 C        COMPUTE G-FACTORS
-         CALL KG(0)
+         CALL KG(JS,KGRID,0)
 
 C        COMPUTE H-FACTORS
          CALL KH(JS,KGRID,0)
@@ -8093,7 +8093,7 @@ C=======================================================================
                CALL KPHI(JS,KGRID)
             ENDIF
 
-            CALL KG(KPARTICLE)
+            CALL KG(JS,KGRID,KPARTICLE)
             SVPARA0(:,L,KP) = VPARA(:,L)
             SVPERP0(:,L,KP) = VPERP(:,L)
             SVDPHI0(:,L,KP) = VDPHI(:,L)
@@ -8134,7 +8134,7 @@ C=======================================================================
          OMEGAB = PI/RTK(NCHI2+2)
          CALL KPHI(JS,KGRID)
 
-         CALL KG(0)
+         CALL KG(JS,KGRID,0)
          VPARA0 = VPARA
          VPERP0 = VPERP
          VDPHI0 = VDPHI
@@ -8195,7 +8195,7 @@ C SINGULAR INTEGRALS FOR TRAPPED PARTICLES ARE TREATED ANALYTICALLY    =
 C G-FACTORS STORED AS VPARA, VPERP AND VDPHI                           =
 C YQL, 08-2007                                                         =
 C=======================================================================
-      SUBROUTINE KG(KPARTICLE)
+      SUBROUTINE KG(JS,KGRID,KPARTICLE)
 
       USE RCOMDM
       USE DIMENSIM
@@ -8203,9 +8203,10 @@ C=======================================================================
       USE KINETICM
       IMPLICIT NONE
 
-      INTEGER    KPARTICLE,J,K,L
+      INTEGER    JS,KGRID,KPARTICLE,J,K,L
       REAL*8     PHASE,DIFPI
       COMPLEX*16 EPHASE,FL,FU,CTMP
+      LOGICAL    OTRACE
       
       REAL*8 DIFFERCHI
 
@@ -8215,6 +8216,8 @@ C=======================================================================
       VPARA = 0.0
       VPERP = 0.0
       VDPHI = 0.0
+      OTRACE = .FALSE.
+      IF (KPARTICLE.EQ.0) CALL KELLTRACESELECT(JS,KGRID,OTRACE)
 
       DO J=2,NCHI2+1
          RVAK1(J) = RJBK(J)*SQRT(1-LAM/RHK(J))
@@ -8276,6 +8279,9 @@ C           PASSING PARTICLES
       VPERP = VPERP*RCHIHK/4/PI
       VDPHI = VDPHI*RCHIHK/4/PI
 
+      IF (OTRACE) CALL WRITEKGACTIONTRACE(JS,KGRID,KPARTICLE,LAM,
+     &                                    VPARA,VPERP,VDPHI)
+
       IF (KCHECK.EQ.2.AND.
      &   ABS(RQK-Q(JS0)).LT.1.0E-13) THEN
          IF (ABS(LAMM(2)-LAM).LT.1.0E-13)
@@ -8288,6 +8294,52 @@ C           PASSING PARTICLES
 
       RETURN
       END
+
+C=======================================================================
+C DEFAULT-OFF TRACE OF THE EXECUTED TRAPPED-PARTICLE G-FACTORS.         =
+C THE REQUEST FILE AND SURFACE SELECTION ARE SHARED WITH THE ELL=-1     =
+C KH ACTION TRACE, SO THE TWO FILES CARRY THE SAME (LAMBDA,ELL) ROWS.   =
+C THE PAIR IS WHAT WANG EQ. (15) NEEDS: THE MOMENT-SIDE G WEIGHT AND    =
+C THE LAGRANGIAN-SIDE H WEIGHT OF THE SAME ORBIT ACTION.                =
+C=======================================================================
+      SUBROUTINE WRITEKGACTIONTRACE(JS,KGRID,KPARTICLE,RLAM,
+     &                              ZVPARA,ZVPERP,ZVDPHI)
+
+      USE DIMENSIM
+      USE KINETICM
+      USE ToolBox
+      IMPLICIT NONE
+
+      INTEGER JS,KGRID,KPARTICLE,K,L,FID
+      REAL*8  RLAM
+      COMPLEX*16 ZVPARA(MSMAX,MLMAX),ZVPERP(MSMAX,MLMAX),
+     &           ZVDPHI(MSMAX,MLMAX)
+      LOGICAL OEXIST
+      CHARACTER*64 PATH
+
+      IF (KPARTICLE.NE.0) RETURN
+      WRITE(PATH,'("ELL_M1_TRACE_JS",I4.4,"_G",I1,"_KG.OUT")')
+     &      JS,KGRID
+C$OMP CRITICAL(ELL_TRACE_WRITE)
+      INQUIRE(FILE=PATH,EXIST=OEXIST)
+      FID=ASSIGNFREEFILEUNIT()
+      OPEN(FID,FILE=PATH,STATUS='UNKNOWN',POSITION='APPEND',
+     &     ACTION='WRITE')
+      IF (.NOT.OEXIST) WRITE(FID,*)
+     & '% JS G CLASS LAMBDA M ELL VPARA_RE VPARA_IM VPERP_RE VPERP_IM',
+     & ' VDPHI_RE VDPHI_IM'
+      DO L=1,MLMAX
+         IF (ABS(RLM(L)+1.0).LT.0.1) THEN
+            DO K=1,MSMAX
+               WRITE(FID,1000) JS,KGRID,KPARTICLE,RLAM,RM(K,2),
+     &            RLM(L),ZVPARA(K,L),ZVPERP(K,L),ZVDPHI(K,L)
+            ENDDO
+         ENDIF
+      ENDDO
+      CLOSE(FID)
+C$OMP END CRITICAL(ELL_TRACE_WRITE)
+ 1000 FORMAT(3I8,9(1X,E24.16))
+      END SUBROUTINE WRITEKGACTIONTRACE
 
 C=======================================================================
 C G-FACTOR FUE TO FIRST ORDER FOW CORRECTION 

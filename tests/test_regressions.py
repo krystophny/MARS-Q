@@ -415,6 +415,54 @@ class SourceContractTests(unittest.TestCase):
         self.assertEqual(unsplit, complex(0.375, 2.125))
         self.assertNotAlmostEqual(sum(abs(value) for value in drives), abs(unsplit))
 
+    def test_kg_action_trace_pairs_with_the_kh_action_trace(self) -> None:
+        """Wang Eq. (15) needs both sides of the same orbit action.
+
+        The moment-side G weight and the Lagrangian-side H weight must be
+        written from the same surface request, for the same particle class
+        and the same bounce harmonic, or the two files cannot be combined
+        into one action.
+        """
+        kg = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE KG(JS,KGRID,KPARTICLE)") :
+            KINETIC_SOURCE.index("SUBROUTINE WRITEKGACTIONTRACE")
+        ]
+        writer = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE WRITEKGACTIONTRACE") :
+            KINETIC_SOURCE.index("END SUBROUTINE WRITEKGACTIONTRACE")
+        ]
+        kh_writer = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE WRITEKHACTIONTRACE") :
+            KINETIC_SOURCE.index("END SUBROUTINE WRITEKHACTIONTRACE")
+        ]
+        # Same default-off request file and surface selection as the H trace.
+        self.assertIn("CALL KELLTRACESELECT(JS,KGRID,OTRACE)", kg)
+        self.assertIn("IF (KPARTICLE.EQ.0)", kg)
+        # The trace runs on the normalised G factors, not the raw sums.
+        self.assertLess(
+            kg.index("VDPHI = VDPHI*RCHIHK/4/PI"),
+            kg.index("CALL WRITEKGACTIONTRACE"),
+        )
+        # Trapped class only, ell=-1 only, same as the H trace.
+        for text in (writer, kh_writer):
+            self.assertIn("IF (KPARTICLE.NE.0) RETURN", text)
+            self.assertIn("IF (ABS(RLM(L)+1.0).LT.0.1) THEN", text)
+        self.assertIn('"_KG.OUT"', writer)
+        self.assertIn('"_KH.OUT"', kh_writer)
+        self.assertIn("ELL_TRACE_WRITE", writer)
+
+        # Independent oracle for the pairing the two files are meant to
+        # support.  A modulus-squared action is recovered only when the two
+        # sides are complex conjugates of one another; an unpaired product of
+        # two different complex vectors is not real and carries no fixed sign.
+        h_side = [complex(1.5, -0.25), complex(-0.75, 2.0)]
+        conjugate_pair = sum(value.conjugate() * value for value in h_side)
+        self.assertAlmostEqual(conjugate_pair.imag, 0.0)
+        self.assertGreater(conjugate_pair.real, 0.0)
+        g_side = [complex(0.5, 1.25), complex(3.0, -0.5)]
+        unpaired = sum(g * h for g, h in zip(g_side, h_side, strict=True))
+        self.assertNotAlmostEqual(unpaired.imag, 0.0)
+
     def test_dwk_breakdown_combines_raw_mesh_terms_once(self) -> None:
         calculator = KINETIC_SOURCE[
             KINETIC_SOURCE.index("SUBROUTINE CALCDWKCOMP") :
