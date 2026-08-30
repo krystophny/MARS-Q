@@ -381,6 +381,40 @@ class SourceContractTests(unittest.TestCase):
         self.assertAlmostEqual(split.real, total.real)
         self.assertAlmostEqual(split.imag, total.imag)
 
+    def test_dwk_pressure_trace_reconstructs_before_selected_output(self) -> None:
+        """Complex pressure drives must sum before the weak-form contraction."""
+        calculator = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE CALCDWKCOMP") :
+            KINETIC_SOURCE.index("END SUBROUTINE CALCDWKCOMP")
+        ]
+        writer = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE WRITEDWKPRESSURETRACE") :
+            KINETIC_SOURCE.index("END SUBROUTINE WRITEDWKPRESSURETRACE")
+        ]
+        self.assertIn("DWK_PRESSURE_TRACE.REQUEST", calculator)
+        self.assertLess(
+            calculator.index("CALL WRITEDWKPRESSURETRACE"),
+            calculator.index("PI2 = PI*PI*2.0"),
+        )
+        self.assertIn("PPARAC-SUM(PPARAD,DIM=4)", writer)
+        self.assertIn("PPERPC-SUM(PPERPD,DIM=4)", writer)
+        self.assertIn("EMPTY DWK PRESSURE TRACE REQUEST", writer)
+        self.assertIn("DUPLICATE PRESSURE TRACE IS", writer)
+
+        # Independent complex-linearity oracle. A diagnostic may expose the
+        # five responses separately only when their complex sum, not their
+        # magnitudes or phases in isolation, recovers the unsplit response.
+        drives = [
+            complex(2.0, -1.0),
+            complex(-0.25, 4.5),
+            complex(1.125, 0.75),
+            complex(-3.0, -2.0),
+            complex(0.5, -0.125),
+        ]
+        unsplit = sum(drives)
+        self.assertEqual(unsplit, complex(0.375, 2.125))
+        self.assertNotAlmostEqual(sum(abs(value) for value in drives), abs(unsplit))
+
     def test_dwk_breakdown_combines_raw_mesh_terms_once(self) -> None:
         calculator = KINETIC_SOURCE[
             KINETIC_SOURCE.index("SUBROUTINE CALCDWKCOMP") :
