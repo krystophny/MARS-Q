@@ -159,10 +159,18 @@ The committed coefficient was `-RW2/HK**2/B0K`, whereas this derivation gives
 Consequently the two expressions are numerically identical and the proposed
 `B0K**2` explanation does not apply to this case.
 
-The corrected campaign `tc24-marsk-x3-fix-20260829` completed all four jobs.
-Every corrected `TORQUENTV.OUT` is byte-identical to the corresponding first
-campaign output. In particular, corrected `prod_x3on` still peaks at
-`2.4471e7 N m`, about 240 times the NEO-RT peak. The isolated X3 drive is
-therefore **rejected as a TC24 fix**. Its shape response is sensitivity
-evidence only. Reopening this channel requires deriving and validating the
-complete Park/PENTRC action and normalization, not adding this term alone.
+The corrected-coefficient campaign `tc24-marsk-x3-fix-20260829` completed all
+four jobs. Every corrected `TORQUENTV.OUT` is byte-identical to the
+corresponding first-campaign output because TC24 has `B0K=1`. In particular,
+`prod_x3on` still peaks at `2.4471e7 N m`, about 240 times the NEO-RT peak.
+
+That 240-times response was subsequently traced to a second defect in the
+diagnostic patch. `KH` multiplies `VX1`, `VX2`, `VQ1`, `VQ2`, `VQ3`, and
+`VDP` by the common bounce-average factor
+`RCHIHK*OMEGAB/(4*pi)` after integrating the orbit. The patch omitted this
+factor from `VX3`. The old result is therefore an unnormalized sensitivity
+test and cannot reject the X3 channel. Branch
+`fix/tc24-x3-orbit-average-normalization-20260830` applies the same factor to
+`VX3`. Its exact-input A/B must pass the byte-identical X3-off gate before the
+X3-on result is interpreted. The complete Park/PENTRC action identity remains
+open even if that A/B improves the torque comparison.
