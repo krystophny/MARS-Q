@@ -10218,14 +10218,14 @@ C=======================================================================
             DO IDRIVE=1,5
                DO MS=1,MSMAX
                   WRITE(FID,1000) IS,INDX,KPOUT,IEFFECTOUT,
-     &               IDRIVE,RM(MS,2),CSM(IS),
+     &               IDRIVE,NINT(RM(MS,2)),CSM(IS),
      &               PPARAD(IS,MS,INDX,IDRIVE),
      &               PPERPD(IS,MS,INDX,IDRIVE)
                ENDDO
             ENDDO
          ENDDO
       ENDDO
- 1000 FORMAT(5I7,6(1X,E18.10))
+ 1000 FORMAT(6I7,5(1X,E18.10))
       CLOSE(FID)
       WRITE(*,*) 'WROTE DWK_PRESSURE_TRACE.OUT'
       END SUBROUTINE WRITEDWKPRESSURETRACE
