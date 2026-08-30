@@ -9451,7 +9451,8 @@ C     PERPENDICULAR KINETIC PRESSURE
       
       SUBROUTINE CALCPRECOMP(I,IDRIVE,PPARAC,PPERPC,
      &                       ASUBM,BSUBM,CSUBM,DSUBM,
-     &                       ESUBM,FSUBM,GSUBM,HSUBM)
+     &                       ESUBM,FSUBM,GSUBM,HSUBM,
+     &                       PMASSLU,QMASSLU,IPIVP,IPIVQ)
       USE RCOMDM
       USE DIMENSIM
       USE GLOBALM
@@ -9463,13 +9464,15 @@ C     PERPENDICULAR KINETIC PRESSURE
       INCLUDE 'compam.inc'
       INCLUDE 'comioc.inc'
 
-      INTEGER    I,IDRIVE,J,MROW,MSA,MSB,MS
+      INTEGER    I,IDRIVE,J,MROW,MSA,MSB,MS,INFO
       INTEGER    LXCOL,LYCOL,LXROW,LYROW
-      REAL*8     HCHI
-      COMPLEX*16 CTMP1
+      INTEGER,DIMENSION(MSMAX):: IPIVP,IPIVQ
+      REAL*8     HCHI,PRESSRES,PRESSCALE
+      COMPLEX*16 CTMP1,CTMP4
+      COMPLEX*16,DIMENSION(MSMAX,MSMAX):: PMASSLU,QMASSLU
       COMPLEX*16,DIMENSION(NRP1,MSMAX)::    PPARAC,PPERPC
       COMPLEX*16,DIMENSION(:),ALLOCATABLE:: JPPARA,JPPERP
-      COMPLEX*16,DIMENSION(:),ALLOCATABLE:: CTMP2,CTMP3
+      COMPLEX*16,DIMENSION(:),ALLOCATABLE:: CTMP2,CTMP3,PSOLVE
       
       ALLOCATE (JPPARA(MSMAX),JPPERP(MSMAX),CTMP2(NCHI),CTMP3(NCHI))
       JPPARA=0.0
@@ -9519,7 +9522,57 @@ C     PRODUCTION SUM; 1: X1, 2: X2, 3: B1, 4: B2, 5: B3.
       ENDDO
       ENDDO
 	  
-C     COMPUTATION OF PPERP AND PPARA  
+C     COMPUTATION OF PPERP AND PPARA
+      IF (KPRESSMASS.EQ.1) THEN
+         ALLOCATE(PSOLVE(MSMAX))
+         PSOLVE=JPPARA
+         CALL ZGETRS('N',MSMAX,1,PMASSLU,MSMAX,IPIVP,
+     &               PSOLVE,MSMAX,INFO)
+         IF (INFO.NE.0) THEN
+            WRITE(*,*) 'PARALLEL PRESSURE MASS SOLVE FAILED',INFO
+            STOP 1
+         ENDIF
+         PPARAC(I,:)=PSOLVE
+         PSOLVE=JPPERP
+         CALL ZGETRS('N',MSMAX,1,QMASSLU,MSMAX,IPIVQ,
+     &               PSOLVE,MSMAX,INFO)
+         IF (INFO.NE.0) THEN
+            WRITE(*,*) 'PERP PRESSURE MASS SOLVE FAILED',INFO
+            STOP 1
+         ENDIF
+         PPERPC(I,:)=PSOLVE
+
+C        Independent algebraic residual against the unmodified assembled
+C        pressure blocks.  The LU factors above are never used as the oracle.
+         PRESSRES=0.0D0
+         PRESSCALE=MAX(MAXVAL(ABS(JPPARA)),MAXVAL(ABS(JPPERP)),
+     &                  1.0D-300)
+         DO MROW=1,MSMAX
+            LYROW=(MROW-1)*NYCOMP
+            CTMP1=0.0D0
+            CTMP4=0.0D0
+            DO MSA=1,MSMAX
+               LYCOL=(MSA-1)*NYCOMP
+               CTMP1=CTMP1-DSUBM(KYPPARA+LYROW,
+     &                            KYPPARA+LYCOL,I)*PPARAC(I,MSA)
+               CTMP4=CTMP4-DSUBM(KYPPERP+LYROW,
+     &                            KYPPERP+LYCOL,I)*PPERPC(I,MSA)
+            ENDDO
+            PRESSRES=MAX(PRESSRES,ABS(CTMP1-JPPARA(MROW)),
+     &                               ABS(CTMP4-JPPERP(MROW)))
+         ENDDO
+         IF (PRESSRES.GT.1.0D-10*PRESSCALE) THEN
+            WRITE(*,*) 'PRESSURE MASS SOLVE RESIDUAL FAILED',
+     &                 PRESSRES,PRESSCALE
+            STOP 1
+         ENDIF
+         DEALLOCATE(PSOLVE)
+         DEALLOCATE(JPPARA,JPPERP,CTMP2,CTMP3)
+         RETURN
+      ENDIF
+
+C     Legacy recovery: transform to real space, divide by the cell-centre
+C     Jacobian, and project back onto the retained harmonic basis.
       CTMP2=0.0
       CTMP3=0.0
       HCHI = 2.*PI/NCHI
@@ -9692,6 +9745,9 @@ C     COMPUTATION OF PPERP AND PPARA
       COMPLEX*16,DIMENSION(:,:,:,:),ALLOCATABLE,TARGET:: 
      &                  BUFFER_DATA1,BUFFER_DATA2,BUFFER_DATAM
       COMPLEX*16,DIMENSION(:,:,:,:),POINTER:: TMPPOT
+      COMPLEX*16,DIMENSION(:,:),ALLOCATABLE:: PMASSLU,QMASSLU
+      INTEGER,DIMENSION(:),ALLOCATABLE:: IPIVP,IPIVQ
+      INTEGER INFO
 
       IF (INCKIN.NE.1) RETURN
       IF (.NOT. ODWKCOM) RETURN
@@ -9738,6 +9794,8 @@ C     COMPUTATION OF PPERP AND PPARA
       ALLOCATE (BUFFER_DATA1(MSMAX,MSMAX,TOTINDX,30),
      &          BUFFER_DATA2(MSMAX,MSMAX,TOTINDX,30),
      &          BUFFER_DATAM(MSMAX,MSMAX,TOTINDX,30))
+      ALLOCATE (PMASSLU(MSMAX,MSMAX),QMASSLU(MSMAX,MSMAX),
+     &          IPIVP(MSMAX),IPIVQ(MSMAX))
       DWPPARX = 0.0
       DWPPERX = 0.0
       DWPPARY = 0.0
@@ -9785,6 +9843,31 @@ C     READ MARTIX FROM BINARY FILES ON EACH SURFACE
          CACHEMAX = MAX(CACHEMAX,
      &      MAXVAL(ABS(BUFFER_I)),MAXVAL(ABS(BUFFERM_I)),
      &      MAXVAL(ABS(BUFFER_I1)))
+
+C        Factor the exact pressure mass blocks once per surface and reuse
+C        their LU factors for every kinetic component and isolated drive.
+         IF (KPRESSMASS.EQ.1) THEN
+            DO MROW=1,MSMAX
+               LXROW=(MROW-1)*NYCOMP
+               DO MSA=1,MSMAX
+                  LYCOL=(MSA-1)*NYCOMP
+                  PMASSLU(MROW,MSA)=-DSUBM(KYPPARA+LXROW,
+     &                                      KYPPARA+LYCOL,IS)
+                  QMASSLU(MROW,MSA)=-DSUBM(KYPPERP+LXROW,
+     &                                      KYPPERP+LYCOL,IS)
+               ENDDO
+            ENDDO
+            CALL ZGETRF(MSMAX,MSMAX,PMASSLU,MSMAX,IPIVP,INFO)
+            IF (INFO.NE.0) THEN
+               WRITE(*,*) 'PARALLEL PRESSURE MASS FACTOR FAILED',INFO
+               STOP 1
+            ENDIF
+            CALL ZGETRF(MSMAX,MSMAX,QMASSLU,MSMAX,IPIVQ,INFO)
+            IF (INFO.NE.0) THEN
+               WRITE(*,*) 'PERP PRESSURE MASS FACTOR FAILED',INFO
+               STOP 1
+            ENDIF
+         ENDIF
          
          DO INDX=1,TOTINDX
 C     FILL IN THE GLOBAL MATRIX FOR PRESSURE CALCULATION
@@ -9794,7 +9877,8 @@ C     FILL IN THE GLOBAL MATRIX FOR PRESSURE CALCULATION
 C     CALCULATE THE COMPONENTS OF PRESSURE     
             CALL CALCPRECOMP(IS,0,PPARAC(:,:,INDX),PPERPC(:,:,INDX),
      &                       ASUBM,BSUBM,CSUBM,DSUBM,
-     &                       ESUBM,FSUBM,GSUBM,HSUBM)
+     &                       ESUBM,FSUBM,GSUBM,HSUBM,
+     &                       PMASSLU,QMASSLU,IPIVP,IPIVQ)
 C     CALCULATE ENERGY PROFILE OF DIFFERENT COMPONENTS
             CALL CALCDWKPROF (IS,PPARAC(:,:,INDX),PPERPC(:,:,INDX),
      &                        DWPPERX(:,INDX),DWPPERY(:,INDX),
@@ -9812,7 +9896,8 @@ C     CALCULATE ENERGY PROFILE OF DIFFERENT COMPONENTS
      &                          PPARAD(:,:,INDX,IDRIVE),
      &                          PPERPD(:,:,INDX,IDRIVE),
      &                          ASUBM,BSUBM,CSUBM,DSUBM,
-     &                          ESUBM,FSUBM,GSUBM,HSUBM)
+     &                          ESUBM,FSUBM,GSUBM,HSUBM,
+     &                          PMASSLU,QMASSLU,IPIVP,IPIVQ)
                CALL CALCDWKPROF(IS,PPARAD(:,:,INDX,IDRIVE),
      &                          PPERPD(:,:,INDX,IDRIVE),
      &                          DWPPERXD(:,INDX,IDRIVE),
@@ -10093,6 +10178,7 @@ C     OUTPUT THE ENERGY COMPONENTS
      &              DWK2CROSSYD,DWK2CROSSX1YD,DWK2CROSSX2YD)
       ENDIF
       DEALLOCATE (BUFFER_DATA1,BUFFER_DATA2,BUFFER_DATAM)
+      DEALLOCATE (PMASSLU,QMASSLU,IPIVP,IPIVQ)
 
       CALL DEALLOCATEDWKCOMPMAT
 

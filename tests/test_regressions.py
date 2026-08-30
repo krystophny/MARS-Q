@@ -415,6 +415,31 @@ class SourceContractTests(unittest.TestCase):
         self.assertEqual(unsplit, complex(0.375, 2.125))
         self.assertNotAlmostEqual(sum(abs(value) for value in drives), abs(unsplit))
 
+    def test_exact_pressure_mass_recovery_is_opt_in_and_residual_gated(self) -> None:
+        """The assembled GG(J) solve must not change the legacy default."""
+        globalm = (ROOT / "MarsQ_2FK" / "globalm.f").read_text()
+        pressure = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE CALCPRECOMP") :
+            KINETIC_SOURCE.index("END SUBROUTINE CALCPRECOMP")
+        ]
+        calculator = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE CALCDWKCOMP") :
+            KINETIC_SOURCE.index("END SUBROUTINE CALCDWKCOMP")
+        ]
+        self.assertIn("KPRESSMASS", globalm)
+        self.assertIn("KPRESSMASS", NEWRUN)
+        self.assertIn("KPRESSMASS= 0", MARS_SOURCE)
+        self.assertIn("KPRESSMASS MUST BE 0 OR 1", MARS_SOURCE)
+        self.assertIn("IF (KPRESSMASS.EQ.1) THEN", pressure)
+        self.assertIn("CALL ZGETRS('N',MSMAX,1,PMASSLU", pressure)
+        self.assertIn("PRESSURE MASS SOLVE RESIDUAL FAILED", pressure)
+        self.assertIn("CTMP2(J) = CTMP2(J) / RJAM(I,J)", pressure)
+        self.assertIn("CALL ZGETRF(MSMAX,MSMAX,PMASSLU", calculator)
+        self.assertLess(
+            calculator.index("CALL ZGETRF(MSMAX,MSMAX,PMASSLU"),
+            calculator.index("DO INDX=1,TOTINDX"),
+        )
+
     def test_dwk_breakdown_combines_raw_mesh_terms_once(self) -> None:
         calculator = KINETIC_SOURCE[
             KINETIC_SOURCE.index("SUBROUTINE CALCDWKCOMP") :
@@ -649,6 +674,11 @@ class SourceContractTests(unittest.TestCase):
 
 class ExecutableInputTests(unittest.TestCase):
     """Black-box tests that stop before equilibrium files are needed."""
+
+    def test_pressure_mass_mode_rejects_unknown_value(self) -> None:
+        result = run_with_input(minimal_input(kinetic="KPRESSMASS=2"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("KPRESSMASS MUST BE 0 OR 1", result.stdout)
 
     def test_unknown_namelist_key_is_actionable_and_nonzero(self) -> None:
         result = run_with_input(minimal_input().replace("&BASIC", "&BASIC\n BADKEY=1"))
