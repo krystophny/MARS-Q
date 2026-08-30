@@ -3275,6 +3275,8 @@ C=======================================================================
 
       INTEGER KCHECK
       REAL*8 TI0_TMP,TE0_TMP
+      REAL*8, PARAMETER :: QE_SI=1.6021917E-19
+      REAL*8, PARAMETER :: MU0_SI=4.0E-7*PI
       KCHECK=0
 
 C     DENSITY FRACTION FOR THERMAL ELECTRONS IS ALWAYS 1
@@ -3336,8 +3338,19 @@ C     RESCALE THERMAL PRESSURE WITH THE EXPERIMENTAL TEMPERATURE PROFILES
           ENDDO
           ESPECIES_PRE(:,1,1) = PEQ-ESPECIES_PRE(:,1,2)
           ESPECIES_PRE(:,2,1) = PEQM-ESPECIES_PRE(:,2,2)
-          TI0_TMP=ALPHAP*ESPECIES_PRE(1,1,1)/ESPECIES_DEN(1,1,1)
-          TE0_TMP=(1-ALPHAP)*ESPECIES_PRE(1,1,1)/ESPECIES_DEN(1,1,2)
+          IF (KPROFTAUTH.EQ.1) THEN
+C           NPROFIE=4,NEXPV=1 retain the dimensional input amplitudes in
+C           ZTI0/ZTE0. Convert temperature directly to MARS pressure/density
+C           units; do not reconstruct it through PEQ, ALPHAP, or species
+C           density, which would make temperature authority charge-specific.
+             TI0_TMP=ZTI0*ZNE0*QE_SI/B0EXP**2*MU0_SI
+             TE0_TMP=ZTE0*ZNE0*QE_SI/B0EXP**2*MU0_SI
+          ELSE
+             TI0_TMP=ALPHAP*ESPECIES_PRE(1,1,1)
+     &              /ESPECIES_DEN(1,1,1)
+             TE0_TMP=(1-ALPHAP)*ESPECIES_PRE(1,1,1)
+     &              /ESPECIES_DEN(1,1,2)
+          ENDIF
           ESPECIES_TEM(:,1,1) = TI0_TMP*TEMPI  
           ESPECIES_TEM(:,2,1) = TI0_TMP*TEMPIM  
           ESPECIES_TEM(:,1,2) = TE0_TMP*TEMPE  
@@ -3346,15 +3359,23 @@ C     RESCALE THERMAL PRESSURE WITH THE EXPERIMENTAL TEMPERATURE PROFILES
 
           ESPECIES_PREF(:,:,1:2) = ESPECIES_TEM(:,:,1:2)
      &                           * ESPECIES_DEN(:,:,1:2)
-          ESPECIES_PREF(:,:,1) = ESPECIES_PREF(:,:,1)
-     &                         / ( ESPECIES_PREF(:,:,1)
-     &                         + ESPECIES_PREF(:,:,2) )
-          ESPECIES_PREF(:,:,2) = 1.0 
-     &                         - ESPECIES_PREF(:,:,1)
-          ESPECIES_PRE(:,:,2) = ESPECIES_PRE(:,:,1)
-     &                        * ESPECIES_PREF(:,:,2)
-          ESPECIES_PRE(:,:,1) = ESPECIES_PRE(:,:,1)
-     &                        * ESPECIES_PREF(:,:,1)
+          IF (KPROFTAUTH.EQ.1) THEN
+             ESPECIES_PRE(:,:,1:2) = ESPECIES_PREF(:,:,1:2)
+             ESPECIES_PREF(:,:,1) = ESPECIES_PRE(:,:,1)
+     &                            / ( ESPECIES_PRE(:,:,1)
+     &                            + ESPECIES_PRE(:,:,2) )
+             ESPECIES_PREF(:,:,2) = 1.0-ESPECIES_PREF(:,:,1)
+          ELSE
+             ESPECIES_PREF(:,:,1) = ESPECIES_PREF(:,:,1)
+     &                            / ( ESPECIES_PREF(:,:,1)
+     &                            + ESPECIES_PREF(:,:,2) )
+             ESPECIES_PREF(:,:,2) = 1.0
+     &                            - ESPECIES_PREF(:,:,1)
+             ESPECIES_PRE(:,:,2) = ESPECIES_PRE(:,:,1)
+     &                           * ESPECIES_PREF(:,:,2)
+             ESPECIES_PRE(:,:,1) = ESPECIES_PRE(:,:,1)
+     &                           * ESPECIES_PREF(:,:,1)
+          ENDIF
 
       ENDIF
 
