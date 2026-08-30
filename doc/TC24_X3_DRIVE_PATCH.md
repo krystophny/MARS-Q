@@ -1,6 +1,19 @@
 # Diagnostic `gg3 X3 d|B0|/dchi` drive term for `KNTV=21`
 
-## The candidate discrepancy
+## Diagnostic scope
+
+This branch is a sensitivity experiment, not a candidate production fix.
+Native MARS `X1/X2/X3` are field-aligned variables despite stale comments in
+`globalm.f`: the physical-output transform gives the `X3` poloidal vector as
+`X3*(B_R,B_Z)`, and `ntv_pre.f` maps it to `xi^chi` with
+`gg3=DPSIDS/J=B^chi`. Liu et al. (2008), Eq. 12, formulates the kinetic drive
+with the two perpendicular displacement components and the parallel
+Lagrangian-field component. Adding `gg3*X3*dB/dchi` alone therefore adds only
+one member of the complete action and cannot be promoted, even if its torque
+happens to improve. The exact source-level basis proof is recorded as
+fortsym residuals `r53`--`r56` in `plasma-sign-conventions@556a3ee`.
+
+## The tested term
 
 `CALCDWKCOMP` builds the kinetic drive from `X1U, X2U, B1U, B2U, B3U`. There
 is no `X3` column anywhere in `kinetic.f`. The advective drive is
