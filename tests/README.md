@@ -18,6 +18,7 @@ upstream baseline `8824bb1`:
 | validated DWK cache recovery | narrow namelist contract and KJP bypass | failed-after-cache ITER runs resume without coefficient regeneration |
 | deterministic frequency diagnostic | `RUU2` is thread-private with its per-surface consumers | repeated OpenMP `FREQUENCIES.OUT` comparison |
 | two-species frequency diagnostic | hot-ion `SLAM0(:,3)` is read only when species three exists | GNU `-fcheck=all` MAST-U run |
+| thermal trapped bounce-drift switch | documented `PSPECIES_NDB` multiplies drift in the isotropic `KI_BOUNCE` denominator, as it already does in the anisotropic path | frozen TC24 `NDB=+1/-1` A/B; `+1` must preserve baseline and `-1` must change the response |
 | retained DWK component workspace | idempotent allocation, component-map, and shape contracts | KNTV=21 reaches `TORQUENTV.OUT` after kinetic assembly |
 | default-off trapped `ell=-1` trace | request gate, executed `KIA_TRAP` path, selected-surface replay, and cache-write suppression | accepted full-harmonic cache replay reproduces torque while emitting only requested pitch-energy traces |
 | independent DWK density check | numerical angular-quadrature oracle and source normalization contract | opt-in direct check closes against the component density without an extra `4*pi^2` factor |
