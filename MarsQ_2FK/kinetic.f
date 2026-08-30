@@ -3380,6 +3380,14 @@ C     RESCALE THERMAL PRESSURE WITH THE EXPERIMENTAL TEMPERATURE PROFILES
           ESPECIES_PRE(:,2,1) = PEQM-ESPECIES_PRE(:,2,2)
           TI0_TMP=ALPHAP*ESPECIES_PRE(1,1,1)/ESPECIES_DEN(1,1,1)
           TE0_TMP=(1-ALPHAP)*ESPECIES_PRE(1,1,1)/ESPECIES_DEN(1,1,2)
+          IF (KPROFTAUTH.EQ.1) THEN
+C           NPROFIE=4 has already set FRACPTH from dimensional Ti0+Te0.
+C           Legacy initialization omits that factor and then forces the
+C           supplied temperature shapes back onto PEQ.  The opt-in path keeps
+C           both experimental amplitudes and shapes instead.
+             TI0_TMP=TI0_TMP*FRACPTH
+             TE0_TMP=TE0_TMP*FRACPTH
+          ENDIF
           ESPECIES_TEM(:,1,1) = TI0_TMP*TEMPI  
           ESPECIES_TEM(:,2,1) = TI0_TMP*TEMPIM  
           ESPECIES_TEM(:,1,2) = TE0_TMP*TEMPE  
@@ -3388,15 +3396,23 @@ C     RESCALE THERMAL PRESSURE WITH THE EXPERIMENTAL TEMPERATURE PROFILES
 
           ESPECIES_PREF(:,:,1:2) = ESPECIES_TEM(:,:,1:2)
      &                           * ESPECIES_DEN(:,:,1:2)
-          ESPECIES_PREF(:,:,1) = ESPECIES_PREF(:,:,1)
-     &                         / ( ESPECIES_PREF(:,:,1)
-     &                         + ESPECIES_PREF(:,:,2) )
-          ESPECIES_PREF(:,:,2) = 1.0 
-     &                         - ESPECIES_PREF(:,:,1)
-          ESPECIES_PRE(:,:,2) = ESPECIES_PRE(:,:,1)
-     &                        * ESPECIES_PREF(:,:,2)
-          ESPECIES_PRE(:,:,1) = ESPECIES_PRE(:,:,1)
-     &                        * ESPECIES_PREF(:,:,1)
+          IF (KPROFTAUTH.EQ.1) THEN
+             ESPECIES_PRE(:,:,1:2) = ESPECIES_PREF(:,:,1:2)
+             ESPECIES_PREF(:,:,1) = ESPECIES_PRE(:,:,1)
+     &                            / ( ESPECIES_PRE(:,:,1)
+     &                            + ESPECIES_PRE(:,:,2) )
+             ESPECIES_PREF(:,:,2) = 1.0-ESPECIES_PREF(:,:,1)
+          ELSE
+             ESPECIES_PREF(:,:,1) = ESPECIES_PREF(:,:,1)
+     &                            / ( ESPECIES_PREF(:,:,1)
+     &                            + ESPECIES_PREF(:,:,2) )
+             ESPECIES_PREF(:,:,2) = 1.0
+     &                            - ESPECIES_PREF(:,:,1)
+             ESPECIES_PRE(:,:,2) = ESPECIES_PRE(:,:,1)
+     &                           * ESPECIES_PREF(:,:,2)
+             ESPECIES_PRE(:,:,1) = ESPECIES_PRE(:,:,1)
+     &                           * ESPECIES_PREF(:,:,1)
+          ENDIF
 
       ENDIF
 
