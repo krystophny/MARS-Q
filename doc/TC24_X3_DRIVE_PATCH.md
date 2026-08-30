@@ -1,6 +1,6 @@
-# Adding the missing `gg3 X3 d|B0|/dchi` drive term to `KNTV=21`
+# Diagnostic `gg3 X3 d|B0|/dchi` drive term for `KNTV=21`
 
-## The defect
+## The candidate discrepancy
 
 `CALCDWKCOMP` builds the kinetic drive from `X1U, X2U, B1U, B2U, B3U`. There
 is no `X3` column anywhere in `kinetic.f`. The advective drive is
@@ -8,7 +8,7 @@ is no `X3` column anywhere in `kinetic.f`. The advective drive is
     dB = X1 d|B0|/ds + xi^chi d|B0|/dchi
     xi^chi = gg1 X1 + gg2 X2 + gg3 X3
 
-so `KNTV=21` omits exactly `gg3 X3 d|B0|/dchi`. MARS's own `KNTV=11` path
+so `KNTV=21` does not carry an explicit `gg3 X3 d|B0|/dchi` column. MARS's own `KNTV=11` path
 includes it — `ntv_pre.f:346-350` assembles all three `gg` terms — so the two
 MARS routes disagree on the drive. ARES measures the omitted term on the
 converter-side control (phiI010) at core `7.07e-4`, mid `0.248` and edge
@@ -105,7 +105,7 @@ against an independent oracle, never against its own plausibility:
 
 Until 1 and 2 pass, no run from this branch is a TC24 result.
 
-## Coefficient correction (2026-08-29): RX3 was wrong by B0K squared
+## Coefficient re-derivation (2026-08-29)
 
 The first campaign (`tc24-marsk-x3-drive-20260829`) passed its inertness gate
 — `prod_x3off` reproduced the accepted `phiI010-l5` torque byte for byte — and
@@ -154,12 +154,15 @@ RX3 = gg3*(dB/dchi)*C = (DPSIDS/RJA)*(-RW2*B0K/HK**2)*(RJA/DPSIDS)
     = -RW2*B0K/HK**2
 ```
 
-The committed coefficient was `-RW2/HK**2/B0K`. It **divided** by `B0K` where
-it must **multiply**, an error of `B0K**2`, which is the right order to
-explain a two-orders-of-magnitude overshoot.
+The committed coefficient was `-RW2/HK**2/B0K`, whereas this derivation gives
+`-RW2*B0K/HK**2`. For the TC24 deck, however, MARS prints `B0K=1.0`.
+Consequently the two expressions are numerically identical and the proposed
+`B0K**2` explanation does not apply to this case.
 
-The shape result from the first campaign still stands as evidence that the
-`X3` channel is the right lever — a mis-scaled term cannot invent the
-smoothing of both rational-surface features. The magnitude does not, and no
-`KX3DRIVE=1` number is quotable until the corrected coefficient reruns behind
-its own inertness gate.
+The corrected campaign `tc24-marsk-x3-fix-20260829` completed all four jobs.
+Every corrected `TORQUENTV.OUT` is byte-identical to the corresponding first
+campaign output. In particular, corrected `prod_x3on` still peaks at
+`2.4471e7 N m`, about 240 times the NEO-RT peak. The isolated X3 drive is
+therefore **rejected as a TC24 fix**. Its shape response is sensitivity
+evidence only. Reopening this channel requires deriving and validating the
+complete Park/PENTRC action and normalization, not adding this term alone.
