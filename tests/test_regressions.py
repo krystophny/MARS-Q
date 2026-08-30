@@ -348,6 +348,39 @@ class SourceContractTests(unittest.TestCase):
         total_torque = factor * (-sum(drives)).imag
         self.assertAlmostEqual(split_torque, total_torque)
 
+    def test_dwk_bilinear_ledger_splits_drive_and_work_once(self) -> None:
+        """The 5x2 ledger must recover the unchanged radial work density."""
+        calculator = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE CALCDWKCOMP") :
+            KINETIC_SOURCE.index("END SUBROUTINE CALCDWKCOMP")
+        ]
+        writer = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE WRITEDWKBILINEARLEDGER") :
+            KINETIC_SOURCE.index("END SUBROUTINE WRITEDWKBILINEARLEDGER")
+        ]
+        self.assertIn("DWK_BILINEAR_LEDGER.REQUEST", calculator)
+        self.assertLess(
+            calculator.index("CALL WRITEDWKBILINEARLEDGER"),
+            calculator.index("PI2 = PI*PI*2.0"),
+        )
+        self.assertIn("FAILED TO RECONSTRUCT TOTAL", writer)
+        self.assertNotIn("*CSH(IS)", writer)
+
+        # Independent arithmetic oracle for five pressure-drive columns and
+        # the integer-X1/half-mesh-X2 work rows.
+        x_left = [complex(i + 1.0, 0.25 - i) for i in range(5)]
+        x_right = [complex(-0.5 * i, i + 0.75) for i in range(5)]
+        y_half = [complex(0.125 * i, -0.2 * (i + 1)) for i in range(5)]
+        split = sum(
+            math.pi**2 * (left + right) + 2.0 * math.pi**2 * half
+            for left, right, half in zip(x_left, x_right, y_half, strict=True)
+        )
+        total = 2.0 * math.pi**2 * (
+            sum(y_half) + 0.5 * (sum(x_left) + sum(x_right))
+        )
+        self.assertAlmostEqual(split.real, total.real)
+        self.assertAlmostEqual(split.imag, total.imag)
+
     def test_dwk_breakdown_combines_raw_mesh_terms_once(self) -> None:
         calculator = KINETIC_SOURCE[
             KINETIC_SOURCE.index("SUBROUTINE CALCDWKCOMP") :
