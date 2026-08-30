@@ -9550,6 +9550,7 @@ C     COMPUTATION OF PPERP AND PPARA
       SUBROUTINE CALCDWKPROF (IS,PPARAC,PPERPC,
      &                        DWPPERX,DWPPERY,DWPPARX,DWPPARY,
      &                        DWK2BASEX,DWK2BASEY,DWK2CROSSY,
+     &                        DWK2CROSSX1Y,DWK2CROSSX2Y,
      &                        ASUBM,BSUBM,CSUBM,DSUBM,
      &                        ESUBM,FSUBM,GSUBM,HSUBM)
       USE RCOMDM
@@ -9568,7 +9569,8 @@ C     COMPUTATION OF PPERP AND PPARA
       COMPLEX*16,DIMENSION(NRP1)::DWPPARX,DWPPERX,
      &                                     DWPPARY,DWPPERY,
      &                                     DWK2BASEX,DWK2BASEY,
-     &                                     DWK2CROSSY
+     &                                     DWK2CROSSY,
+     &                                     DWK2CROSSX1Y,DWK2CROSSX2Y
       INTEGER    MROW,MSA,MSB,MSMI,MSPL,NSA,NSB,I
       PARAMETER  (NSA=2,NSB=1)
       INTEGER    LXCOL,LYCOL,LXROW,LYROW
@@ -9621,6 +9623,13 @@ C     COMPUTATION OF PPERP AND PPARA
      &         FSUBM(LYROW+KYPR,LXCOL+KXV1,I)*X1U(I,MSA)+
      &         GSUBM(LYROW+KYPR,LXCOL+KXV1,I)*X1U(I+1,MSA)+
      &         DSUBM(LYROW+KYPR,LYCOL+KYV2,I)*X2U(I,MSA))
+               DWK2CROSSX1Y(I)=DWK2CROSSX1Y(I)+
+     &         ZEM*PPERPC(I,MROW)*CONJG(
+     &         FSUBM(LYROW+KYPR,LXCOL+KXV1,I)*X1U(I,MSA)+
+     &         GSUBM(LYROW+KYPR,LXCOL+KXV1,I)*X1U(I+1,MSA))
+               DWK2CROSSX2Y(I)=DWK2CROSSX2Y(I)+
+     &         ZEM*PPERPC(I,MROW)*CONJG(
+     &         DSUBM(LYROW+KYPR,LYCOL+KYV2,I)*X2U(I,MSA))
             ENDIF
             ENDIF
             IF (KYPPARA.GT.0) 
@@ -9666,16 +9675,20 @@ C     COMPUTATION OF PPERP AND PPARA
      &        ODRIVETERMS,OKELEDGER,OCACHEFINITE
       REAL*8 PI2,CACHEMAX,FIELDMAX,OPPARAMAX,OPPERPMAX,
      &       PPARAMAX,PPERPMAX,DRIVERESID,DRIVESCALE
-      COMPLEX*16,DIMENSION(:),ALLOCATABLE:: DWPPARA,DWPPERP,DWK,
-     &        DWK2DUMMYX,DWK2DUMMYY,DWK2DUMMYC
+      COMPLEX*16,DIMENSION(:),ALLOCATABLE:: DWPPARA,DWPPERP,DWK
       COMPLEX*16,DIMENSION(:,:),ALLOCATABLE::DWPPARX,DWPPERX,
      &                                       DWPPARY,DWPPERY,
      &                                       DWK2BASEX,DWK2BASEY,
-     &                                       DWK2CROSSY
+     &                                       DWK2CROSSY,
+     &                                       DWK2CROSSX1Y,DWK2CROSSX2Y
       COMPLEX*16,DIMENSION(:,:,:),ALLOCATABLE:: PPARAC,PPERPC
       COMPLEX*16,DIMENSION(:,:,:,:),ALLOCATABLE:: PPARAD,PPERPD
       COMPLEX*16,DIMENSION(:,:,:),ALLOCATABLE::DWPPARXD,DWPPERXD,
-     &                                        DWPPARYD,DWPTERYD
+     &                                        DWPPARYD,DWPTERYD,
+     &                                        DWK2BASEXD,DWK2BASEYD,
+     &                                        DWK2CROSSYD,
+     &                                        DWK2CROSSX1YD,
+     &                                        DWK2CROSSX2YD
       COMPLEX*16,DIMENSION(:,:,:,:),ALLOCATABLE,TARGET:: 
      &                  BUFFER_DATA1,BUFFER_DATA2,BUFFER_DATAM
       COMPLEX*16,DIMENSION(:,:,:,:),POINTER:: TMPPOT
@@ -9693,7 +9706,9 @@ C     COMPUTATION OF PPERP AND PPARA
       ALLOCATE (DWPPARX(NRP1,TOTINDX),DWPPERX(NRP1,TOTINDX),
      &          DWPPARY(NRP1,TOTINDX),DWPPERY(NRP1,TOTINDX) )
       ALLOCATE (DWK2BASEX(NRP1,TOTINDX),DWK2BASEY(NRP1,TOTINDX),
-     &          DWK2CROSSY(NRP1,TOTINDX))
+     &          DWK2CROSSY(NRP1,TOTINDX),
+     &          DWK2CROSSX1Y(NRP1,TOTINDX),
+     &          DWK2CROSSX2Y(NRP1,TOTINDX))
       ALLOCATE (PPARAC(NRP1,MSMAX,TOTINDX),PPERPC(NRP1,MSMAX,TOTINDX))
       IF (ODRIVETERMS) THEN
          ALLOCATE(PPARAD(NRP1,MSMAX,TOTINDX,5),
@@ -9701,18 +9716,23 @@ C     COMPUTATION OF PPERP AND PPARA
          ALLOCATE(DWPPARXD(NRP1,TOTINDX,5),
      &            DWPPERXD(NRP1,TOTINDX,5),
      &            DWPPARYD(NRP1,TOTINDX,5),
-     &            DWPTERYD(NRP1,TOTINDX,5))
-         ALLOCATE(DWK2DUMMYX(NRP1),DWK2DUMMYY(NRP1),
-     &            DWK2DUMMYC(NRP1))
+     &            DWPTERYD(NRP1,TOTINDX,5),
+     &            DWK2BASEXD(NRP1,TOTINDX,5),
+     &            DWK2BASEYD(NRP1,TOTINDX,5),
+     &            DWK2CROSSYD(NRP1,TOTINDX,5),
+     &            DWK2CROSSX1YD(NRP1,TOTINDX,5),
+     &            DWK2CROSSX2YD(NRP1,TOTINDX,5))
          PPARAD=0.0
          PPERPD=0.0
          DWPPARXD=0.0
          DWPPERXD=0.0
          DWPPARYD=0.0
          DWPTERYD=0.0
-         DWK2DUMMYX=0.0
-         DWK2DUMMYY=0.0
-         DWK2DUMMYC=0.0
+         DWK2BASEXD=0.0
+         DWK2BASEYD=0.0
+         DWK2CROSSYD=0.0
+         DWK2CROSSX1YD=0.0
+         DWK2CROSSX2YD=0.0
       ENDIF
       ALLOCATE (BUFFER_DATA1(MSMAX,MSMAX,TOTINDX,30),
      &          BUFFER_DATA2(MSMAX,MSMAX,TOTINDX,30),
@@ -9724,6 +9744,8 @@ C     COMPUTATION OF PPERP AND PPARA
       DWK2BASEX = 0.0
       DWK2BASEY = 0.0
       DWK2CROSSY = 0.0
+      DWK2CROSSX1Y = 0.0
+      DWK2CROSSX2Y = 0.0
       
       PPARAC  = 0.0
       PPERPC  = 0.0
@@ -9778,6 +9800,8 @@ C     CALCULATE ENERGY PROFILE OF DIFFERENT COMPONENTS
      &                        DWPPARX(:,INDX),DWPPARY(:,INDX),
      &                        DWK2BASEX(:,INDX),DWK2BASEY(:,INDX),
      &                        DWK2CROSSY(:,INDX),
+     &                        DWK2CROSSX1Y(:,INDX),
+     &                        DWK2CROSSX2Y(:,INDX),
      &                        ASUBM,BSUBM,CSUBM,DSUBM,
      &                        ESUBM,FSUBM,GSUBM,HSUBM)
 
@@ -9794,7 +9818,11 @@ C     CALCULATE ENERGY PROFILE OF DIFFERENT COMPONENTS
      &                          DWPTERYD(:,INDX,IDRIVE),
      &                          DWPPARXD(:,INDX,IDRIVE),
      &                          DWPPARYD(:,INDX,IDRIVE),
-     &                          DWK2DUMMYX,DWK2DUMMYY,DWK2DUMMYC,
+     &                          DWK2BASEXD(:,INDX,IDRIVE),
+     &                          DWK2BASEYD(:,INDX,IDRIVE),
+     &                          DWK2CROSSYD(:,INDX,IDRIVE),
+     &                          DWK2CROSSX1YD(:,INDX,IDRIVE),
+     &                          DWK2CROSSX2YD(:,INDX,IDRIVE),
      &                          ASUBM,BSUBM,CSUBM,DSUBM,
      &                          ESUBM,FSUBM,GSUBM,HSUBM)
             ENDDO
@@ -9844,7 +9872,8 @@ C     weight CSH to a torque density.
 
       IF (OBILINEAR) CALL WRITEDWKBILINEARLEDGER(
      &   DWPPARX,DWPPERX,DWPPARY,DWPPERY,
-     &   DWPPARXD,DWPPERXD,DWPPARYD,DWPTERYD,TOTINDX)
+     &   DWPPARXD,DWPPERXD,DWPPARYD,DWPTERYD,
+     &   DWK2BASEYD,DWK2CROSSX1YD,DWK2CROSSX2YD,TOTINDX)
 
       PI2 = PI*PI*2.0
 C     CALCULATE THE TOTAL ENERGY OF EACH COMPONENT
@@ -10051,12 +10080,13 @@ C     OUTPUT THE ENERGY COMPONENTS
       WRITE (*,*) SUM(DWPPERP)
       DEALLOCATE (DWPPARA,DWPPERP,DWK)
       DEALLOCATE (DWPPARX,DWPPERX,DWPPARY,DWPPERY)
-      DEALLOCATE (DWK2BASEX,DWK2BASEY,DWK2CROSSY)
+      DEALLOCATE (DWK2BASEX,DWK2BASEY,DWK2CROSSY,
+     &            DWK2CROSSX1Y,DWK2CROSSX2Y)
       DEALLOCATE (PPARAC,PPERPC)
       IF (ODRIVETERMS) THEN
          DEALLOCATE(PPARAD,PPERPD,DWPPARXD,DWPPERXD,
-     &              DWPPARYD,DWPTERYD,DWK2DUMMYX,DWK2DUMMYY,
-     &              DWK2DUMMYC)
+     &              DWPPARYD,DWPTERYD,DWK2BASEXD,DWK2BASEYD,
+     &              DWK2CROSSYD,DWK2CROSSX1YD,DWK2CROSSX2YD)
       ENDIF
       DEALLOCATE (BUFFER_DATA1,BUFFER_DATA2,BUFFER_DATAM)
 
@@ -10112,14 +10142,15 @@ C=======================================================================
 C=======================================================================
 C WRITE THE TWO WORK ROWS AGAINST EACH OF THE FIVE PRESSURE DRIVES      =
 C                                                                       =
-C WORK=1 IS THE INTEGER-MESH X1 CONTRACTION AND WORK=2 THE HALF-MESH    =
-C X2 CONTRACTION.  Their sum over WORK and DRIVE reconstructs the       =
+C WORK=1 IS INTEGER-MESH X1, 2 HALF-MESH X2 BASE, 3 PRESSURE-X1        =
+C CROSS, AND 4 PRESSURE-X2 CROSS.  Their sum over WORK AND DRIVE        =
 C unchanged production work before CTEDGE clipping and smoothing.      =
 C This request-file diagnostic never changes production arrays.         =
 C=======================================================================
       SUBROUTINE WRITEDWKBILINEARLEDGER(
      &   DWPPARX,DWPPERX,DWPPARY,DWPPERY,
-     &   DWPPARXD,DWPPERXD,DWPPARYD,DWPTERYD,TOTINDX)
+     &   DWPPARXD,DWPPERXD,DWPPARYD,DWPTERYD,
+     &   DWK2BASEYD,DWK2CROSSX1YD,DWK2CROSSX2YD,TOTINDX)
       USE DIMENSIM
       USE GLOBALM
       USE RCOMDM
@@ -10131,7 +10162,8 @@ C=======================================================================
       COMPLEX*16,DIMENSION(NRP1,TOTINDX)::
      &   DWPPARX,DWPPERX,DWPPARY,DWPPERY
       COMPLEX*16,DIMENSION(NRP1,TOTINDX,5)::
-     &   DWPPARXD,DWPPERXD,DWPPARYD,DWPTERYD
+     &   DWPPARXD,DWPPERXD,DWPPARYD,DWPTERYD,
+     &   DWK2BASEYD,DWK2CROSSX1YD,DWK2CROSSX2YD
 
       PI2=2.0D0*PI*PI
       TORQUEFAC=-2.0D0*RNTOR/(4.0D0*PI*PI)
@@ -10149,9 +10181,11 @@ C=======================================================================
                PARA=PI2*(DWPPARYD(IS,INDX,IDRIVE)+
      &            0.5D0*(DWPPARXD(IS,INDX,IDRIVE)+
      &                   DWPPARXD(IS+1,INDX,IDRIVE)))
-               PERP=PI2*(DWPTERYD(IS,INDX,IDRIVE)+
-     &            0.5D0*(DWPPERXD(IS,INDX,IDRIVE)+
-     &                   DWPPERXD(IS+1,INDX,IDRIVE)))
+               PERP=PI2*(0.5D0*(DWPPERXD(IS,INDX,IDRIVE)+
+     &                   DWPPERXD(IS+1,INDX,IDRIVE))+
+     &            DWK2BASEYD(IS,INDX,IDRIVE)+
+     &            DWK2CROSSX1YD(IS,INDX,IDRIVE)+
+     &            DWK2CROSSX2YD(IS,INDX,IDRIVE))
                SUMPARA=SUMPARA+PARA
                SUMPERP=SUMPERP+PERP
                SCALE=MAX(SCALE,ABS(PARA),ABS(PERP))
@@ -10170,7 +10204,7 @@ C=======================================================================
       OPEN(FID,FILE='DWK_BILINEAR_LEDGER.OUT',FORM='FORMATTED',
      &     STATUS='REPLACE',ACTION='WRITE')
       WRITE(FID,*) '% DRIVE: 1=X1 2=X2 3=B1 4=B2 5=B3'
-      WRITE(FID,*) '% WORK: 1=X1 INTEGER-MESH 2=X2 HALF-MESH'
+      WRITE(FID,*) '% WORK: 1=X1 INTEGER 2=X2 BASE 3=P-X1 4=P-X2'
       WRITE(FID,*) '% PRE-CTEDGE, PRE-SMOOTHING, EXECUTABLE-NATIVE SIGN'
       WRITE(FID,*) '% MAX_RECONSTRUCTION_RESIDUAL SCALE',
      &             RESIDUAL,SCALE
@@ -10179,7 +10213,7 @@ C=======================================================================
       DO IS=1,NR
          DO INDX=1,TOTINDX
             DO IDRIVE=1,5
-               DO IWORK=1,2
+               DO IWORK=1,4
                   IF (IWORK.EQ.1) THEN
                      PARA=PI2*0.5D0*(
      &                  DWPPARXD(IS,INDX,IDRIVE)+
@@ -10187,9 +10221,15 @@ C=======================================================================
                      PERP=PI2*0.5D0*(
      &                  DWPPERXD(IS,INDX,IDRIVE)+
      &                  DWPPERXD(IS+1,INDX,IDRIVE))
-                  ELSE
+                  ELSEIF (IWORK.EQ.2) THEN
                      PARA=PI2*DWPPARYD(IS,INDX,IDRIVE)
-                     PERP=PI2*DWPTERYD(IS,INDX,IDRIVE)
+                     PERP=PI2*DWK2BASEYD(IS,INDX,IDRIVE)
+                  ELSEIF (IWORK.EQ.3) THEN
+                     PARA=(0.0D0,0.0D0)
+                     PERP=PI2*DWK2CROSSX1YD(IS,INDX,IDRIVE)
+                  ELSE
+                     PARA=(0.0D0,0.0D0)
+                     PERP=PI2*DWK2CROSSX2YD(IS,INDX,IDRIVE)
                   ENDIF
                   WRITE(FID,1000) IS,INDX,IDRIVE,IWORK,CSM(IS),
      &               PARA,PERP,TORQUEFAC*AIMAG(-PARA-PERP)
