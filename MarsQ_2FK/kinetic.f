@@ -10225,7 +10225,7 @@ C=======================================================================
             ENDDO
          ENDDO
       ENDDO
- 1000 FORMAT(6I7,5(1X,E18.10))
+ 1000 FORMAT(5I7,6(1X,E18.10))
       CLOSE(FID)
       WRITE(*,*) 'WROTE DWK_PRESSURE_TRACE.OUT'
       END SUBROUTINE WRITEDWKPRESSURETRACE
