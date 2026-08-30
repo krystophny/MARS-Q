@@ -125,6 +125,58 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("IF (ABS(RLM(L)+1.0).LT.0.1)", KINETIC_SOURCE)
         self.assertIn("_KH.OUT", KINETIC_SOURCE)
 
+    def test_response_part_projection_executes_real_imaginary_or_identity(self) -> None:
+        compiler = shutil.which("gfortran")
+        if compiler is None:
+            self.skipTest("gfortran is not available")
+        start = ANISOTROPIC_SOURCE.index(
+            "      SUBROUTINE KELLRESPONSEPARTAPPLY("
+        )
+        marker = "      END SUBROUTINE KELLRESPONSEPARTAPPLY"
+        end = ANISOTROPIC_SOURCE.index(marker, start) + len(marker)
+        kernel = ANISOTROPIC_SOURCE[start:end]
+        oracle = """
+      PROGRAM TEST_RESPONSE_PART
+      IMPLICIT NONE
+      COMPLEX*16 Z
+      Z=DCMPLX(2.0D0,-3.0D0)
+      CALL KELLRESPONSEPARTAPPLY(Z,0)
+      IF (ABS(Z-DCMPLX(2.0D0,-3.0D0)).GT.1.0D-14) STOP 1
+      CALL KELLRESPONSEPARTAPPLY(Z,1)
+      IF (ABS(Z-DCMPLX(2.0D0,0.0D0)).GT.1.0D-14) STOP 2
+      Z=DCMPLX(2.0D0,-3.0D0)
+      CALL KELLRESPONSEPARTAPPLY(Z,2)
+      IF (ABS(Z-DCMPLX(0.0D0,-3.0D0)).GT.1.0D-14) STOP 3
+      END PROGRAM TEST_RESPONSE_PART
+"""
+        with tempfile.TemporaryDirectory(prefix="mars-response-part-") as tmp:
+            source = Path(tmp, "test_response_part.f")
+            binary = Path(tmp, "test_response_part.x")
+            source.write_text(oracle + kernel + "\n")
+            build = subprocess.run(
+                [
+                    compiler,
+                    "-ffixed-form",
+                    "-ffixed-line-length-none",
+                    str(source),
+                    "-o",
+                    str(binary),
+                ],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            self.assertEqual(build.returncode, 0, build.stdout)
+            executed = subprocess.run(
+                [str(binary)],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            self.assertEqual(executed.returncode, 0, executed.stdout)
+
     def test_build_manifest_binds_the_record_to_the_binary(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mars-manifest-") as temporary:
             directory = Path(temporary)
