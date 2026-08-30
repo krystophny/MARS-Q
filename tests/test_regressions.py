@@ -121,6 +121,9 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("KJP: TRACE-ONLY SELECTED-SURFACE CACHE REPLAY", KINETIC_SOURCE)
         self.assertIn("ODWKCOM.AND.KDWKREAD.NE.1", KINETIC_SOURCE)
         self.assertIn("KELLTRACEACTIVE(PRIVATEJS,1)", KINETIC_SOURCE)
+        self.assertIn("CALL WRITEKHACTIONTRACE", KINETIC_SOURCE)
+        self.assertIn("IF (ABS(RLM(L)+1.0).LT.0.1)", KINETIC_SOURCE)
+        self.assertIn("_KH.OUT", KINETIC_SOURCE)
 
     def test_build_manifest_binds_the_record_to_the_binary(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mars-manifest-") as temporary:

@@ -8365,6 +8365,7 @@ C=======================================================================
       COMPLEX*16 EPHASE,CTMP,CTMPL,CTMPU,CALPHA,
      &           FLX1,FLX2,FLQ1,FLQ2,FLQ3,FLDP,
      &           FUX1,FUX2,FUQ1,FUQ2,FUQ3,FUDP
+      LOGICAL    OTRACE
      
       REAL*8 DIFFERCHI
       
@@ -8376,6 +8377,8 @@ C=======================================================================
       VQ2 = 0.0
       VQ3 = 0.0
       VDP = 0.0
+      OTRACE = .FALSE.
+      IF (KPARTICLE.EQ.0) CALL KELLTRACESELECT(JS,KGRID,OTRACE)
 
       IF (KGRID.EQ.1) THEN
 C        OMEGAE = OMEGAE0(JS,1)
@@ -8474,6 +8477,9 @@ C     PASSING PARTICLE DOES NOT HAVE SINGULAR INTEGRATION
       VQ3 = VQ3*PHASE
       VDP = VDP*PHASE
 
+      IF (OTRACE) CALL WRITEKHACTIONTRACE(JS,KGRID,KPARTICLE,LAM,
+     &                                    VX1,VX2,VQ1,VQ2,VQ3,VDP)
+
       KCHECK=0
       IF (KCHECK.EQ.1.AND.KPARTICLE.EQ.0.AND.
      &   ABS(RQK-Q(JS0)).LT.1.0E-13) THEN
@@ -8570,6 +8576,52 @@ C     PASSING PARTICLE DOES NOT HAVE SINGULAR INTEGRATION
 
       RETURN
       END
+
+C=======================================================================
+C DEFAULT-OFF TRACE OF THE EXECUTED TRAPPED-PARTICLE H-FACTORS.         =
+C THE REQUEST FILE AND SURFACE SELECTION ARE SHARED WITH THE ELL=-1     =
+C RESPONSE TRACE.  ONLY ELL=-1 IS WRITTEN; ALL STABILITY HARMONICS ARE =
+C RETAINED SO THE ORBIT-PROJECTED ACTION CAN BE COMPARED DIRECTLY.      =
+C=======================================================================
+      SUBROUTINE WRITEKHACTIONTRACE(JS,KGRID,KPARTICLE,LAM,
+     &                              VX1,VX2,VQ1,VQ2,VQ3,VDP)
+
+      USE KINETICM
+      USE ToolBox
+      IMPLICIT NONE
+
+      INTEGER JS,KGRID,KPARTICLE,M,L,FID
+      REAL*8  LAM
+      COMPLEX*16 VX1(MSMAX,MLMAX),VX2(MSMAX,MLMAX),
+     &           VQ1(MSMAX,MLMAX),VQ2(MSMAX,MLMAX),
+     &           VQ3(MSMAX,MLMAX),VDP(MSMAX,MLMAX)
+      LOGICAL OEXIST
+      CHARACTER*64 PATH
+
+      IF (KPARTICLE.NE.0) RETURN
+      WRITE(PATH,'("ELL_M1_TRACE_JS",I4.4,"_G",I1,"_KH.OUT")')
+     &      JS,KGRID
+C$OMP CRITICAL(ELL_TRACE_WRITE)
+      INQUIRE(FILE=PATH,EXIST=OEXIST)
+      FID=ASSIGNFREEFILEUNIT()
+      OPEN(FID,FILE=PATH,STATUS='UNKNOWN',POSITION='APPEND',
+     &     ACTION='WRITE')
+      IF (.NOT.OEXIST) WRITE(FID,*)
+     & '% JS G CLASS LAMBDA M ELL VX1_RE VX1_IM VX2_RE VX2_IM',
+     & ' VQ1_RE VQ1_IM VQ2_RE VQ2_IM VQ3_RE VQ3_IM VDP_RE VDP_IM'
+      DO L=1,MLMAX
+         IF (ABS(RLM(L)+1.0).LT.0.1) THEN
+            DO M=1,MSMAX
+               WRITE(FID,1000) JS,KGRID,KPARTICLE,LAM,RM(M,2),
+     &            RLM(L),VX1(M,L),VX2(M,L),VQ1(M,L),VQ2(M,L),
+     &            VQ3(M,L),VDP(M,L)
+            ENDDO
+         ENDIF
+      ENDDO
+      CLOSE(FID)
+C$OMP END CRITICAL(ELL_TRACE_WRITE)
+ 1000 FORMAT(3I8,15(1X,E24.16))
+      END SUBROUTINE WRITEKHACTIONTRACE
 
 C=======================================================================
 C H-FACTOR DUE TO FIRST ORDER FOW CORRECTION
