@@ -9963,6 +9963,8 @@ C     COMPUTATION OF PPERP AND PPARA
          WRITE(FIDACTION,*) '% P: IS INDX DRIVE MOMENT NODE MROW MSA',
      &      ' MOUT MIN RE IM; NODE=-1 LOWER, 0 HALF, +1 UPPER'
          WRITE(FIDACTION,*) '% R: IS MOUT MIN RJAM_FOURIER_RE IM'
+         WRITE(FIDACTION,*) '% O: IS WORK MOMENT WORKNODE MWORK',
+     &      ' MPRESS HWORK HPRESS RE IM; FULL WORK BASIS'
          WRITE(FIDACTION,*) '% W: IS WORK MOMENT MPRESS RE IM;',
      &      ' WORK=1 X1, 2 X2 BASE, 3 P-X1, 4 P-X2'
          WRITE(FIDACTION,*) '% F: IS SLOT COEFF;',
@@ -10397,7 +10399,7 @@ C=======================================================================
       INTEGER IS,INDX,FID,MROW,MSA,J,LXROW,LXCOL,LYROW,LYCOL,
      &        MOMENT,KP,IEFFECT,KPOUT,IEFFECTOUT
       REAL*8 HCHI,THETA,PI2,ZEM,PTRAP,ZV2M,ZV2P,ZB3M,ZB3P
-      COMPLEX*16 RECOV,W1,W2,W3,W4
+      COMPLEX*16 RECOV,W1,W2,W3,W4,OLOW,OUP,OHALF
 
       KPOUT=0
       IEFFECTOUT=0
@@ -10511,6 +10513,66 @@ C        GG maps for X2, B2, and B3: OUTNODE is the half mesh.
 
       PI2=2.0D0*PI*PI
       ZEM=CSM(IS)**0
+      DO MROW=1,MSMAX
+         LXROW=(MROW-1)*NXCOMP
+         LYROW=(MROW-1)*NYCOMP
+         DO MSA=1,MSMAX
+            LXCOL=(MSA-1)*NXCOMP
+            LYCOL=(MSA-1)*NYCOMP
+C           Work 1: lower/upper integer X1 against recovered pressure.
+            OLOW=ESUBM(LXROW+KXV1,LYCOL+KYPPARA,IS)
+            OUP=HSUBM(LXROW+KXV1,LYCOL+KYPPARA,IS+1)
+            WRITE(FID,1015) 'O',IS,1,1,-1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),OLOW
+            WRITE(FID,1015) 'O',IS,1,1, 1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),OUP
+            OLOW=(0.0D0,0.0D0)
+            OUP=(0.0D0,0.0D0)
+            IF (KEFORM.EQ.1.AND.KYPPERP.GT.0) THEN
+               OLOW=ESUBM(LXROW+KXV1,LYCOL+KYPPERP,IS)
+               OUP=HSUBM(LXROW+KXV1,LYCOL+KYPPERP,IS+1)
+            ELSEIF (KEFORM.EQ.2.AND.INCKIN.GT.0) THEN
+               OLOW=-ESUBM(LXROW+KXV1,LYCOL+KYPPARA,IS)
+               OUP=-HSUBM(LXROW+KXV1,LYCOL+KYPPARA,IS+1)
+            ENDIF
+            WRITE(FID,1015) 'O',IS,1,2,-1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),OLOW
+            WRITE(FID,1015) 'O',IS,1,2, 1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),OUP
+C           Work 2: half-mesh X2 base term.
+            OHALF=ZEM*DSUBM(LYROW+KYV2,LYCOL+KYPPARA,IS)
+            WRITE(FID,1015) 'O',IS,2,1,0,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),OHALF
+            OHALF=(0.0D0,0.0D0)
+            IF (KEFORM.EQ.1.AND.KYPPERP.GT.0) THEN
+               OHALF=ZEM*DSUBM(LYROW+KYV2,LYCOL+KYPPERP,IS)
+            ELSEIF (KEFORM.EQ.2.AND.INCKIN.GT.0) THEN
+               OHALF=-ZEM*DSUBM(LYROW+KYV2,LYCOL+KYPPARA,IS)
+            ENDIF
+            WRITE(FID,1015) 'O',IS,2,2,0,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),OHALF
+C           Works 3/4: pressure-equation X1/X2 cross terms.  MSA is
+C           the pressure harmonic and MROW is the conjugated field basis.
+            OLOW=(0.0D0,0.0D0)
+            OUP=(0.0D0,0.0D0)
+            OHALF=(0.0D0,0.0D0)
+            IF (KEFORM.EQ.2.AND.INCKIN.GT.0) THEN
+               OLOW=ZEM*CONJG(
+     &            FSUBM(LYCOL+KYPR,LXROW+KXV1,IS))
+               OUP=ZEM*CONJG(
+     &            GSUBM(LYCOL+KYPR,LXROW+KXV1,IS))
+               OHALF=ZEM*CONJG(
+     &            DSUBM(LYCOL+KYPR,LYROW+KYV2,IS))
+            ENDIF
+            WRITE(FID,1015) 'O',IS,3,2,-1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),OLOW
+            WRITE(FID,1015) 'O',IS,3,2, 1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),OUP
+            WRITE(FID,1015) 'O',IS,4,2,0,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),OHALF
+         ENDDO
+      ENDDO
+
       DO MSA=1,MSMAX
          W1=(0.0D0,0.0D0)
          W2=(0.0D0,0.0D0)
@@ -10584,6 +10646,7 @@ C        GG maps for X2, B2, and B3: OUTNODE is the half mesh.
  1002 FORMAT(A1,4(1X,I7))
  1005 FORMAT(A1,5(1X,I7),1X,E18.10)
  1010 FORMAT(A1,3(1X,I7),2(1X,E18.10))
+ 1015 FORMAT(A1,8(1X,I7),2(1X,E18.10))
  1020 FORMAT(A1,4(1X,I7),2(1X,E18.10))
  1030 FORMAT(A1,2(1X,I7),1X,E18.10)
       END SUBROUTINE WRITEDWKACTIONMAP

@@ -520,6 +520,7 @@ class SourceContractTests(unittest.TestCase):
             self.assertIn(f"'P',IS,INDX,{drive},", writer)
         for work in range(1, 5):
             self.assertIn(f"'W',IS,{work},", writer)
+            self.assertIn(f"'O',IS,{work},", writer)
         for drive in range(1, 6):
             self.assertIn(f"'G',IS,{drive},MOMENT", writer)
         self.assertIn("'C',IS,INDX,KPOUT,IEFFECTOUT", writer)
