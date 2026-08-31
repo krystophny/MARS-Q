@@ -520,6 +520,8 @@ class SourceContractTests(unittest.TestCase):
             self.assertIn(f"'P',IS,INDX,{drive},", writer)
         for work in range(1, 5):
             self.assertIn(f"'W',IS,{work},", writer)
+        for drive in range(1, 6):
+            self.assertIn(f"'G',IS,{drive},MOMENT", writer)
         self.assertIn("NINT(RM(MROW,2)),NINT(RM(MSA,2))", writer)
         self.assertIn("/RJAM(IS,J)", writer)
         self.assertIn("0.5D0*PI2", writer)
