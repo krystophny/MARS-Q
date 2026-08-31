@@ -160,6 +160,52 @@ class SourceContractTests(unittest.TestCase):
         )
         self.assertAlmostEqual(traced_integral, independent_oracle)
 
+    def test_kjp_contribution_trace_precedes_native_accumulation(self) -> None:
+        """Per-call records must reconstruct a native block by plain summation."""
+        fill_start = KINETIC_SOURCE.index("SUBROUTINE KJPFILL(")
+        fill_end = KINETIC_SOURCE.index("END\n\nC=======", fill_start)
+        fill = KINETIC_SOURCE[fill_start:fill_end]
+        trace_call = fill.index("CALL WRITEKJPCONTRIBTRACE(")
+        native_add = fill.index("VX1PARA(K,M,JS_MAT)=VX1PARA")
+        self.assertLess(trace_call, native_add)
+
+        writer_start = KINETIC_SOURCE.index(
+            "SUBROUTINE WRITEKJPCONTRIBTRACE("
+        )
+        writer_end = KINETIC_SOURCE.index(
+            "END SUBROUTINE WRITEKJPCONTRIBTRACE", writer_start
+        )
+        writer = KINETIC_SOURCE[writer_start:writer_end]
+        for field in (
+            "PARTICLE",
+            "ICASE",
+            "PITCH",
+            "KP",
+            "CLASS",
+            "ELL",
+            "LAMBDA",
+            "LAMBDA_WEIGHT",
+        ):
+            self.assertIn(field, writer)
+        self.assertNotIn("VX1PARA(K,M,JS_MAT)=", writer)
+
+        contributions = (
+            (1.2 + 0.3j, -0.7 + 0.2j),
+            (-0.4 + 1.1j, 0.5 - 0.8j),
+            (0.9 - 0.6j, 0.2 + 0.4j),
+        )
+        traced = tuple(
+            sum(record[channel] for record in contributions)
+            for channel in range(2)
+        )
+        independent_native = (
+            contributions[0][0] + contributions[1][0] + contributions[2][0],
+            contributions[0][1] + contributions[1][1] + contributions[2][1],
+        )
+        for actual, expected in zip(traced, independent_native):
+            self.assertAlmostEqual(actual.real, expected.real)
+            self.assertAlmostEqual(actual.imag, expected.imag)
+
     def test_build_manifest_binds_the_record_to_the_binary(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mars-manifest-") as temporary:
             directory = Path(temporary)
@@ -458,7 +504,7 @@ class SourceContractTests(unittest.TestCase):
         folding and the final work rows, so they are not the torque matrix.
         """
         caller = KINETIC_SOURCE[
-            KINETIC_SOURCE.index("CALL KJPFILL (JS,JS_MAT,KGRID,0.,0,3)") :
+            KINETIC_SOURCE.index("CALL KJPFILL (JS,JS_MAT,KGRID,0,0.,0,3)") :
             KINETIC_SOURCE.index("314  CONTINUE")
         ]
         writer = KINETIC_SOURCE[
@@ -468,7 +514,7 @@ class SourceContractTests(unittest.TestCase):
         # The local block includes the singular add-back exactly once.
         self.assertIn("CALL WRITEKJPMATRIXTRACE", caller)
         self.assertLess(
-            caller.index("KJPFILL (JS,JS_MAT,KGRID,0.,0,4)"),
+            caller.index("KJPFILL (JS,JS_MAT,KGRID,0,0.,0,4)"),
             caller.index("CALL WRITEKJPMATRIXTRACE"),
         )
         # Same default-off surface selection as the other ell=-1 traces.
