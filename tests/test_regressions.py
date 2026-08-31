@@ -183,6 +183,7 @@ class SourceContractTests(unittest.TestCase):
             "PARTICLE",
             "ICASE",
             "PITCH",
+            "CALL",
             "KP",
             "CLASS",
             "ELL",
@@ -193,7 +194,21 @@ class SourceContractTests(unittest.TestCase):
             self.assertIn(field, writer)
         self.assertNotIn("VX1PARA(K,M,JS_MAT)=", writer)
         self.assertIn("SCALAR=-SCALAR", writer)
+        self.assertIn("KCALLCOUNT(JS,KGRID)=KCALLCOUNT(JS,KGRID)+1", writer)
+        self.assertIn("KTERMCOUNT(3)=KTERMCOUNT(3)+1", writer)
+        self.assertIn("ICASE,0,0,KNTVELL,0,3,0,0", writer)
+        self.assertIn("FORMAT(14I8,14(1X,E24.16))", writer)
         self.assertLess(1 + 2 * 141, 141**2)
+
+    def test_pitch_mesh_fails_before_allocated_extent_is_exceeded(self) -> None:
+        self.assertIn("STOP 'INVALID KINETIC PITCH MESH'", MARS_SOURCE)
+        self.assertIn("NLAMK-NLAMIN-1.LE.0", MARS_SOURCE)
+        self.assertIn(
+            "STOP 'KLAMBDA: FULL-MESH COUNT EXCEEDS NLAMK'", KINETIC_SOURCE
+        )
+        self.assertIn(
+            "STOP 'KLAMBDA: HALF-MESH COUNT EXCEEDS NLAMK'", KINETIC_SOURCE
+        )
 
         scalar = (2 + 3j, -5 + 7j, 11 - 13j, -17 - 19j)
         left = (
