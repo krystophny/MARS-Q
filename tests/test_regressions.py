@@ -125,6 +125,41 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("IF (ABS(RLM(L)+1.0).LT.0.1)", KINETIC_SOURCE)
         self.assertIn("_KH.OUT", KINETIC_SOURCE)
 
+    def test_action_energy_trace_identifies_executed_quadrature_nodes(self) -> None:
+        """Each emitted node must carry its independent trapezoid weight."""
+        writer_start = ANISOTROPIC_SOURCE.index(
+            "SUBROUTINE WRITEELLACTIONENERGY("
+        )
+        writer_end = ANISOTROPIC_SOURCE.index(
+            "END SUBROUTINE WRITEELLACTIONENERGY", writer_start
+        )
+        writer = ANISOTROPIC_SOURCE[writer_start:writer_end]
+        self.assertIn(
+            "CALL WRITEELLACTIONENERGY(JS,KGRID,KP,KOPT,", ANISOTROPIC_SOURCE
+        )
+        self.assertIn("KDPHI,L,RL,ZZLAMB", ANISOTROPIC_SOURCE)
+        self.assertIn("_ACTION_ENERGY.OUT", writer)
+        for field in ("KOPT", "KDPHI", "ENODE", "WEIGHT"):
+            self.assertIn(field, writer)
+
+        energy_grid = (0.0, 0.2, 0.9, 2.0)
+        node_values = (1.3, -0.4, 2.1, 0.7, -1.2, 3.0)
+        emitted_weights = tuple(
+            0.5 * (energy_grid[interval + 1] - energy_grid[interval])
+            for interval in range(len(energy_grid) - 1)
+            for _node in range(2)
+        )
+        traced_integral = sum(
+            weight * value for weight, value in zip(emitted_weights, node_values)
+        )
+        independent_oracle = sum(
+            0.5
+            * (energy_grid[interval + 1] - energy_grid[interval])
+            * (node_values[2 * interval] + node_values[2 * interval + 1])
+            for interval in range(len(energy_grid) - 1)
+        )
+        self.assertAlmostEqual(traced_integral, independent_oracle)
+
     def test_build_manifest_binds_the_record_to_the_binary(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mars-manifest-") as temporary:
             directory = Path(temporary)
