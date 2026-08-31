@@ -4165,7 +4165,7 @@ C     RESET EVERY TIME
          IF (NLAMIN.LT.3.OR.NLAMK-NLAMIN-1.LE.0) THEN
             WRITE(*,*) ' INVALID PITCH MESH: NLAMK,NLAMIN=',
      &                 NLAMK,NLAMIN
-            STOP 'INVALID KINETIC PITCH MESH'
+            STOP 1
          ENDIF
       ENDIF
       IF (NKSMOOTHB.LT.0) GOTO 324

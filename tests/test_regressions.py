@@ -64,7 +64,9 @@ def run_with_input(run_input: str) -> subprocess.CompletedProcess[str]:
         )
 
 
-def minimal_input(*, kinetic: str = "", qlin: str = "", outopt: str = "") -> str:
+def minimal_input(
+    *, kinetic: str = "", qlin: str = "", numeric: str = "", outopt: str = ""
+) -> str:
     return f"""
         &BASIC
         /
@@ -77,6 +79,7 @@ def minimal_input(*, kinetic: str = "", qlin: str = "", outopt: str = "") -> str
         {qlin}
         /
         &NUMERIC
+        {numeric}
         /
         &OUTOPT
         {outopt}
@@ -197,17 +200,21 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("KCALLCOUNT(JS,KGRID)=KCALLCOUNT(JS,KGRID)+1", writer)
         self.assertIn("KTERMCOUNT(3)=KTERMCOUNT(3)+1", writer)
         self.assertIn("ICASE,0,0,KNTVELL,0,3,0,0", writer)
+        self.assertIn("STALE KJP FACTOR TRACE FILE", writer)
+        self.assertIn("MISSING ACTIVE KJP FACTOR TRACE FILE", writer)
+        self.assertIn("IF (ICASE.EQ.3.OR.ICASE.EQ.4) THEN", writer)
+        self.assertIn("HEADERLAM=0.D0", writer)
         self.assertIn("FORMAT(14I8,14(1X,E24.16))", writer)
         self.assertLess(1 + 2 * 141, 141**2)
 
     def test_pitch_mesh_fails_before_allocated_extent_is_exceeded(self) -> None:
-        self.assertIn("STOP 'INVALID KINETIC PITCH MESH'", MARS_SOURCE)
+        self.assertIn("INVALID PITCH MESH", MARS_SOURCE)
         self.assertIn("NLAMK-NLAMIN-1.LE.0", MARS_SOURCE)
         self.assertIn(
-            "STOP 'KLAMBDA: FULL-MESH COUNT EXCEEDS NLAMK'", KINETIC_SOURCE
+            "KLAMBDA FULL-MESH COUNT EXCEEDS NLAMK", KINETIC_SOURCE
         )
         self.assertIn(
-            "STOP 'KLAMBDA: HALF-MESH COUNT EXCEEDS NLAMK'", KINETIC_SOURCE
+            "KLAMBDA HALF-MESH COUNT EXCEEDS NLAMK", KINETIC_SOURCE
         )
 
         scalar = (2 + 3j, -5 + 7j, 11 - 13j, -17 - 19j)
@@ -954,6 +961,25 @@ class ExecutableInputTests(unittest.TestCase):
             or ("line " in diagnostic and "position" in diagnostic),
             diagnostic,
         )
+
+    def test_invalid_pitch_mesh_bounds_fail_before_equilibrium_read(self) -> None:
+        for nlamin in (2, 8):
+            result = run_with_input(
+                minimal_input(
+                    kinetic="INCKIN=1", numeric=f"NLAMK=9, NLAMIN={nlamin}"
+                )
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("INVALID PITCH MESH", result.stdout)
+
+    def test_valid_pitch_mesh_boundaries_pass_early_validation(self) -> None:
+        for nlamin in (3, 7):
+            result = run_with_input(
+                minimal_input(
+                    kinetic="INCKIN=1", numeric=f"NLAMK=9, NLAMIN={nlamin}"
+                )
+            )
+            self.assertNotIn("INVALID PITCH MESH", result.stdout)
 
     def test_mars_k_ntv_requires_dwk_components(self) -> None:
         result = run_with_input(
