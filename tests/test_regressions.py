@@ -415,12 +415,12 @@ class SourceContractTests(unittest.TestCase):
         self.assertEqual(unsplit, complex(0.375, 2.125))
         self.assertNotAlmostEqual(sum(abs(value) for value in drives), abs(unsplit))
 
-    def test_kjp_matrix_trace_records_the_whole_assembled_operator(self) -> None:
-        """The diagonal phase test omits cross terms, I_ell and the add-back.
+    def test_kjp_matrix_trace_records_local_pressure_source_blocks(self) -> None:
+        """The local trace includes its blocks and states its validity boundary.
 
-        Wang's squared action is a property of the full contracted operator,
-        so the trace has to be taken after the pitch quadrature and after the
-        ell=0 singular contribution, and it has to carry every block.
+        These blocks are complete only at the KJPFILL boundary. They have
+        summed quadrature contributions and precede pressure recovery, radial
+        folding and the final work rows, so they are not the torque matrix.
         """
         caller = KINETIC_SOURCE[
             KINETIC_SOURCE.index("CALL KJPFILL (JS,JS_MAT,KGRID,0.,0,3)") :
@@ -430,7 +430,7 @@ class SourceContractTests(unittest.TestCase):
             KINETIC_SOURCE.index("SUBROUTINE WRITEKJPMATRIXTRACE") :
             KINETIC_SOURCE.index("END SUBROUTINE WRITEKJPMATRIXTRACE")
         ]
-        # After the singular add-back, so nothing is missing from the matrix.
+        # The local block includes the singular add-back exactly once.
         self.assertIn("CALL WRITEKJPMATRIXTRACE", caller)
         self.assertLess(
             caller.index("KJPFILL (JS,JS_MAT,KGRID,0.,0,4)"),
@@ -439,6 +439,8 @@ class SourceContractTests(unittest.TestCase):
         # Same default-off surface selection as the other ell=-1 traces.
         self.assertIn("CALL KELLTRACESELECT(JS,KGRID,OTRACE)", writer)
         self.assertIn("IF (.NOT.OTRACE) RETURN", writer)
+        self.assertIn("LOCAL KJPFILL PRESSURE-SOURCE BLOCKS", writer)
+        self.assertIn("NOT A COMPLETE ACTION OR TORQUE MATRIX", writer)
         # Every assembled block, both moment sides and the dphi channel.
         for block in (
             "VX1PARA", "VX1PERP", "VX1DPHI", "VX2PARA", "VX2PERP", "VX2DPHI",
@@ -454,27 +456,6 @@ class SourceContractTests(unittest.TestCase):
             body = line.strip()
             if body.startswith("V") and "=" in body and "==" not in body:
                 self.fail(f"writer assigns a production array: {body}")
-
-        # Independent oracle for the property the matrix is being taken to
-        # test. A rank-one Hermitian form h h^dagger has one non-negative
-        # eigenvalue and contracts to a real non-negative number for every
-        # field; a form built from two different vectors does neither.
-        h = [complex(1.0, 0.5), complex(-2.0, 1.0)]
-        xi = [complex(0.25, -1.0), complex(3.0, 0.5)]
-        modulus = abs(sum(hk * x for hk, x in zip(h, xi)))**2
-        hermitian = sum(
-            xi[k].conjugate() * (h[k].conjugate() * h[m]) * xi[m]
-            for k in range(2) for m in range(2)
-        )
-        self.assertAlmostEqual(hermitian.imag, 0.0)
-        self.assertAlmostEqual(hermitian.real, modulus)
-        self.assertGreater(hermitian.real, 0.0)
-        g = [complex(0.5, 1.25), complex(3.0, -0.5)]
-        unpaired = sum(
-            xi[k].conjugate() * (g[k] * h[m]) * xi[m]
-            for k in range(2) for m in range(2)
-        )
-        self.assertNotAlmostEqual(unpaired.imag, 0.0)
 
     def test_kg_action_trace_pairs_with_the_kh_action_trace(self) -> None:
         """Wang Eq. (15) needs both sides of the same orbit action.

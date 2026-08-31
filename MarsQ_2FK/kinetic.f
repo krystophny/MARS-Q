@@ -4331,8 +4331,9 @@ C     ADD SPECIAL SINGULAR CONTRIBUTION FROM RLM(L)=0
          IF (SLAMD0.GT.0.) CALL KJPFILL1(JS,JS_MAT,KGRID,0.,0,4)
       ENDIF
 
-C     COMPLETE EXECUTED KINETIC MATRIX, AFTER THE PITCH QUADRATURE AND
-C     AFTER THE ELL=0 SINGULAR ADD-BACK, SO IT CARRIES EVERY TERM.
+C     LOCAL KJPFILL PRESSURE-SOURCE BLOCKS, AFTER THE PITCH QUADRATURE
+C     AND ELL=0 SINGULAR ADD-BACK.  THESE CONTRIBUTION-SUMMED BLOCKS
+C     PRECEDE PRESSURE RECOVERY, RADIAL FOLDING, AND WORK ASSEMBLY.
       CALL WRITEKJPMATRIXTRACE(JS,JS_MAT,KGRID)
 
 C     SFD OPERATION
@@ -8300,14 +8301,16 @@ C           PASSING PARTICLES
       END
 
 C=======================================================================
-C DEFAULT-OFF TRACE OF THE COMPLETE EXECUTED KINETIC MATRIX.            =
+C DEFAULT-OFF TRACE OF LOCAL KJPFILL PRESSURE-SOURCE BLOCKS.           =
 C                                                                       =
 C The diagonal G_k H_k phase test is a necessary condition for Wang's   =
 C squared action, not a sufficient one: it omits the cross terms, the   =
 C energy-integrated I_ell weights, and the singular add-back.  This     =
 C writer emits the assembled blocks after the pitch quadrature and      =
-C after the ell=0 singular contribution, so what it records is the      =
-C matrix the finite-element work contraction actually receives.         =
+C after the ell=0 singular contribution.  The blocks have already       =
+C summed the executed quadrature contributions and are still upstream   =
+C of FILLMATDWKCOMP, CALCPRECOMP, CALCDWKPROF, radial folding, and the   =
+C final work rows.  They are not the complete action or torque matrix.   =
 C                                                                       =
 C Written only for surfaces named in ELL_M1_TRACE.REQUEST.  Nothing is  =
 C changed: these are the production arrays, read after they are built.  =
@@ -8348,8 +8351,10 @@ C     RATHER THAN THE FLAG, SO THE TRACE FOLLOWS WHAT WAS ACTUALLY BUILT.
       ODPHI = ALLOCATED(VX1DPHI).AND.ALLOCATED(VX2DPHI).AND.
      &        ALLOCATED(VQ1DPHI).AND.ALLOCATED(VQ2DPHI).AND.
      &        ALLOCATED(VQ3DPHI).AND.ALLOCATED(VDPDPHI)
-      WRITE(FID,*) '% COMPLETE EXECUTED KINETIC MATRIX AFTER PITCH',
+      WRITE(FID,*) '% LOCAL KJPFILL PRESSURE-SOURCE BLOCKS AFTER PITCH',
      & ' QUADRATURE AND ELL=0 SINGULAR ADD-BACK'
+      WRITE(FID,*) '% CONTRIBUTION-SUMMED; PRE-PRESSURE-RECOVERY;',
+     & ' NOT A COMPLETE ACTION OR TORQUE MATRIX'
       WRITE(FID,*) '% JS G MSMAX', JS, KGRID, MSMAX
       WRITE(FID,*) '% INCDPHI DPHIBLOCKS', INCDPHI, ODPHI
       IF (ODPHI) THEN
