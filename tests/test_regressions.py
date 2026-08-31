@@ -415,6 +415,67 @@ class SourceContractTests(unittest.TestCase):
         self.assertEqual(unsplit, complex(0.375, 2.125))
         self.assertNotAlmostEqual(sum(abs(value) for value in drives), abs(unsplit))
 
+    def test_kjp_matrix_trace_records_the_whole_assembled_operator(self) -> None:
+        """The diagonal phase test omits cross terms, I_ell and the add-back.
+
+        Wang's squared action is a property of the full contracted operator,
+        so the trace has to be taken after the pitch quadrature and after the
+        ell=0 singular contribution, and it has to carry every block.
+        """
+        caller = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("CALL KJPFILL (JS,JS_MAT,KGRID,0.,0,3)") :
+            KINETIC_SOURCE.index("314  CONTINUE")
+        ]
+        writer = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE WRITEKJPMATRIXTRACE") :
+            KINETIC_SOURCE.index("END SUBROUTINE WRITEKJPMATRIXTRACE")
+        ]
+        # After the singular add-back, so nothing is missing from the matrix.
+        self.assertIn("CALL WRITEKJPMATRIXTRACE", caller)
+        self.assertLess(
+            caller.index("KJPFILL (JS,JS_MAT,KGRID,0.,0,4)"),
+            caller.index("CALL WRITEKJPMATRIXTRACE"),
+        )
+        # Same default-off surface selection as the other ell=-1 traces.
+        self.assertIn("CALL KELLTRACESELECT(JS,KGRID,OTRACE)", writer)
+        self.assertIn("IF (.NOT.OTRACE) RETURN", writer)
+        # Every assembled block, both moment sides and the dphi channel.
+        for block in (
+            "VX1PARA", "VX1PERP", "VX1DPHI", "VX2PARA", "VX2PERP", "VX2DPHI",
+            "VQ1PARA", "VQ1PERP", "VQ1DPHI", "VQ2PARA", "VQ2PERP", "VQ2DPHI",
+            "VQ3PARA", "VQ3PERP", "VQ3DPHI", "VDPPARA", "VDPPERP", "VDPDPHI",
+        ):
+            self.assertIn(f"{block}(K,M,JS_MAT)", writer)
+        # The full K,M grid, not a diagonal.
+        self.assertIn("DO K=1,MSMAX", writer)
+        self.assertIn("DO M=1,MSMAX", writer)
+        # Read-only: no production array is assigned in the writer.
+        for line in writer.splitlines():
+            body = line.strip()
+            if body.startswith("V") and "=" in body and "==" not in body:
+                self.fail(f"writer assigns a production array: {body}")
+
+        # Independent oracle for the property the matrix is being taken to
+        # test. A rank-one Hermitian form h h^dagger has one non-negative
+        # eigenvalue and contracts to a real non-negative number for every
+        # field; a form built from two different vectors does neither.
+        h = [complex(1.0, 0.5), complex(-2.0, 1.0)]
+        xi = [complex(0.25, -1.0), complex(3.0, 0.5)]
+        modulus = abs(sum(hk * x for hk, x in zip(h, xi)))**2
+        hermitian = sum(
+            xi[k].conjugate() * (h[k].conjugate() * h[m]) * xi[m]
+            for k in range(2) for m in range(2)
+        )
+        self.assertAlmostEqual(hermitian.imag, 0.0)
+        self.assertAlmostEqual(hermitian.real, modulus)
+        self.assertGreater(hermitian.real, 0.0)
+        g = [complex(0.5, 1.25), complex(3.0, -0.5)]
+        unpaired = sum(
+            xi[k].conjugate() * (g[k] * h[m]) * xi[m]
+            for k in range(2) for m in range(2)
+        )
+        self.assertNotAlmostEqual(unpaired.imag, 0.0)
+
     def test_kg_action_trace_pairs_with_the_kh_action_trace(self) -> None:
         """Wang Eq. (15) needs both sides of the same orbit action.
 

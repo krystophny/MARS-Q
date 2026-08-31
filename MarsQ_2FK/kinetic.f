@@ -4331,6 +4331,10 @@ C     ADD SPECIAL SINGULAR CONTRIBUTION FROM RLM(L)=0
          IF (SLAMD0.GT.0.) CALL KJPFILL1(JS,JS_MAT,KGRID,0.,0,4)
       ENDIF
 
+C     COMPLETE EXECUTED KINETIC MATRIX, AFTER THE PITCH QUADRATURE AND
+C     AFTER THE ELL=0 SINGULAR ADD-BACK, SO IT CARRIES EVERY TERM.
+      CALL WRITEKJPMATRIXTRACE(JS,JS_MAT,KGRID)
+
 C     SFD OPERATION
 C     TRAPPED THERMAL ION BOUNCE FREQUENCY AVERAGE
       IF (KGRID.EQ.1.AND.INCSFD.GT.0) THEN
@@ -8294,6 +8298,62 @@ C           PASSING PARTICLES
 
       RETURN
       END
+
+C=======================================================================
+C DEFAULT-OFF TRACE OF THE COMPLETE EXECUTED KINETIC MATRIX.            =
+C                                                                       =
+C The diagonal G_k H_k phase test is a necessary condition for Wang's   =
+C squared action, not a sufficient one: it omits the cross terms, the   =
+C energy-integrated I_ell weights, and the singular add-back.  This     =
+C writer emits the assembled blocks after the pitch quadrature and      =
+C after the ell=0 singular contribution, so what it records is the      =
+C matrix the finite-element work contraction actually receives.         =
+C                                                                       =
+C Written only for surfaces named in ELL_M1_TRACE.REQUEST.  Nothing is  =
+C changed: these are the production arrays, read after they are built.  =
+C=======================================================================
+      SUBROUTINE WRITEKJPMATRIXTRACE(JS,JS_MAT,KGRID)
+
+      USE DIMENSIM
+      USE KINETICM
+      USE ToolBox
+      IMPLICIT NONE
+
+      INTEGER JS,JS_MAT,KGRID,K,M,FID
+      LOGICAL OTRACE,OEXIST
+      CHARACTER*64 PATH
+
+      OTRACE = .FALSE.
+      CALL KELLTRACESELECT(JS,KGRID,OTRACE)
+      IF (.NOT.OTRACE) RETURN
+
+      WRITE(PATH,'("ELL_M1_TRACE_JS",I4.4,"_G",I1,"_KJPMAT.OUT")')
+     &      JS,KGRID
+      INQUIRE(FILE=PATH,EXIST=OEXIST)
+      IF (OEXIST) RETURN
+      FID=ASSIGNFREEFILEUNIT()
+      OPEN(FID,FILE=PATH,STATUS='REPLACE',ACTION='WRITE')
+      WRITE(FID,*) '% COMPLETE EXECUTED KINETIC MATRIX AFTER PITCH',
+     & ' QUADRATURE AND ELL=0 SINGULAR ADD-BACK'
+      WRITE(FID,*) '% JS G MSMAX', JS, KGRID, MSMAX
+      WRITE(FID,*) '% K M MK MM',
+     & ' X1PARA X1PERP X1DPHI X2PARA X2PERP X2DPHI',
+     & ' Q1PARA Q1PERP Q1DPHI Q2PARA Q2PERP Q2DPHI',
+     & ' Q3PARA Q3PERP Q3DPHI DPPARA DPPERP DPDPHI (RE,IM PAIRS)'
+      DO K=1,MSMAX
+      DO M=1,MSMAX
+         WRITE(FID,1000) K,M,RM(K,2),RM(M,2),
+     &      VX1PARA(K,M,JS_MAT),VX1PERP(K,M,JS_MAT),VX1DPHI(K,M,JS_MAT),
+     &      VX2PARA(K,M,JS_MAT),VX2PERP(K,M,JS_MAT),VX2DPHI(K,M,JS_MAT),
+     &      VQ1PARA(K,M,JS_MAT),VQ1PERP(K,M,JS_MAT),VQ1DPHI(K,M,JS_MAT),
+     &      VQ2PARA(K,M,JS_MAT),VQ2PERP(K,M,JS_MAT),VQ2DPHI(K,M,JS_MAT),
+     &      VQ3PARA(K,M,JS_MAT),VQ3PERP(K,M,JS_MAT),VQ3DPHI(K,M,JS_MAT),
+     &      VDPPARA(K,M,JS_MAT),VDPPERP(K,M,JS_MAT),VDPDPHI(K,M,JS_MAT)
+      ENDDO
+      ENDDO
+      CLOSE(FID)
+ 1000 FORMAT(2I8,2F8.1,36(1X,E24.16))
+      END SUBROUTINE WRITEKJPMATRIXTRACE
 
 C=======================================================================
 C DEFAULT-OFF TRACE OF THE EXECUTED TRAPPED-PARTICLE G-FACTORS.         =
