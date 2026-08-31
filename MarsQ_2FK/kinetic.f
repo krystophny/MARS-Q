@@ -9958,7 +9958,7 @@ C     COMPUTATION OF PPERP AND PPARA
      &        STATUS='REPLACE',ACTION='WRITE')
          WRITE(FIDACTION,*) '% STATIC DOWNSTREAM MAP; NATIVE BASIS'
          WRITE(FIDACTION,*) '% P: IS INDX DRIVE MOMENT NODE MROW MSA',
-     &      ' RE IM; NODE=-1 LOWER, 0 HALF, +1 UPPER'
+     &      ' MOUT MIN RE IM; NODE=-1 LOWER, 0 HALF, +1 UPPER'
          WRITE(FIDACTION,*) '% R: IS MOUT MIN RJAM_FOURIER_RE IM'
          WRITE(FIDACTION,*) '% W: IS WORK MOMENT MPRESS RE IM;',
      &      ' WORK=1 X1, 2 X2 BASE, 3 P-X1, 4 P-X2'
@@ -10403,32 +10403,46 @@ C=======================================================================
             LYCOL=(MSA-1)*NYCOMP
 C           Five pressure drives; moment 1=parallel, 2=perpendicular.
             WRITE(FID,1000) 'P',IS,INDX,1,1,-1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
      &         FSUBM(KYPPARA+LYROW,KXX1+LXCOL,IS)
             WRITE(FID,1000) 'P',IS,INDX,1,1, 1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
      &         GSUBM(KYPPARA+LYROW,KXX1+LXCOL,IS)
             WRITE(FID,1000) 'P',IS,INDX,1,2,-1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
      &         FSUBM(KYPPERP+LYROW,KXX1+LXCOL,IS)
             WRITE(FID,1000) 'P',IS,INDX,1,2, 1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
      &         GSUBM(KYPPERP+LYROW,KXX1+LXCOL,IS)
             WRITE(FID,1000) 'P',IS,INDX,2,1, 0,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
      &         DSUBM(KYPPARA+LYROW,KYX2+LYCOL,IS)
             WRITE(FID,1000) 'P',IS,INDX,2,2, 0,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
      &         DSUBM(KYPPERP+LYROW,KYX2+LYCOL,IS)
             WRITE(FID,1000) 'P',IS,INDX,3,1,-1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
      &         FSUBM(KYPPARA+LYROW,KXB1+LXCOL,IS)
             WRITE(FID,1000) 'P',IS,INDX,3,1, 1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
      &         GSUBM(KYPPARA+LYROW,KXB1+LXCOL,IS)
             WRITE(FID,1000) 'P',IS,INDX,3,2,-1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
      &         FSUBM(KYPPERP+LYROW,KXB1+LXCOL,IS)
             WRITE(FID,1000) 'P',IS,INDX,3,2, 1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
      &         GSUBM(KYPPERP+LYROW,KXB1+LXCOL,IS)
             WRITE(FID,1000) 'P',IS,INDX,4,1, 0,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
      &         DSUBM(KYPPARA+LYROW,KYB2+LYCOL,IS)
             WRITE(FID,1000) 'P',IS,INDX,4,2, 0,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
      &         DSUBM(KYPPERP+LYROW,KYB2+LYCOL,IS)
             WRITE(FID,1000) 'P',IS,INDX,5,1, 0,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
      &         DSUBM(KYPPARA+LYROW,KYB3+LYCOL,IS)
             WRITE(FID,1000) 'P',IS,INDX,5,2, 0,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
      &         DSUBM(KYPPERP+LYROW,KYB3+LYCOL,IS)
          ENDDO
       ENDDO
@@ -10520,7 +10534,7 @@ C           Five pressure drives; moment 1=parallel, 2=perpendicular.
       WRITE(FID,1030) 'F',IS,1,PI2
       WRITE(FID,1030) 'F',IS,2,0.5D0*PI2
       WRITE(FID,1030) 'F',IS,3,0.5D0*PI2
- 1000 FORMAT(A1,7(1X,I7),2(1X,E18.10))
+ 1000 FORMAT(A1,9(1X,I7),2(1X,E18.10))
  1010 FORMAT(A1,3(1X,I7),2(1X,E18.10))
  1020 FORMAT(A1,4(1X,I7),2(1X,E18.10))
  1030 FORMAT(A1,2(1X,I7),1X,E18.10)
