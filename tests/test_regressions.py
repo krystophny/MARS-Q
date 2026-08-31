@@ -522,6 +522,8 @@ class SourceContractTests(unittest.TestCase):
             self.assertIn(f"'W',IS,{work},", writer)
         for drive in range(1, 6):
             self.assertIn(f"'G',IS,{drive},MOMENT", writer)
+        self.assertIn("'C',IS,INDX,KPOUT,IEFFECTOUT", writer)
+        self.assertIn("INDXDWKC(KP,IEFFECT).EQ.INDX", writer)
         self.assertIn("NINT(RM(MROW,2)),NINT(RM(MSA,2))", writer)
         self.assertIn("/RJAM(IS,J)", writer)
         self.assertIn("0.5D0*PI2", writer)
