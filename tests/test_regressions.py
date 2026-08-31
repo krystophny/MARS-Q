@@ -7,6 +7,7 @@ black-box input-validation tests against a built MARS executable.
 from __future__ import annotations
 
 import importlib.util
+import cmath
 import math
 import os
 from pathlib import Path
@@ -495,6 +496,71 @@ class SourceContractTests(unittest.TestCase):
         unsplit = sum(drives)
         self.assertEqual(unsplit, complex(0.375, 2.125))
         self.assertNotAlmostEqual(sum(abs(value) for value in drives), abs(unsplit))
+
+    def test_dwk_action_map_exports_the_executed_factorization(self) -> None:
+        """The default-off map spans pressure recovery and all work rows."""
+        calculator = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE CALCDWKCOMP") :
+            KINETIC_SOURCE.index("END SUBROUTINE CALCDWKCOMP")
+        ]
+        writer = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE WRITEDWKACTIONMAP") :
+            KINETIC_SOURCE.index("END SUBROUTINE WRITEDWKACTIONMAP")
+        ]
+        self.assertIn("DWK_ACTION_MAP.REQUEST", calculator)
+        self.assertLess(
+            calculator.index("CALL FILLMATDWKCOMP"),
+            calculator.index("CALL WRITEDWKACTIONMAP"),
+        )
+        self.assertLess(
+            calculator.index("CALL WRITEDWKACTIONMAP"),
+            calculator.index("CALL CALCPRECOMP"),
+        )
+        for drive in range(1, 6):
+            self.assertIn(f"'P',IS,INDX,{drive},", writer)
+        for work in range(1, 5):
+            self.assertIn(f"'W',IS,{work},", writer)
+        self.assertIn("/RJAM(IS,J)", writer)
+        self.assertIn("0.5D0*PI2", writer)
+
+        # Independent oracle for the Fourier/Jacobian recovery serialized by
+        # R records.  Applying the dense kernel equals the native grid-space
+        # divide followed by the inverse Fourier transform.
+        n_chi = 17
+        modes = [-2, 0, 3]
+        jacobian = [1.5 + 0.1 * math.cos(2.0 * math.pi * j / n_chi)
+                    for j in range(n_chi)]
+        source = [complex(0.5, -0.25), complex(-1.0, 2.0), complex(3.0, 0.75)]
+        grid = [
+            sum(source[k] * cmath.exp(1j * modes[k] * 2.0 * math.pi * j / n_chi)
+                for k in range(len(modes))) / jacobian[j]
+            for j in range(n_chi)
+        ]
+        native = [
+            sum(grid[j] * cmath.exp(-1j * mode * 2.0 * math.pi * j / n_chi)
+                for j in range(n_chi)) / n_chi
+            for mode in modes
+        ]
+        matrix = [[
+            sum(cmath.exp(1j * (mode_in - mode_out) * 2.0 * math.pi * j / n_chi)
+                / jacobian[j] for j in range(n_chi)) / n_chi
+            for mode_in in modes]
+            for mode_out in modes
+        ]
+        mapped = [sum(row[k] * source[k] for k in range(len(modes)))
+                  for row in matrix]
+        for actual, expected in zip(mapped, native, strict=True):
+            self.assertAlmostEqual(actual.real, expected.real)
+            self.assertAlmostEqual(actual.imag, expected.imag)
+
+        # The F records state the same half/integer finite-element fold as
+        # production without applying the radial integration weight CSH.
+        lower, half, upper = 1.25 - 0.5j, -2.0 + 3.0j, 0.75 + 4.0j
+        folded = 2.0 * math.pi**2 * (half + 0.5 * (lower + upper))
+        mapped_fold = (2.0 * math.pi**2 * half + math.pi**2 * lower
+                       + math.pi**2 * upper)
+        self.assertAlmostEqual(folded.real, mapped_fold.real)
+        self.assertAlmostEqual(folded.imag, mapped_fold.imag)
 
     def test_kjp_matrix_trace_records_local_pressure_source_blocks(self) -> None:
         """The local trace includes its blocks and states its validity boundary.

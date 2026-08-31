@@ -9902,9 +9902,10 @@ C     COMPUTATION OF PPERP AND PPARA
       INCLUDE 'comioc.inc'
       
       INTEGER KP,IS,TOTINDX,INDX,I,J,FID,MROW,MSA,LXROW,LYCOL,
-     &        IDRIVE
+     &        IDRIVE,IREQ,IOS,FIDACTION
       LOGICAL ODIRECT,OBREAKDOWN,ODRIVELEDGER,OBILINEAR,
-     &        OPRESSURETRACE,ODRIVETERMS,OKELEDGER,OCACHEFINITE
+     &        OPRESSURETRACE,ODRIVETERMS,OKELEDGER,OCACHEFINITE,
+     &        OACTIONMAP,ACTIONSELECTED(NRP1)
       REAL*8 PI2,CACHEMAX,FIELDMAX,OPPARAMAX,OPPERPMAX,
      &       PPARAMAX,PPERPMAX,DRIVERESID,DRIVESCALE
       COMPLEX*16,DIMENSION(:),ALLOCATABLE:: DWPPARA,DWPPERP,DWK
@@ -9934,7 +9935,36 @@ C     COMPUTATION OF PPERP AND PPARA
       INQUIRE(FILE='DWK_DRIVE_LEDGER.REQUEST',EXIST=ODRIVELEDGER)
       INQUIRE(FILE='DWK_BILINEAR_LEDGER.REQUEST',EXIST=OBILINEAR)
       INQUIRE(FILE='DWK_PRESSURE_TRACE.REQUEST',EXIST=OPRESSURETRACE)
+      INQUIRE(FILE='DWK_ACTION_MAP.REQUEST',EXIST=OACTIONMAP)
       ODRIVETERMS=ODRIVELEDGER.OR.OBILINEAR.OR.OPRESSURETRACE
+      ACTIONSELECTED=.FALSE.
+      IF (OACTIONMAP) THEN
+         IREQ=ASSIGNFREEFILEUNIT()
+         OPEN(IREQ,FILE='DWK_ACTION_MAP.REQUEST',STATUS='OLD',
+     &        ACTION='READ')
+ 5       CONTINUE
+         READ(IREQ,*,IOSTAT=IOS) I
+         IF (IOS.LT.0) GOTO 6
+         IF (IOS.GT.0) STOP 'INVALID DWK ACTION MAP REQUEST'
+         IF (I.LT.1.OR.I.GT.NR) STOP 'DWK ACTION MAP IS OUT OF RANGE'
+         IF (ACTIONSELECTED(I)) STOP 'DUPLICATE DWK ACTION MAP IS'
+         ACTIONSELECTED(I)=.TRUE.
+         GOTO 5
+ 6       CLOSE(IREQ)
+         IF (.NOT.ANY(ACTIONSELECTED(1:NR)))
+     &      STOP 'EMPTY DWK ACTION MAP REQUEST'
+         FIDACTION=ASSIGNFREEFILEUNIT()
+         OPEN(FIDACTION,FILE='DWK_ACTION_MAP.OUT',FORM='FORMATTED',
+     &        STATUS='REPLACE',ACTION='WRITE')
+         WRITE(FIDACTION,*) '% STATIC DOWNSTREAM MAP; NATIVE BASIS'
+         WRITE(FIDACTION,*) '% P: IS INDX DRIVE MOMENT NODE MROW MSA',
+     &      ' RE IM; NODE=-1 LOWER, 0 HALF, +1 UPPER'
+         WRITE(FIDACTION,*) '% R: IS MOUT MIN RJAM_FOURIER_RE IM'
+         WRITE(FIDACTION,*) '% W: IS WORK MOMENT MPRESS RE IM;',
+     &      ' WORK=1 X1, 2 X2 BASE, 3 P-X1, 4 P-X2'
+         WRITE(FIDACTION,*) '% F: IS SLOT COEFF;',
+     &      ' SLOT=1 HALF-Y, 2 LOWER-X, 3 UPPER-X'
+      ENDIF
       ALLOCATE (DWPPARA(TOTINDX),DWPPERP(TOTINDX),DWK(TOTINDX))
       ALLOCATE (DWPPARX(NRP1,TOTINDX),DWPPERX(NRP1,TOTINDX),
      &          DWPPARY(NRP1,TOTINDX),DWPPERY(NRP1,TOTINDX) )
@@ -10023,6 +10053,10 @@ C     FILL IN THE GLOBAL MATRIX FOR PRESSURE CALCULATION
             CALL FILLMATDWKCOMP(IS,INDX,
      &                          ASUBM,BSUBM,CSUBM,DSUBM,
      &                          ESUBM,FSUBM,GSUBM,HSUBM)         
+            IF (OACTIONMAP.AND.ACTIONSELECTED(IS))
+     &         CALL WRITEDWKACTIONMAP(IS,INDX,FIDACTION,
+     &                                ASUBM,BSUBM,CSUBM,DSUBM,
+     &                                ESUBM,FSUBM,GSUBM,HSUBM)
 C     CALCULATE THE COMPONENTS OF PRESSURE     
             CALL CALCPRECOMP(IS,0,PPARAC(:,:,INDX),PPERPC(:,:,INDX),
      &                       ASUBM,BSUBM,CSUBM,DSUBM,
@@ -10063,6 +10097,11 @@ C     CALCULATE ENERGY PROFILE OF DIFFERENT COMPONENTS
 	  
          ENDDO
       ENDDO
+
+      IF (OACTIONMAP) THEN
+         CLOSE(FIDACTION)
+         WRITE(*,*) 'WROTE DWK_ACTION_MAP.OUT'
+      ENDIF
 
       FIELDMAX = MAX(MAXVAL(ABS(X1U)),MAXVAL(ABS(X2U)),
      &               MAXVAL(ABS(B1U)),MAXVAL(ABS(B2U)),
@@ -10329,6 +10368,163 @@ C     OUTPUT THE ENERGY COMPONENTS
       CALL DEALLOCATEDWKCOMPMAT
 
       END SUBROUTINE CALCDWKCOMP
+
+C=======================================================================
+C WRITE STATIC MAPS DOWNSTREAM OF ONE KJPFILL COMPONENT BLOCK           =
+C                                                                       =
+C The request file contains MARS half-mesh indices.  P records are the  =
+C exact GF/GG pressure-source rows split into the five native field     =
+C drives.  R records are the RJAM Fourier recovery.  W records are the  =
+C four pressure-to-work covectors after the native finite-element fold; =
+C F records expose that fold separately.  No production array changes. =
+C=======================================================================
+      SUBROUTINE WRITEDWKACTIONMAP(IS,INDX,FID,
+     &                             ASUBM,BSUBM,CSUBM,DSUBM,
+     &                             ESUBM,FSUBM,GSUBM,HSUBM)
+      USE RCOMDM
+      USE DIMENSIM
+      USE GLOBALM
+      USE KINETICM
+      USE GIJLM
+      USE CONVOLCOFM
+      IMPLICIT NONE
+      INCLUDE 'specmat.inc'
+      INCLUDE 'compam.inc'
+      INCLUDE 'comioc.inc'
+      INTEGER IS,INDX,FID,MROW,MSA,J,LXROW,LXCOL,LYROW,LYCOL,
+     &        MOMENT
+      REAL*8 HCHI,THETA,PI2,ZEM
+      COMPLEX*16 RECOV,W1,W2,W3,W4
+
+      DO MROW=1,MSMAX
+         LYROW=(MROW-1)*NYCOMP
+         DO MSA=1,MSMAX
+            LXCOL=(MSA-1)*NXCOMP
+            LYCOL=(MSA-1)*NYCOMP
+C           Five pressure drives; moment 1=parallel, 2=perpendicular.
+            WRITE(FID,1000) 'P',IS,INDX,1,1,-1,MROW,MSA,
+     &         FSUBM(KYPPARA+LYROW,KXX1+LXCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,1,1, 1,MROW,MSA,
+     &         GSUBM(KYPPARA+LYROW,KXX1+LXCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,1,2,-1,MROW,MSA,
+     &         FSUBM(KYPPERP+LYROW,KXX1+LXCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,1,2, 1,MROW,MSA,
+     &         GSUBM(KYPPERP+LYROW,KXX1+LXCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,2,1, 0,MROW,MSA,
+     &         DSUBM(KYPPARA+LYROW,KYX2+LYCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,2,2, 0,MROW,MSA,
+     &         DSUBM(KYPPERP+LYROW,KYX2+LYCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,3,1,-1,MROW,MSA,
+     &         FSUBM(KYPPARA+LYROW,KXB1+LXCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,3,1, 1,MROW,MSA,
+     &         GSUBM(KYPPARA+LYROW,KXB1+LXCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,3,2,-1,MROW,MSA,
+     &         FSUBM(KYPPERP+LYROW,KXB1+LXCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,3,2, 1,MROW,MSA,
+     &         GSUBM(KYPPERP+LYROW,KXB1+LXCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,4,1, 0,MROW,MSA,
+     &         DSUBM(KYPPARA+LYROW,KYB2+LYCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,4,2, 0,MROW,MSA,
+     &         DSUBM(KYPPERP+LYROW,KYB2+LYCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,5,1, 0,MROW,MSA,
+     &         DSUBM(KYPPARA+LYROW,KYB3+LYCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,5,2, 0,MROW,MSA,
+     &         DSUBM(KYPPERP+LYROW,KYB3+LYCOL,IS)
+         ENDDO
+      ENDDO
+
+      IF (INDX.NE.1) RETURN
+      HCHI=2.0D0*PI/DFLOAT(NCHI)
+      DO MROW=1,MSMAX
+         DO MSA=1,MSMAX
+            RECOV=(0.0D0,0.0D0)
+            DO J=1,NCHI
+               THETA=DFLOAT(J-1)*HCHI
+               RECOV=RECOV+EXP(CI*(RM(MSA,2)-RM(MROW,2))*THETA)
+     &                      /RJAM(IS,J)
+            ENDDO
+            RECOV=RECOV/DFLOAT(NCHI)
+            WRITE(FID,1010) 'R',IS,NINT(RM(MROW,2)),
+     &         NINT(RM(MSA,2)),RECOV
+         ENDDO
+      ENDDO
+
+      PI2=2.0D0*PI*PI
+      ZEM=CSM(IS)**0
+      DO MSA=1,MSMAX
+         W1=(0.0D0,0.0D0)
+         W2=(0.0D0,0.0D0)
+         DO MROW=1,MSMAX
+            LXROW=(MROW-1)*NXCOMP
+            LYROW=(MROW-1)*NYCOMP
+            LYCOL=(MSA-1)*NYCOMP
+            W1=W1+PI2*0.5D0*(CONJG(X1U(IS,MROW))*
+     &         ESUBM(LXROW+KXV1,LYCOL+KYPPARA,IS)+
+     &         CONJG(X1U(IS+1,MROW))*
+     &         HSUBM(LXROW+KXV1,LYCOL+KYPPARA,IS+1))
+            W2=W2+PI2*ZEM*CONJG(X2U(IS,MROW))*
+     &         DSUBM(LYROW+KYV2,LYCOL+KYPPARA,IS)
+         ENDDO
+         WRITE(FID,1020) 'W',IS,1,1,NINT(RM(MSA,2)),W1
+         WRITE(FID,1020) 'W',IS,2,1,NINT(RM(MSA,2)),W2
+
+         W1=(0.0D0,0.0D0)
+         W2=(0.0D0,0.0D0)
+         IF (KEFORM.EQ.1.AND.KYPPERP.GT.0) THEN
+            DO MROW=1,MSMAX
+               LXROW=(MROW-1)*NXCOMP
+               LYROW=(MROW-1)*NYCOMP
+               LYCOL=(MSA-1)*NYCOMP
+               W1=W1+PI2*0.5D0*(CONJG(X1U(IS,MROW))*
+     &            ESUBM(LXROW+KXV1,LYCOL+KYPPERP,IS)+
+     &            CONJG(X1U(IS+1,MROW))*
+     &            HSUBM(LXROW+KXV1,LYCOL+KYPPERP,IS+1))
+               W2=W2+PI2*ZEM*CONJG(X2U(IS,MROW))*
+     &            DSUBM(LYROW+KYV2,LYCOL+KYPPERP,IS)
+            ENDDO
+         ELSEIF (KEFORM.EQ.2.AND.INCKIN.GT.0) THEN
+            DO MROW=1,MSMAX
+               LXROW=(MROW-1)*NXCOMP
+               LYROW=(MROW-1)*NYCOMP
+               LYCOL=(MSA-1)*NYCOMP
+               W1=W1-PI2*0.5D0*(CONJG(X1U(IS,MROW))*
+     &            ESUBM(LXROW+KXV1,LYCOL+KYPPARA,IS)+
+     &            CONJG(X1U(IS+1,MROW))*
+     &            HSUBM(LXROW+KXV1,LYCOL+KYPPARA,IS+1))
+               W2=W2-PI2*ZEM*CONJG(X2U(IS,MROW))*
+     &            DSUBM(LYROW+KYV2,LYCOL+KYPPARA,IS)
+            ENDDO
+         ENDIF
+         WRITE(FID,1020) 'W',IS,1,2,NINT(RM(MSA,2)),W1
+         WRITE(FID,1020) 'W',IS,2,2,NINT(RM(MSA,2)),W2
+
+         LYROW=(MSA-1)*NYCOMP
+         W3=(0.0D0,0.0D0)
+         W4=(0.0D0,0.0D0)
+         DO MROW=1,MSMAX
+            LXCOL=(MROW-1)*NXCOMP
+            LYCOL=(MROW-1)*NYCOMP
+            W3=W3+PI2*ZEM*CONJG(
+     &         FSUBM(LYROW+KYPR,LXCOL+KXV1,IS)*X1U(IS,MROW)+
+     &         GSUBM(LYROW+KYPR,LXCOL+KXV1,IS)*X1U(IS+1,MROW))
+            W4=W4+PI2*ZEM*CONJG(
+     &         DSUBM(LYROW+KYPR,LYCOL+KYV2,IS)*X2U(IS,MROW))
+         ENDDO
+         IF (KEFORM.NE.2.OR.INCKIN.LE.0) THEN
+            W3=(0.0D0,0.0D0)
+            W4=(0.0D0,0.0D0)
+         ENDIF
+         WRITE(FID,1020) 'W',IS,3,2,NINT(RM(MSA,2)),W3
+         WRITE(FID,1020) 'W',IS,4,2,NINT(RM(MSA,2)),W4
+      ENDDO
+      WRITE(FID,1030) 'F',IS,1,PI2
+      WRITE(FID,1030) 'F',IS,2,0.5D0*PI2
+      WRITE(FID,1030) 'F',IS,3,0.5D0*PI2
+ 1000 FORMAT(A1,7(1X,I7),2(1X,E18.10))
+ 1010 FORMAT(A1,3(1X,I7),2(1X,E18.10))
+ 1020 FORMAT(A1,4(1X,I7),2(1X,E18.10))
+ 1030 FORMAT(A1,2(1X,I7),1X,E18.10)
+      END SUBROUTINE WRITEDWKACTIONMAP
 
 C=======================================================================
 C WRITE AN EXACT LEDGER OF THE FIVE KINETIC PRESSURE DRIVES             =
