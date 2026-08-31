@@ -531,6 +531,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("NINT(RM(MROW,2)),NINT(RM(MSA,2))", writer)
         self.assertIn("/RJAM(IS,J)", writer)
         self.assertIn("0.5D0*PI2", writer)
+        self.assertIn("E26.17", writer)
+        self.assertNotIn("E18.10", writer)
 
         # Independent oracle for the Fourier/Jacobian recovery serialized by
         # R records.  Applying the dense kernel equals the native grid-space
