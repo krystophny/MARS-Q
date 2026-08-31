@@ -161,20 +161,22 @@ class SourceContractTests(unittest.TestCase):
         )
         self.assertAlmostEqual(traced_integral, independent_oracle)
 
-    def test_kjp_contribution_trace_precedes_native_accumulation(self) -> None:
-        """Per-call records must reconstruct a native block by plain summation."""
+    def test_kjp_factor_trace_reconstructs_native_outer_products(self) -> None:
+        """Bounded factors must retain every local channel before accumulation."""
         fill_start = KINETIC_SOURCE.index("SUBROUTINE KJPFILL(")
         fill_end = KINETIC_SOURCE.index("END\n\nC=======", fill_start)
         fill = KINETIC_SOURCE[fill_start:fill_end]
-        trace_call = fill.index("CALL WRITEKJPCONTRIBTRACE(")
+        trace_call = fill.index("CALL WRITEKJPFACTORTRACE(")
+        dense_loop = fill.index("DO K=1,MSMAX")
         native_add = fill.index("VX1PARA(K,M,JS_MAT)=VX1PARA")
+        self.assertLess(trace_call, dense_loop)
         self.assertLess(trace_call, native_add)
 
         writer_start = KINETIC_SOURCE.index(
-            "SUBROUTINE WRITEKJPCONTRIBTRACE("
+            "SUBROUTINE WRITEKJPFACTORTRACE("
         )
         writer_end = KINETIC_SOURCE.index(
-            "END SUBROUTINE WRITEKJPCONTRIBTRACE", writer_start
+            "END SUBROUTINE WRITEKJPFACTORTERM", writer_start
         )
         writer = KINETIC_SOURCE[writer_start:writer_end]
         for field in (
@@ -186,26 +188,55 @@ class SourceContractTests(unittest.TestCase):
             "ELL",
             "LAMBDA",
             "LAMBDA_WEIGHT",
+            "SIDE 0=SCALAR 1=K_LEFT 2=M_RIGHT",
         ):
             self.assertIn(field, writer)
         self.assertNotIn("VX1PARA(K,M,JS_MAT)=", writer)
+        self.assertIn("SCALAR=-SCALAR", writer)
+        self.assertLess(1 + 2 * 141, 141**2)
 
-        contributions = (
-            (1.2 + 0.3j, -0.7 + 0.2j),
-            (-0.4 + 1.1j, 0.5 - 0.8j),
-            (0.9 - 0.6j, 0.2 + 0.4j),
+        scalar = (2 + 3j, -5 + 7j, 11 - 13j, -17 - 19j)
+        left = (
+            (23 + 29j, -31 + 37j, 41 - 43j),
+            (-47 + 53j, 59 + 61j, -67 - 71j),
         )
-        traced = tuple(
-            sum(record[channel] for record in contributions)
-            for channel in range(2)
+        right = (
+            (73 - 79j, 83 + 89j, -97 + 101j, 103 - 107j, 109 + 113j, -127 + 131j),
+            (-137 - 139j, 149 - 151j, 157 + 163j, -167 + 173j, 179 - 181j, 191 + 193j),
         )
-        independent_native = (
-            contributions[0][0] + contributions[1][0] + contributions[2][0],
-            contributions[0][1] + contributions[1][1] + contributions[2][1],
+        factors = []
+        for k_values in left:
+            row = []
+            for m_values in right:
+                row.append(
+                    (
+                        scalar[0] * k_values[0] * m_values[0],
+                        scalar[0] * k_values[1] * m_values[0],
+                        scalar[2] * k_values[2] * m_values[0],
+                        scalar[0] * k_values[0] * m_values[1],
+                        scalar[0] * k_values[1] * m_values[1],
+                        scalar[2] * k_values[2] * m_values[1],
+                        scalar[0] * k_values[0] * m_values[2],
+                        scalar[0] * k_values[1] * m_values[2],
+                        scalar[2] * k_values[2] * m_values[2],
+                        scalar[0] * k_values[0] * m_values[3],
+                        scalar[0] * k_values[1] * m_values[3],
+                        scalar[2] * k_values[2] * m_values[3],
+                        scalar[0] * k_values[0] * m_values[4],
+                        scalar[0] * k_values[1] * m_values[4],
+                        scalar[2] * k_values[2] * m_values[4],
+                        scalar[1] * k_values[0] * m_values[5],
+                        scalar[1] * k_values[1] * m_values[5],
+                        scalar[3] * k_values[2] * m_values[5],
+                    )
+                )
+            factors.append(row)
+        self.assertEqual(len(factors), 2)
+        self.assertEqual(len(factors[0]), 2)
+        self.assertEqual(len(factors[0][0]), 18)
+        self.assertEqual(
+            factors[1][0][17], scalar[3] * left[1][2] * right[0][5]
         )
-        for actual, expected in zip(traced, independent_native):
-            self.assertAlmostEqual(actual.real, expected.real)
-            self.assertAlmostEqual(actual.imag, expected.imag)
 
     def test_build_manifest_binds_the_record_to_the_binary(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mars-manifest-") as temporary:

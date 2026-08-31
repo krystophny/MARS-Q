@@ -4523,6 +4523,8 @@ C=======================================================================
      &           X1DPHI(NSPECIES,2),X2DPHI(NSPECIES,2), 
      &           Q1DPHI(NSPECIES,2),Q2DPHI(NSPECIES,2), 
      &           Q3DPHI(NSPECIES,2),DPDPHI(NSPECIES,2) )
+      IF (OTRACE) CALL WRITEKJPFACTORTRACE(JS,JS_MAT,KGRID,
+     & KPITCH,KPARTICLE,ICASE,LAM,LAMH)
       DO K=1,MSMAX
       DO M=1,MSMAX
 
@@ -4805,12 +4807,6 @@ C=======================================================================
          ENDDO
       END SELECT   
 
-      IF (OTRACE) CALL WRITEKJPCONTRIBTRACE(JS,JS_MAT,KGRID,
-     & KPITCH,KPARTICLE,ICASE,
-     & K,M,LAM,LAMH,X1PARA,X1PERP,X1DPHI,X2PARA,X2PERP,X2DPHI,
-     & Q1PARA,Q1PERP,Q1DPHI,Q2PARA,Q2PERP,Q2DPHI,Q3PARA,Q3PERP,
-     & Q3DPHI,DPPARA,DPPERP,DPDPHI)
-
       IF (KGRID.EQ.1) THEN
          VX1PARA(K,M,JS_MAT)=VX1PARA(K,M,JS_MAT)+SUM(SUM(X1PARA,1),1)
          VX1PERP(K,M,JS_MAT)=VX1PERP(K,M,JS_MAT)+SUM(SUM(X1PERP,1),1)
@@ -4955,19 +4951,14 @@ C         TRANSIT COMPONENT
       END
 
 C=======================================================================
-C DEFAULT-OFF PRE-ACCUMULATION KJPFILL CONTRIBUTION TRACE.              =
+C DEFAULT-OFF PRE-ACCUMULATION KJPFILL FACTOR TRACE.                    =
 C                                                                       =
-C EACH RECORD IS ONE EXECUTED KJPFILL CALL, SPECIES, AND RESPONSE CLASS =
-C BEFORE THE LOCAL BLOCK IS ADDED TO THE PRODUCTION ARRAYS.  FOR THE    =
-C TC24 KNTVELL=-1 GATE, EACH RECORD ALSO CONTAINS EXACTLY ONE ELL.       =
-C ICASE RETAINS REGULAR, PITCH-SUBTRACTION, ANALYTIC-ADDBACK, AND ELL=0 =
-C RESPONSE CLASSES.  THE TRACE DOES NOT CHANGE PRODUCTION ARITHMETIC.   =
+C EACH TERM STORES FOUR KINETIC SCALARS, THREE K-SIDE FACTORS, AND SIX  =
+C M-SIDE FACTORS.  THEIR OUTER PRODUCTS RECONSTRUCT ALL 18 LOCAL        =
+C CHANNELS WITHOUT SERIALIZING ONE DENSE MATRIX PER PITCH CALL.         =
 C=======================================================================
-      SUBROUTINE WRITEKJPCONTRIBTRACE(JS,JS_MAT,KGRID,KPITCH,
-     & KPARTICLE,ICASE,K,M,RLAM,RLAMH,X1PARA,X1PERP,X1DPHI,
-     & X2PARA,X2PERP,
-     & X2DPHI,Q1PARA,Q1PERP,Q1DPHI,Q2PARA,Q2PERP,Q2DPHI,Q3PARA,
-     & Q3PERP,Q3DPHI,DPPARA,DPPERP,DPDPHI)
+      SUBROUTINE WRITEKJPFACTORTRACE(JS,JS_MAT,KGRID,KPITCH,
+     & KPARTICLE,ICASE,RLAM,RLAMH)
 
       USE DIMENSIM
       USE GLOBALM
@@ -4975,20 +4966,16 @@ C=======================================================================
       USE ToolBox
       IMPLICIT NONE
 
-      INTEGER JS,JS_MAT,KGRID,KPITCH,KPARTICLE,ICASE,K,M,KP,R,FID
-      REAL*8 RLAM,RLAMH
-      COMPLEX*16 X1PARA(NSPECIES,2),X1PERP(NSPECIES,2),
-     & X1DPHI(NSPECIES,2),X2PARA(NSPECIES,2),X2PERP(NSPECIES,2),
-     & X2DPHI(NSPECIES,2),Q1PARA(NSPECIES,2),Q1PERP(NSPECIES,2),
-     & Q1DPHI(NSPECIES,2),Q2PARA(NSPECIES,2),Q2PERP(NSPECIES,2),
-     & Q2DPHI(NSPECIES,2),Q3PARA(NSPECIES,2),Q3PERP(NSPECIES,2),
-     & Q3DPHI(NSPECIES,2),DPPARA(NSPECIES,2),DPPERP(NSPECIES,2),
-     & DPDPHI(NSPECIES,2)
+      INTEGER JS,JS_MAT,KGRID,KPITCH,KPARTICLE,ICASE,KP,R,L,FID
+      REAL*8 RLAM,RLAMH,H1,H3,H4,BASE
+      COMPLEX*16 SCALAR(4)
       LOGICAL OEXIST
       CHARACTER*72 PATH
 
+      IF (KNTVELL.EQ.999) STOP 'KJP FACTOR TRACE REQUIRES KNTVELL'
+      IF (ICASE.LT.1.OR.ICASE.GT.4) RETURN
       WRITE(PATH,
-     & '("ELL_M1_TRACE_JS",I4.4,"_G",I1,"_KJPCONTRIB.OUT")')
+     & '("ELL_M1_TRACE_JS",I4.4,"_G",I1,"_KJPFACTOR.OUT")')
      & JS,KGRID
 C$OMP CRITICAL(ELL_ACTION_TRACE_WRITE)
       INQUIRE(FILE=PATH,EXIST=OEXIST)
@@ -4996,33 +4983,158 @@ C$OMP CRITICAL(ELL_ACTION_TRACE_WRITE)
       OPEN(FID,FILE=PATH,STATUS='UNKNOWN',POSITION='APPEND',
      &     ACTION='WRITE')
       IF (.NOT.OEXIST) THEN
-         WRITE(FID,*) '% PRE-ACCUMULATION KJPFILL CONTRIBUTIONS'
-         WRITE(FID,*) '% ICASE 1=REGULAR 2=PITCH_SINGULAR_COMBINED',
-     &    ' 3=ANALYTIC_ADDBACK 4=ELL0_ADDBACK 5=ADIABATIC',
-     &    ' 6=ADIABATIC_EXTRA'
+         WRITE(FID,*) '% PRE-ACCUMULATION KJPFILL FACTORS'
+         WRITE(FID,*) '% TERM 1=REGULAR_BASE 2=ELL0_REGULAR_SUB',
+     &    ' 3=PITCH_SINGULAR_BASE 4=PITCH_SINGULAR_SUB',
+     &    ' 5=ANALYTIC_ADDBACK 6=ELL0_ADDBACK'
+         WRITE(FID,*) '% SIDE 0=SCALAR 1=K_LEFT 2=M_RIGHT'
          WRITE(FID,*) '% JS G JSMAT PITCH PARTICLE ICASE KP CLASS',
-     &    ' K M ELL',
-     &    ' LAMBDA LAMBDA_WEIGHT MK MM',
-     &    ' X1PARA X1PERP X1DPHI X2PARA X2PERP X2DPHI',
-     &    ' Q1PARA Q1PERP Q1DPHI Q2PARA Q2PERP Q2DPHI',
-     &    ' Q3PARA Q3PERP Q3DPHI DPPARA DPPERP DPDPHI',
-     &    ' (RE,IM PAIRS)'
+     &    ' ELL TERM SIDE INDEX HARMONIC LAMBDA LAMBDA_WEIGHT',
+     &    ' SIX COMPLEX PAYLOAD VALUES'
       ENDIF
-      DO KP=1,NSPECIES
-      DO R=1,2
-         WRITE(FID,1000) JS,KGRID,JS_MAT,KPITCH,KPARTICLE,ICASE,KP,
-     &    R,K,M,KNTVELL,RLAM,RLAMH,RM(K,2),RM(M,2),X1PARA(KP,R),
-     &    X1PERP(KP,R),X1DPHI(KP,R),X2PARA(KP,R),X2PERP(KP,R),
-     &    X2DPHI(KP,R),Q1PARA(KP,R),Q1PERP(KP,R),Q1DPHI(KP,R),
-     &    Q2PARA(KP,R),Q2PERP(KP,R),Q2DPHI(KP,R),Q3PARA(KP,R),
-     &    Q3PERP(KP,R),Q3DPHI(KP,R),DPPARA(KP,R),DPPERP(KP,R),
-     &    DPDPHI(KP,R)
-      ENDDO
+
+      H3=WFUN(JS,KGRID)
+      DO L=1,MLMAX
+         IF (NINT(RLM(L)).NE.KNTVELL) CYCLE
+         DO KP=1,NSPECIES
+            IF (KPARTICLE.EQ.0 .AND. ABS(RLM(L)).LT.0.1) THEN
+               R=2
+            ELSE
+               R=1
+            ENDIF
+            IF (ICASE.EQ.1) THEN
+               SCALAR(1)=VI(1,L,KP)*RLAMH*H3
+               SCALAR(2)=VI(2,L,KP)*RLAMH*H3
+               SCALAR(3)=VI(3,L,KP)*RLAMH*H3
+               SCALAR(4)=VI(4,L,KP)*RLAMH*H3
+               CALL WRITEKJPFACTORTERM(FID,JS,JS_MAT,KGRID,KPITCH,
+     &          KPARTICLE,ICASE,KP,R,L,1,RLAM,RLAMH,SCALAR,
+     &          VPARA(:,L),VPERP(:,L),VDPHI(:,L),VX1(:,L),VX2(:,L),
+     &          VQ1(:,L),VQ2(:,L),VQ3(:,L),VDP(:,L))
+               IF (KPARTICLE.EQ.0 .AND. ABS(RLM(L)).LT.0.1) THEN
+                  IF (SLAMD0.GT.0.) THEN
+                     SCALAR=-SCALAR
+                     CALL WRITEKJPFACTORTERM(FID,JS,JS_MAT,KGRID,
+     &                KPITCH,KPARTICLE,ICASE,KP,R,L,2,RLAM,RLAMH,
+     &                SCALAR,VPARA0(:,L),VPERP0(:,L),VDPHI0(:,L),
+     &                VX10(:,L),VX20(:,L),VQ10(:,L),VQ20(:,L),
+     &                VQ30(:,L),VDP0(:,L))
+                  ENDIF
+               ENDIF
+            ELSEIF (ICASE.EQ.2) THEN
+               H1=SLAM0(L,KP)
+               IF (H1.GT.0.) THEN
+                  IF (KPARTICLE.EQ.1) THEN
+                     H4=PSPECIES_NP(KP)
+                  ELSEIF (ABS(RLM(L)).GT.0.1) THEN
+                     H4=PSPECIES_NTB(KP)
+                  ELSE
+                     H4=PSPECIES_NTD(KP)
+                  ENDIF
+                  SCALAR(1)=LOG(ABS(RLAM-H1))*SF0(L,KP,0,1)
+     &                     *RLAMH*H3*H4
+                  SCALAR(2)=LOG(ABS(RLAM-H1))*SF0(L,KP,0,2)
+     &                     *RLAMH*H3*H4
+                  SCALAR(3)=LOG(ABS(RLAM-H1))*SF0(L,KP,0,3)
+     &                     *RLAMH*H3*H4
+                  SCALAR(4)=LOG(ABS(RLAM-H1))*SF0(L,KP,0,4)
+     &                     *RLAMH*H3*H4
+                  CALL WRITEKJPFACTORTERM(FID,JS,JS_MAT,KGRID,
+     &             KPITCH,KPARTICLE,ICASE,KP,R,L,3,RLAM,RLAMH,
+     &             SCALAR,VPARA(:,L),VPERP(:,L),VDPHI(:,L),
+     &             VX1(:,L),VX2(:,L),VQ1(:,L),VQ2(:,L),VQ3(:,L),
+     &             VDP(:,L))
+                  SCALAR=-SCALAR
+                  CALL WRITEKJPFACTORTERM(FID,JS,JS_MAT,KGRID,
+     &             KPITCH,KPARTICLE,ICASE,KP,R,L,4,RLAM,RLAMH,
+     &             SCALAR,SVPARA0(:,L,KP),SVPERP0(:,L,KP),
+     &             SVDPHI0(:,L,KP),SVX10(:,L,KP),SVX20(:,L,KP),
+     &             SVQ10(:,L,KP),SVQ20(:,L,KP),SVQ30(:,L,KP),
+     &             SVDP0(:,L,KP))
+               ENDIF
+            ELSEIF (ICASE.EQ.3) THEN
+               H1=SLAM0(L,KP)
+               IF (H1.GT.0.) THEN
+                  IF (KPARTICLE.EQ.1) THEN
+                     H4=PSPECIES_NP(KP)
+                     BASE=(H1)*(LOG(H1)-1.)
+     &                   +(HKMIN(JS,KGRID)-H1)
+     &                   *(LOG(HKMIN(JS,KGRID)-H1)-1.)
+                  ELSE
+                     IF (ABS(RLM(L)).GT.0.1) THEN
+                        H4=PSPECIES_NTB(KP)
+                     ELSE
+                        H4=PSPECIES_NTD(KP)
+                     ENDIF
+                     BASE=(H1-HKMIN(JS,KGRID))
+     &                   *(LOG(H1-HKMIN(JS,KGRID))-1.)
+     &                   +(HKMAX(JS,KGRID)-H1)
+     &                   *(LOG(HKMAX(JS,KGRID)-H1)-1.)
+                  ENDIF
+                  SCALAR(1)=BASE*SF0(L,KP,0,1)
+     &                     /(B0K*SQRT(PI))*H3*H4
+                  SCALAR(2)=BASE*SF0(L,KP,0,2)
+     &                     /(B0K*SQRT(PI))*H3*H4
+                  SCALAR(3)=BASE*SF0(L,KP,0,3)
+     &                     /(B0K*SQRT(PI))*H3*H4
+                  SCALAR(4)=BASE*SF0(L,KP,0,4)
+     &                     /(B0K*SQRT(PI))*H3*H4
+                  CALL WRITEKJPFACTORTERM(FID,JS,JS_MAT,KGRID,
+     &             KPITCH,KPARTICLE,ICASE,KP,R,L,5,H1,0.D0,
+     &             SCALAR,SVPARA0(:,L,KP),SVPERP0(:,L,KP),
+     &             SVDPHI0(:,L,KP),SVX10(:,L,KP),SVX20(:,L,KP),
+     &             SVQ10(:,L,KP),SVQ20(:,L,KP),SVQ30(:,L,KP),
+     &             SVDP0(:,L,KP))
+               ENDIF
+            ELSEIF (ICASE.EQ.4) THEN
+               IF (KPARTICLE.EQ.0 .AND. ABS(RLM(L)).LT.0.1) THEN
+                  SCALAR(1)=VI0(1,KP)*H3
+                  SCALAR(2)=VI0(2,KP)*H3
+                  SCALAR(3)=VI0(3,KP)*H3
+                  SCALAR(4)=VI0(4,KP)*H3
+                  CALL WRITEKJPFACTORTERM(FID,JS,JS_MAT,KGRID,
+     &             KPITCH,KPARTICLE,ICASE,KP,R,L,6,SLAMD0,0.D0,
+     &             SCALAR,VPARA0(:,L),VPERP0(:,L),VDPHI0(:,L),
+     &             VX10(:,L),VX20(:,L),VQ10(:,L),VQ20(:,L),
+     &             VQ30(:,L),VDP0(:,L))
+               ENDIF
+            ENDIF
+         ENDDO
       ENDDO
       CLOSE(FID)
 C$OMP END CRITICAL(ELL_ACTION_TRACE_WRITE)
- 1000 FORMAT(11I8,40(1X,E24.16))
-      END SUBROUTINE WRITEKJPCONTRIBTRACE
+      END SUBROUTINE WRITEKJPFACTORTRACE
+
+      SUBROUTINE WRITEKJPFACTORTERM(FID,JS,JS_MAT,KGRID,KPITCH,
+     & KPARTICLE,ICASE,KP,R,L,TERM,RLAM,RLAMH,FS,FLPARA,FLPERP,
+     & FLDPHI,FRX1,FRX2,FRQ1,FRQ2,FRQ3,FRDP)
+
+      USE DIMENSIM
+      USE GLOBALM
+      USE KINETICM
+      IMPLICIT NONE
+
+      INTEGER FID,JS,JS_MAT,KGRID,KPITCH,KPARTICLE,ICASE,KP,R,L,
+     & TERM,K
+      REAL*8 RLAM,RLAMH
+      COMPLEX*16 FS(4),FLPARA(*),FLPERP(*),FLDPHI(*),FRX1(*),
+     & FRX2(*),FRQ1(*),FRQ2(*),FRQ3(*),FRDP(*),FZERO
+
+      FZERO=(0.D0,0.D0)
+      WRITE(FID,1000) JS,KGRID,JS_MAT,KPITCH,KPARTICLE,ICASE,KP,R,
+     & NINT(RLM(L)),TERM,0,0,0,RLAM,RLAMH,FS,FZERO,FZERO
+      DO K=1,MSMAX
+         WRITE(FID,1000) JS,KGRID,JS_MAT,KPITCH,KPARTICLE,ICASE,
+     &    KP,R,NINT(RLM(L)),TERM,1,K,NINT(RM(K,2)),RLAM,RLAMH,
+     &    FLPARA(K),FLPERP(K),FLDPHI(K),FZERO,FZERO,FZERO
+      ENDDO
+      DO K=1,MSMAX
+         WRITE(FID,1000) JS,KGRID,JS_MAT,KPITCH,KPARTICLE,ICASE,
+     &    KP,R,NINT(RLM(L)),TERM,2,K,NINT(RM(K,2)),RLAM,RLAMH,
+     &    FRX1(K),FRX2(K),FRQ1(K),FRQ2(K),FRQ3(K),FRDP(K)
+      ENDDO
+ 1000 FORMAT(13I8,14(1X,E24.16))
+      END SUBROUTINE WRITEKJPFACTORTERM
 
 C=======================================================================
 C PUT ALL I,H,G FACTORS TOGETHER AND FILL INTO MATRIX ELEMENTS 
