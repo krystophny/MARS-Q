@@ -125,6 +125,55 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("IF (ABS(RLM(L)+1.0).LT.0.1)", KINETIC_SOURCE)
         self.assertIn("_KH.OUT", KINETIC_SOURCE)
 
+    def test_response_split_assigns_the_singular_term_once(self) -> None:
+        """Each lane must carry its own share of the singular coefficient.
+
+        KIA_TRAP subtracts LOG|lam-lam0|*SF0 from the pitch integral and
+        KJPFILL adds it back. Projecting only the regular part therefore
+        leaves both lanes holding the whole singular term, and their sum
+        exceeds the untouched torque by exactly one extra copy of it.
+        """
+        ksf0 = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE KSF0") :
+            KINETIC_SOURCE.index("SUBROUTINE KSGH0")
+        ]
+        trapped = ksf0[: ksf0.index("ELSEIF (KPARTICLE.EQ.1) THEN")]
+        self.assertEqual(
+            trapped.count("CALL KELLRESPONSEPART(ZVI,RLM(L))"), 4
+        )
+        for slot in range(1, 5):
+            assignment = f"SF0(L,KP,KOPT,{slot}) = ZVI"
+            self.assertIn(assignment, trapped)
+            at = trapped.index(assignment)
+            projected = trapped.rindex("CALL KELLRESPONSEPART(ZVI,RLM(L))", 0, at)
+            evaluated = trapped.rindex("CALL KIA_TRAP0", 0, at)
+            self.assertLess(
+                evaluated, projected,
+                f"slot {slot} is stored without projecting what KIA_TRAP0 gave",
+            )
+
+        # Independent oracle for the reconstruction the split must satisfy.
+        regular = complex(3.0, -5.0)
+        singular = complex(0.25, 0.75)
+
+        def lane(keep_real: bool, singular_piece: complex) -> complex:
+            body = regular - singular
+            body = (complex(body.real, 0.0) if keep_real
+                    else complex(0.0, body.imag))
+            return body + singular_piece
+
+        projected_lanes = [
+            lane(True, complex(singular.real, 0.0)),
+            lane(False, complex(0.0, singular.imag)),
+        ]
+        total = sum(projected_lanes)
+        self.assertAlmostEqual(total.real, regular.real)
+        self.assertAlmostEqual(total.imag, regular.imag)
+
+        excess = sum(lane(keep, singular) for keep in (True, False)) - regular
+        self.assertAlmostEqual(excess.real, singular.real)
+        self.assertAlmostEqual(excess.imag, singular.imag)
+
     def test_response_part_projection_executes_real_imaginary_or_identity(self) -> None:
         compiler = shutil.which("gfortran")
         if compiler is None:
