@@ -521,6 +521,9 @@ class SourceContractTests(unittest.TestCase):
         for work in range(1, 5):
             self.assertIn(f"'W',IS,{work},", writer)
             self.assertIn(f"'O',IS,{work},", writer)
+        self.assertIn("FIELDNODE OUTPUTNODE", KINETIC_SOURCE)
+        self.assertIn("'O',IS,3,2,-1,0,MROW,MSA", writer)
+        self.assertIn("'O',IS,3,2, 1,0,MROW,MSA", writer)
         for drive in range(1, 6):
             self.assertIn(f"'G',IS,{drive},MOMENT", writer)
         self.assertIn("'C',IS,INDX,KPOUT,IEFFECTOUT", writer)
