@@ -139,12 +139,26 @@ class SourceContractTests(unittest.TestCase):
         )
         writer = ANISOTROPIC_SOURCE[writer_start:writer_end]
         self.assertIn(
-            "CALL WRITEELLACTIONENERGY(JS,KGRID,KP,KOPT,", ANISOTROPIC_SOURCE
+            "CALL WRITEELLACTIONENERGY(JS,JS_MAT,KGRID,KP,KOPT,",
+            ANISOTROPIC_SOURCE,
         )
-        self.assertIn("KDPHI,L,RL,ZZLAMB", ANISOTROPIC_SOURCE)
+        self.assertIn("KDPHI,L,KPITCH,KPARTICLE,ICASE,KTERM", ANISOTROPIC_SOURCE)
         self.assertIn("_ACTION_ENERGY.OUT", writer)
-        for field in ("KOPT", "KDPHI", "ENODE", "WEIGHT"):
+        for field in (
+            "KOPT",
+            "KDPHI",
+            "ENODE",
+            "JSMAT",
+            "PITCH",
+            "PARTICLE",
+            "ICASE",
+            "TERM",
+            "SCALAR_SLOT",
+            "WEIGHT",
+        ):
             self.assertIn(field, writer)
+        self.assertIn("% SCHEMA 2", writer)
+        self.assertIn("FORMAT(13I8,22(1X,E24.16))", writer)
 
         energy_grid = (0.0, 0.2, 0.9, 2.0)
         node_values = (1.3, -0.4, 2.1, 0.7, -1.2, 3.0)
@@ -190,6 +204,8 @@ class SourceContractTests(unittest.TestCase):
             "KP",
             "CLASS",
             "ELL",
+            "KOPT",
+            "LINDEX",
             "LAMBDA",
             "LAMBDA_WEIGHT",
             "SIDE 0=SCALAR 1=K_LEFT 2=M_RIGHT",
@@ -204,7 +220,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("MISSING ACTIVE KJP FACTOR TRACE FILE", writer)
         self.assertIn("IF (ICASE.EQ.3.OR.ICASE.EQ.4) THEN", writer)
         self.assertIn("HEADERLAM=0.D0", writer)
-        self.assertIn("FORMAT(14I8,14(1X,E24.16))", writer)
+        self.assertIn("% SCHEMA 2", writer)
+        self.assertIn("FORMAT(16I8,14(1X,E24.16))", writer)
         self.assertLess(1 + 2 * 141, 141**2)
 
     def test_pitch_mesh_fails_before_allocated_extent_is_exceeded(self) -> None:
