@@ -7376,7 +7376,8 @@ C   ZVI: COMPUTED ENERGY INTEGRATION VALUE
 C NUMERICAL ENERGY INTEGRATION ADDED BY Z.R.WANG
 C YQL, 06-2013                                                         
 C=======================================================================
-      SUBROUTINE KI_PRECESSION(JS,KGRID,KPARTICLE,KP,KOPT,ZVI)
+      SUBROUTINE KI_PRECESSION(JS,JS_MAT,KGRID,KPARTICLE,KP,KOPT,
+     &                         KPITCH,ICASE,KTERM,KTRACEJOIN,ZVI)
 
       USE RCOMDM
       USE DIMENSIM
@@ -7388,7 +7389,8 @@ C=======================================================================
       IMPLICIT NONE
       INCLUDE 'compam.inc'
 
-      INTEGER    JS,KGRID,KPARTICLE,KP,KOPT,L,IF0TYPE,J
+      INTEGER    JS,JS_MAT,KGRID,KPARTICLE,KP,KOPT,KPITCH,ICASE,KTERM,
+     &           KTRACEJOIN,L,IF0TYPE,J
 
       REAL*8     OMEGAE,RTMP,REPS,SIG
       COMPLEX*16 ZVI(4),OMEGAN,OMEGASA,OMEGASB,OMEGASC,
@@ -7527,14 +7529,18 @@ C     ALL OTHER CASES USE NUMERICAL INTEGRATION ALONG PARTICLE ENERGY
       ELSE
          DO L=1,MLMAX
             IF (ABS(RLM(L)).LT.0.1) THEN 
-               CALL KIA_TRAP(JS,0,KGRID,KP,KOPT,L,0,KPARTICLE,0,0,
+               CALL KIA_TRAP(JS,JS_MAT,KGRID,KP,KOPT,L,KPITCH,
+     &                       KPARTICLE,ICASE,KTERM,KTRACEJOIN,
      &                       LAM,0,ZVI(1))
                IF (INCDPHI.GT.0) THEN
-                  CALL KIA_TRAP(JS,0,KGRID,KP,KOPT,L,0,KPARTICLE,0,0,
+                  CALL KIA_TRAP(JS,JS_MAT,KGRID,KP,KOPT,L,KPITCH,
+     &                          KPARTICLE,ICASE,KTERM,KTRACEJOIN,
      &                          LAM,1,ZVI(2))
-                  CALL KIA_TRAP(JS,0,KGRID,KP,KOPT,L,0,KPARTICLE,0,0,
+                  CALL KIA_TRAP(JS,JS_MAT,KGRID,KP,KOPT,L,KPITCH,
+     &                          KPARTICLE,ICASE,KTERM,KTRACEJOIN,
      &                          LAM,2,ZVI(3))
-                  CALL KIA_TRAP(JS,0,KGRID,KP,KOPT,L,0,KPARTICLE,0,0,
+                  CALL KIA_TRAP(JS,JS_MAT,KGRID,KP,KOPT,L,KPITCH,
+     &                          KPARTICLE,ICASE,KTERM,KTRACEJOIN,
      &                          LAM,3,ZVI(4))
                ENDIF
             ENDIF
@@ -7707,14 +7713,14 @@ C     SUBTRACT SINGULAR CONTRIBUTION FOR LATER PITCH ANGLE INTEGRATION
 C     ALL OTHER CASES USE NUMERICAL INTEGRATION ALONG PARTICLE ENERGY
       ELSE
          CALL KIA_TRAP(JS,JS_MAT,KGRID,KP,KOPT,L,KPITCH,0,ICASE,
-     &                 KTERM,LAM,0,ZVI(1))
+     &                 KTERM,1,LAM,0,ZVI(1))
          IF (INCDPHI.GT.0) THEN
             CALL KIA_TRAP(JS,JS_MAT,KGRID,KP,KOPT,L,KPITCH,0,ICASE,
-     &                    KTERM,LAM,1,ZVI(2))
+     &                    KTERM,1,LAM,1,ZVI(2))
             CALL KIA_TRAP(JS,JS_MAT,KGRID,KP,KOPT,L,KPITCH,0,ICASE,
-     &                    KTERM,LAM,2,ZVI(3))
+     &                    KTERM,1,LAM,2,ZVI(3))
             CALL KIA_TRAP(JS,JS_MAT,KGRID,KP,KOPT,L,KPITCH,0,ICASE,
-     &                    KTERM,LAM,3,ZVI(4))
+     &                    KTERM,1,LAM,3,ZVI(4))
          ENDIF
       ENDIF
 
@@ -7942,7 +7948,8 @@ C     CONTRIBUTION FROM TRAPPED PARTICLES
       DO L=1,MLMAX
          RL = RLM(L)
          IF (ABS(RL).LT.0.1.AND.ABS(PSPECIES_NTD(KP)).GT.0.) THEN
-            CALL KI_PRECESSION(JS,KGRID,KPARTICLE,KP,KOPT,ZVI)
+            CALL KI_PRECESSION(JS,JS_MAT,KGRID,KPARTICLE,KP,KOPT,
+     &                         KPITCH,ICASE,KTERM,1,ZVI)
             VVI(:,L,KP) = VVI(:,L,KP) + ZVI*PSPECIES_NTD(KP)
          ELSEIF (ABS(RL).GT.0.1.AND.ABS(PSPECIES_NTB(KP)).GT.0.) THEN
             CALL KI_BOUNCE(JS,JS_MAT,KGRID,KP,KOPT,L,KPITCH,ICASE,
@@ -8107,7 +8114,7 @@ C     INTEGRATION OVER NEW LAMN
          DO KP=1,NSPECIES
             IF (ABS(PSPECIES_NTD(KP)).GT.0.) THEN
             CALL KDISTRIBF_TYPE(JS,KGRID,KP,LAM)
-            CALL KI_PRECESSION(JS,KGRID,0,KP,KOPT,ZVI)
+            CALL KI_PRECESSION(JS,0,KGRID,0,KP,KOPT,0,0,0,0,ZVI)
             VVI0(:,KP) = VVI0(:,KP) + ZVI*PSPECIES_NTD(KP)*LAMNH(J)
             ENDIF
          ENDDO

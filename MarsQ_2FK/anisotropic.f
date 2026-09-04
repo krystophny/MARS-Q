@@ -3768,7 +3768,7 @@ C         3: I-FACTOR FOR DPHI EQ WITH DPHI VARIABLE
 C         2: I-FACTOR FOR DPHI EQ WITH ALL OTHER VARIABLES
 C=========================================================
       SUBROUTINE KIA_TRAP(JS,JS_MAT,KGRID,KP,KOPT,L,KPITCH,KPARTICLE,
-     &                    ICASE,KTERM,ZZLAMB,KDPHI,ZVIF)
+     &                    ICASE,KTERM,KTRACEJOIN,ZZLAMB,KDPHI,ZVIF)
       
       USE RCOMDM
       USE DIMENSIM
@@ -3780,7 +3780,7 @@ C=========================================================
       INCLUDE 'compam.inc'
 
       INTEGER    JS,JS_MAT,KGRID,KP,KOPT,L,KPITCH,KPARTICLE,ICASE,
-     &           KTERM,K,KCHECK,KEXEC,KDPHI
+     &           KTERM,KTRACEJOIN,K,KCHECK,KEXEC,KDPHI
       REAL*8     RL,ZZLAMB,REPS,RTMP,RTMP1,RTMP2,RTMP3,HEPK
       REAL*8     H1,H2,H3,H4,H5,H6,H7,FAC0,OMEGAEDPSI,ZZT,OMEGANRE
       COMPLEX*16 ZVIF,OMEGAN,OMEGAN0,FNUM0,ZTMP0
@@ -3793,7 +3793,10 @@ C=========================================================
       ZVIF  = 0.0
       RL    = RLM(L)
       OTRACE = .FALSE.
-      IF (KP.EQ.1.AND.KOPT.EQ.0.AND.KDPHI.EQ.0.AND.
+      IF (KTRACEJOIN.NE.0.AND.KTRACEJOIN.NE.1)
+     &   STOP 'INVALID ACTION TRACE JOIN FLAG'
+      IF (KTRACEJOIN.EQ.1.AND.KP.EQ.1.AND.KOPT.EQ.0.AND.
+     &    KDPHI.EQ.0.AND.
      &    NINT(RL).EQ.KNTVELL) THEN
          CALL KELLTRACESELECT(JS,KGRID,OTRACE)
       ENDIF

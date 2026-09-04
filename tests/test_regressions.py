@@ -130,6 +130,25 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("IF (NINT(RLM(L)).EQ.KNTVELL)", KINETIC_SOURCE)
         self.assertIn("ELL TRACE REQUEST/KNTVELL MISMATCH", ANISOTROPIC_SOURCE)
         self.assertIn("READ(LINE,*,IOSTAT=IOS) JTARGET,GTARGET,ELLTARGET", ANISOTROPIC_SOURCE)
+        self.assertIn(
+            "CALL KI_PRECESSION(JS,JS_MAT,KGRID,KPARTICLE,KP,KOPT,",
+            KINETIC_SOURCE,
+        )
+        self.assertIn("KPITCH,ICASE,KTERM,1,ZVI)", KINETIC_SOURCE)
+        self.assertIn(
+            "CALL KI_PRECESSION(JS,0,KGRID,0,KP,KOPT,0,0,0,0,ZVI)",
+            KINETIC_SOURCE,
+        )
+        precession = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE KI_PRECESSION(") :
+            KINETIC_SOURCE.index("SUBROUTINE KI_BOUNCE(")
+        ]
+        self.assertIn(
+            "KPARTICLE,ICASE,KTERM,KTRACEJOIN,",
+            precession,
+        )
+        self.assertNotIn("CALL KIA_TRAP(JS,0,KGRID", precession)
+        self.assertIn("IF (KTRACEJOIN.EQ.1.AND.KP.EQ.1", ANISOTROPIC_SOURCE)
         self.assertIn("_KH.OUT", KINETIC_SOURCE)
 
     def test_action_energy_trace_identifies_executed_quadrature_nodes(self) -> None:
