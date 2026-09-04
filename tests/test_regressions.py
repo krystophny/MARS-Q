@@ -108,25 +108,28 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn(".NOTPARALLEL: gnu gnu-debug ifx nvhpc", MAKEFILE)
         self.assertIn("rm -f *.o *.mod *.d lsode/*.o lsode/*.mod", MAKEFILE)
 
-    def test_ell_minus_one_trace_is_default_off_and_on_the_executed_path(self) -> None:
+    def test_selected_ell_trace_is_default_off_and_on_the_executed_path(self) -> None:
         """The production KFASTRUN=0 trace must live in KIA_TRAP only."""
         trap_start = ANISOTROPIC_SOURCE.index("SUBROUTINE KIA_TRAP(")
         trap_end = ANISOTROPIC_SOURCE.index("END SUBROUTINE KIA_TRAP", trap_start)
         trap = ANISOTROPIC_SOURCE[trap_start:trap_end]
         self.assertIn("CALL KELLTRACESELECT(JS,KGRID,OTRACE)", trap)
-        self.assertIn("INQUIRE(FILE='ELL_M1_TRACE.REQUEST',EXIST=OEXIST)", ANISOTROPIC_SOURCE)
+        self.assertIn("INQUIRE(FILE='ELL_TRACE.REQUEST',EXIST=OEXIST)", ANISOTROPIC_SOURCE)
         self.assertIn("INTEGER, SAVE :: NTRACE=-1", ANISOTROPIC_SOURCE)
         self.assertIn("IF (OEXIST) THEN", ANISOTROPIC_SOURCE)
         self.assertIn("CRITICAL(ELL_TRACE_REQUEST)", ANISOTROPIC_SOURCE)
         self.assertIn("CRITICAL(ELL_TRACE_WRITE)", ANISOTROPIC_SOURCE)
-        self.assertIn("ELL=-1 TRACE REQUIRES INUTYPE=1", trap)
+        self.assertIn("NINT(RL).EQ.KNTVELL", trap)
+        self.assertIn("ELL TRACE REQUIRES INUTYPE=1", trap)
         self.assertIn("FNUMSOURCE=FNUMSOURCE/RTMP", trap)
         self.assertIn("DO K=1,2*(NEPK-1)", ANISOTROPIC_SOURCE)
         self.assertIn("KJP: TRACE-ONLY SELECTED-SURFACE CACHE REPLAY", KINETIC_SOURCE)
         self.assertIn("ODWKCOM.AND.KDWKREAD.NE.1", KINETIC_SOURCE)
         self.assertIn("KELLTRACEACTIVE(PRIVATEJS,1)", KINETIC_SOURCE)
         self.assertIn("CALL WRITEKHACTIONTRACE", KINETIC_SOURCE)
-        self.assertIn("IF (ABS(RLM(L)+1.0).LT.0.1)", KINETIC_SOURCE)
+        self.assertIn("IF (NINT(RLM(L)).EQ.KNTVELL)", KINETIC_SOURCE)
+        self.assertIn("ELL TRACE REQUEST/KNTVELL MISMATCH", ANISOTROPIC_SOURCE)
+        self.assertIn("READ(LINE,*,IOSTAT=IOS) JTARGET,GTARGET,ELLTARGET", ANISOTROPIC_SOURCE)
         self.assertIn("_KH.OUT", KINETIC_SOURCE)
 
     def test_action_energy_trace_identifies_executed_quadrature_nodes(self) -> None:
@@ -662,7 +665,7 @@ class SourceContractTests(unittest.TestCase):
             caller.index("KJPFILL (JS,JS_MAT,KGRID,0,0.,0,4)"),
             caller.index("CALL WRITEKJPMATRIXTRACE"),
         )
-        # Same default-off surface selection as the other ell=-1 traces.
+        # Same default-off surface selection as the other selected-ell traces.
         self.assertIn("CALL KELLTRACESELECT(JS,KGRID,OTRACE)", writer)
         self.assertIn("IF (.NOT.OTRACE) RETURN", writer)
         self.assertIn("LOCAL KJPFILL PRESSURE-SOURCE BLOCKS", writer)
@@ -711,10 +714,10 @@ class SourceContractTests(unittest.TestCase):
             kg.index("VDPHI = VDPHI*RCHIHK/4/PI"),
             kg.index("CALL WRITEKGACTIONTRACE"),
         )
-        # Trapped class only, ell=-1 only, same as the H trace.
+        # Trapped class only, selected ell only, same as the H trace.
         for text in (writer, kh_writer):
             self.assertIn("IF (KPARTICLE.NE.0) RETURN", text)
-            self.assertIn("IF (ABS(RLM(L)+1.0).LT.0.1) THEN", text)
+            self.assertIn("IF (NINT(RLM(L)).EQ.KNTVELL) THEN", text)
         self.assertIn('"_KG.OUT"', writer)
         self.assertIn('"_KH.OUT"', kh_writer)
         self.assertIn("ELL_TRACE_WRITE", writer)

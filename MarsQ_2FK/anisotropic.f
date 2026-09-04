@@ -3794,7 +3794,7 @@ C=========================================================
       RL    = RLM(L)
       OTRACE = .FALSE.
       IF (KP.EQ.1.AND.KOPT.EQ.0.AND.KDPHI.EQ.0.AND.
-     &    ABS(RL+1.0).LT.0.1) THEN
+     &    NINT(RL).EQ.KNTVELL) THEN
          CALL KELLTRACESELECT(JS,KGRID,OTRACE)
       ENDIF
       IF (OTRACE) THEN
@@ -3816,9 +3816,9 @@ C     FIRST ORDER FOW CONTRIBUTION VANISHES FOR PRECESSIONAL DRIFTS
       ALLOCATE( FNUM(NEPK2),FTMP(NEPK2),EFAC(NEPK2),RFAC(NEPK2),
      &          RFAC2(NEPK2) )
       IF (OTRACE) THEN
-         IF (INUTYPE.NE.1) STOP 'ELL=-1 TRACE REQUIRES INUTYPE=1'
+         IF (INUTYPE.NE.1) STOP 'ELL TRACE REQUIRES INUTYPE=1'
          IF (ISPECIES_EK(KP).NE.0)
-     &      STOP 'ELL=-1 TRACE REQUIRES THERMAL ION'
+     &      STOP 'ELL TRACE REQUIRES THERMAL ION'
          ALLOCATE(FNUMSOURCE(NEPK2),DENOMTRACE(NEPK2))
          FNUMSOURCE = 0.0
          DENOMTRACE = 0.0
@@ -4077,19 +4077,21 @@ C        SUBTRACT SINGULAR CONTRIBUTION FOR LATER PITCH ANGLE INTEGRATION
 
 C=========================================================
 C DEFAULT-OFF TRACE OF THE EXECUTED KFASTRUN=0 THERMAL-ION
-C TRAPPED ELL=-1 ENERGY INTEGRAND.  The request file contains
-C one ``JS KGRID`` pair per line.  Each selected surface has a
+C TRAPPED SELECTED-ELL ENERGY INTEGRAND.  The request file contains
+C one ``JS KGRID ELL`` triple per line.  ELL must equal the executed
+C KNTVELL selector.  Each selected surface has a
 C unique output file, so concurrent radial workers never share
 C a Fortran unit or append target.
 C=========================================================
       SUBROUTINE KELLTRACESELECT(JS,KGRID,OTRACE)
       USE ToolBox
+      USE GLOBALM
       IMPLICIT NONE
       INTEGER MAXTRACE
       PARAMETER (MAXTRACE=64)
-      INTEGER JS,KGRID,FID,IOS,JTARGET,GTARGET,K
+      INTEGER JS,KGRID,FID,IOS,JTARGET,GTARGET,ELLTARGET,K
       INTEGER, SAVE :: NTRACE=-1
-      INTEGER, SAVE :: JTRACE(MAXTRACE),GTRACE(MAXTRACE)
+      INTEGER, SAVE :: JTRACE(MAXTRACE),GTRACE(MAXTRACE),ETRACE(MAXTRACE)
       LOGICAL OTRACE,OEXIST
       CHARACTER*256 LINE
 
@@ -4097,30 +4099,33 @@ C=========================================================
 C$OMP CRITICAL(ELL_TRACE_REQUEST)
       IF (NTRACE.EQ.-1) THEN
          NTRACE=0
-         INQUIRE(FILE='ELL_M1_TRACE.REQUEST',EXIST=OEXIST)
+         INQUIRE(FILE='ELL_TRACE.REQUEST',EXIST=OEXIST)
          IF (OEXIST) THEN
             FID=ASSIGNFREEFILEUNIT()
-            OPEN(FID,FILE='ELL_M1_TRACE.REQUEST',STATUS='OLD',
+            OPEN(FID,FILE='ELL_TRACE.REQUEST',STATUS='OLD',
      &           ACTION='READ')
             DO
                READ(FID,'(A)',IOSTAT=IOS) LINE
                IF (IOS.NE.0) EXIT
                IF (LEN_TRIM(LINE).EQ.0) CYCLE
                IF (LINE(1:1).EQ.'#') CYCLE
-               READ(LINE,*,IOSTAT=IOS) JTARGET,GTARGET
-               IF (IOS.EQ.0) THEN
-                  IF (NTRACE.GE.MAXTRACE)
-     &               STOP 'TOO MANY ELL=-1 TRACE SURFACES'
-                  NTRACE=NTRACE+1
-                  JTRACE(NTRACE)=JTARGET
-                  GTRACE(NTRACE)=GTARGET
-               ENDIF
+               READ(LINE,*,IOSTAT=IOS) JTARGET,GTARGET,ELLTARGET
+               IF (IOS.NE.0) STOP 'INVALID ELL TRACE REQUEST ROW'
+               IF (ELLTARGET.NE.KNTVELL)
+     &            STOP 'ELL TRACE REQUEST/KNTVELL MISMATCH'
+               IF (NTRACE.GE.MAXTRACE)
+     &            STOP 'TOO MANY ELL TRACE SURFACES'
+               NTRACE=NTRACE+1
+               JTRACE(NTRACE)=JTARGET
+               GTRACE(NTRACE)=GTARGET
+               ETRACE(NTRACE)=ELLTARGET
             ENDDO
             CLOSE(FID)
          ENDIF
       ENDIF
       DO K=1,NTRACE
-         IF (JS.EQ.JTRACE(K).AND.KGRID.EQ.GTRACE(K)) OTRACE=.TRUE.
+         IF (JS.EQ.JTRACE(K).AND.KGRID.EQ.GTRACE(K).AND.
+     &       KNTVELL.EQ.ETRACE(K)) OTRACE=.TRUE.
       ENDDO
 C$OMP END CRITICAL(ELL_TRACE_REQUEST)
       END SUBROUTINE KELLTRACESELECT
@@ -4149,7 +4154,7 @@ C=========================================================
       LOGICAL OEXIST
       CHARACTER*64 PATH
 
-      WRITE(PATH,'("ELL_M1_TRACE_JS",I4.4,"_G",I1,"_ENERGY.OUT")')
+      WRITE(PATH,'("ELL_TRACE_JS",I4.4,"_G",I1,"_ENERGY.OUT")')
      &      JS,KGRID
 C$OMP CRITICAL(ELL_TRACE_WRITE)
       INQUIRE(FILE=PATH,EXIST=OEXIST)
@@ -4195,7 +4200,7 @@ C=========================================================
       CHARACTER*72 PATH
 
       WRITE(PATH,
-     & '("ELL_M1_TRACE_JS",I4.4,"_G",I1,"_ACTION_ENERGY.OUT")')
+     & '("ELL_TRACE_JS",I4.4,"_G",I1,"_ACTION_ENERGY.OUT")')
      & JS,KGRID
 C$OMP CRITICAL(ELL_TRACE_WRITE)
       INQUIRE(FILE=PATH,EXIST=OEXIST)
@@ -4238,7 +4243,7 @@ C=========================================================
       LOGICAL OEXIST
       CHARACTER*64 PATH
 
-      WRITE(PATH,'("ELL_M1_TRACE_JS",I4.4,"_G",I1,"_PITCH.OUT")')
+      WRITE(PATH,'("ELL_TRACE_JS",I4.4,"_G",I1,"_PITCH.OUT")')
      &      JS,KGRID
 C$OMP CRITICAL(ELL_TRACE_WRITE)
       INQUIRE(FILE=PATH,EXIST=OEXIST)

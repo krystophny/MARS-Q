@@ -19,7 +19,7 @@ upstream baseline `8824bb1`:
 | deterministic frequency diagnostic | `RUU2` is thread-private with its per-surface consumers | repeated OpenMP `FREQUENCIES.OUT` comparison |
 | two-species frequency diagnostic | hot-ion `SLAM0(:,3)` is read only when species three exists | GNU `-fcheck=all` MAST-U run |
 | retained DWK component workspace | idempotent allocation, component-map, and shape contracts | KNTV=21 reaches `TORQUENTV.OUT` after kinetic assembly |
-| default-off trapped `ell=-1` trace | request gate, executed `KIA_TRAP` path, selected-surface replay, and cache-write suppression | accepted full-harmonic cache replay reproduces torque while emitting only requested pitch-energy traces |
+| default-off trapped selected-`ell` trace | explicit `JS KGRID ELL` request gate, executed `KIA_TRAP` path, requested/served selector check, selected-surface replay, and cache-write suppression | accepted full-harmonic cache replay reproduces torque while emitting only requested pitch-energy traces |
 | independent DWK density check | numerical angular-quadrature oracle and source normalization contract | opt-in direct check closes against the component density without an extra `4*pi^2` factor |
 | five-term DWK drive ledger | independent complex linearity/sign oracle and request-file contract | opt-in `X1`, `X2`, `B1`, `B2`, `B3` sum closes against the unchanged pre-edge production density |
 | 2x5 DWK bilinear ledger | independent integer/half-mesh combination oracle and request-file contract | each pressure drive is separated into X1- and X2-work rows whose ten terms close against the unchanged pre-edge production density |
