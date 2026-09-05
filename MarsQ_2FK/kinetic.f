@@ -294,7 +294,16 @@ C     THE FILE CHANEL FOR OUTPUT KINETIC QUANTITY IN 2D PLOT
       ENDIF
 
       CALL ALLOCATEDWKCOMPMAT
-      
+
+C     A VALIDATED COMPONENT CACHE ALREADY CONTAINS THE EXPENSIVE OUTPUT
+C     OF KJPCOEFF ON BOTH RADIAL GRIDS.  KEEP THE MASTER COMPONENT MAP
+C     ALLOCATED FOR CALCDWKCOMP, BUT DO NOT RECOMPUTE OR OVERWRITE THE
+C     SERIALIZED RECORDS.  RDNAME RESTRICTS THIS TO FROZEN-FIELD KNTV=21.
+      IF (KDWKREAD.EQ.1) THEN
+         WRITE(*,*) 'KJP: REUSING VALIDATED DWK COMPONENT CACHE'
+         RETURN
+      ENDIF
+
       ALLOCATE( LAMM(2*NLAMK+2), LAMHH(2*NLAMK), LAMTMP(2*NLAMK+2) )
 
       ALLOCATE( RCHI(NCHI+1), RCHI2(NCHI+1), RW1(NCHI+1),
@@ -2809,7 +2818,7 @@ C=======================================================================
       INTEGER IHE(100),NIHE
       
       KCHECK  = 1
-      KSMOOTH = 1
+      KSMOOTH = KSMOOTHB
 
       KM      = NKSMOOTHB
       ALLOCATE(BMC(KM+1),BMS(KM+1))
@@ -2887,6 +2896,26 @@ C     SMOOTH EQUILIBRIUM B FIELD FOR BAD EQUILIBRIUM
       ENDDO
       ENDDO
       ENDIF
+
+C     KEEP THE DRIFT GEOMETRY CONSISTENT WITH THE FILTERED FIELD.
+C     BPK IS USED BELOW FOR THE RADIAL AND POLOIDAL DRIFT DERIVATIVES.
+C     It must be rebuilt after BK is filtered; retaining the pre-filter
+C     BPK mixes two different equilibrium spectra in the same operator.
+      DO JS=2,NRP1
+         DO J=1,NCHI
+            BPK(JS,J,1)=RJA(JS,J)**2*BK(JS,J,1)/G22L(JS,J)/
+     &                  DPSIDS(JS)**2
+         ENDDO
+      ENDDO
+      DO JS=1,NR
+         DO J=1,NCHI
+            BPK(JS,J,2)=RJAM(JS,J)**2*BK(JS,J,2)/G22LM(JS,J)/
+     &                  DPSIDSM(JS)**2
+         ENDDO
+      ENDDO
+      DO J=1,NCHI
+         BPK(1,J,1)=BPK(1,J,2)
+      ENDDO
 
       DO J=1,NCHI
          DO JS=1,NRP1
@@ -4348,9 +4377,13 @@ C     SAVE ALL FREQUNCIES INTO A FILE
      &                   *ALPHAA3(JS,1,3)/ALPHAA1(JS,1,3)
          AOMEGADINSURF = AOMEGADIN*ESPECIES_TEM(JS,1,1)*B0K/OMEGACI0
          LAMH = 0.
-         DO L=1,MLMAX
-            IF (ABS(RLM(L)).LT.0.1) LAMH = SLAM0(L,3)
-         ENDDO
+C        FREQK(:,9) IS THE HOT-ION L=0 RESONANCE DIAGNOSTIC.  A
+C        TWO-SPECIES THERMAL RUN HAS NO THIRD SLAM0 COLUMN.
+         IF (NSPECIES.GE.3) THEN
+            DO L=1,MLMAX
+               IF (ABS(RLM(L)).LT.0.1) LAMH = SLAM0(L,3)
+            ENDDO
+         ENDIF
 
          FREQK(JS,1)  = AOMEGABPN
          FREQK(JS,2)  = AOMEGABTN
@@ -4392,7 +4425,10 @@ C     SFD RELEASE
 
       ENDIF
 
-      IF (INCSFD.GT.0) CALL WRITE_SURFACE_QUANTITIES(JS,KGRID)
+C     ODWK COMPONENT SERIALIZATION IS INDEPENDENT OF OPTIONAL SFD
+C     DIAGNOSTICS.  INCSFD IS ZERO IN PRODUCTION, BUT CALCDWKCOMP
+C     REQUIRES ONE THREAD-LOCAL COMPONENT FILE PER RADIAL SURFACE.
+      IF (ODWKCOM) CALL WRITE_SURFACE_QUANTITIES(JS,KGRID)
       
       RETURN
       END
@@ -6040,7 +6076,7 @@ C     FIND INITIAL GUESS
      &   WRITE(*,*) 'HPL,HPU',HPL,HPU,JS,KGRID
 
       IF (HPL.LE.0.0.OR.HPU.GE.0.0)
-     &  STOP 'KINETIC:HPL<0 | HPU>0,TRY KSMOOTH=1'
+     &  STOP 'KINETIC:HPL<0 | HPU>0,TRY KSMOOTHB=1'
       RETURN
       END
       
@@ -6136,7 +6172,7 @@ C     IF (HPU.GT.0.AND.HPL.LT.0.AND.0.EQ.1) THEN
       ENDIF
 
       IF (HPL.LE.0.0.OR.HPU.GE.0.0) 
-     &   STOP 'KINETIC:HPL<0 | HPU>0,TRY KSMOOTH=1'
+     &   STOP 'KINETIC:HPL<0 | HPU>0,TRY KSMOOTHB=1'
 
       RETURN
       END
@@ -8607,17 +8643,80 @@ C     TRAPPED PARTICLES DO NOT HAVE SINGULARITY EITHER
       END
 
 C=======================================================================
+C ASSEMBLE THE PASSIVE KINETIC-PRESSURE ENERGY OPERATOR WITHOUT        =
+C RECOMPUTING KJP RESPONSE COEFFICIENTS.                               =
+C=======================================================================
+      SUBROUTINE PREPAREKINETICENERGYMAT(
+     &                  ASUBM,BSUBM,CSUBM,DSUBM,ESUBM,FSUBM,GSUBM,HSUBM)
+
+      USE RCOMDM
+      USE DIMENSIM
+      USE GLOBALM
+      USE KINETICM
+      USE FEEDBACKM, ONLY: KTREST
+      IMPLICIT NONE
+      INCLUDE 'specmat.inc'
+      INCLUDE 'compam.inc'
+      INCLUDE 'comioc.inc'
+
+      COMPLEX*16 AL0SAVE
+      INTEGER    J,KTRESTSAVE
+
+C     IPERTURB=1 SETS KPBKEY=0 SO THE KINETIC PRESSURE DOES NOT ALTER
+C     THE FLUID RESPONSE.  THE NTV ENERGY CONTRACTION STILL REQUIRES
+C     THE RECIPROCAL PRESSURE-TO-DISPLACEMENT BLOCKS (ESUBM/HSUBM).
+C     BUILD THAT PASSIVE OPERATOR WITH KJP DISABLED: THE EXPENSIVE
+C     RESPONSE COEFFICIENTS COME FROM THE VALIDATED PCOEF CACHE.  WHEN
+C     THE FIELD WAS IMPORTED, THE CALLER RESTORES THE VALIDATED B/X
+C     ARRAYS AFTER THIS ROUTINE RETURNS.
+C     FEEDCTRL temporarily sets T/TM=1 for the discarded carrier solve.
+C     The normal LINEAR pass brackets KJP with the saved equilibrium arrays,
+C     but this passive KJPKEY=0 pass also consumes T/TM throughout PLASMALIN
+C     and KCOEFFI.  Expose the saved equilibrium F(s) for this whole pass;
+C     otherwise the reciprocal pressure-to-displacement blocks are built on
+C     the vacuum toroidal field even though the KJP coefficients used by the
+C     torque contraction were built on the equilibrium field.
+      AL0SAVE = AL0
+      AL0 = ALNORM
+      KJPKEY = 0
+      KPBKEY = 1
+      KTRESTSAVE = KTREST
+      IF (KTRESTSAVE.NE.0) THEN
+         DO J=1,NRP1
+            T(J)  = TSAVE(J)
+         ENDDO
+         DO J=1,NR
+            TM(J) = TMSAVE(J)
+         ENDDO
+         KTREST = 0
+      ENDIF
+      CALL LINEAR(ASUBM,BSUBM,CSUBM,DSUBM,ESUBM,FSUBM,GSUBM,HSUBM)
+      IF (KTRESTSAVE.NE.0) THEN
+         DO J=1,NRP1
+            T(J)  = 1.0
+         ENDDO
+         DO J=1,NR
+            TM(J) = 1.0
+         ENDDO
+         KTREST = KTRESTSAVE
+      ENDIF
+      AL0 = AL0SAVE
+
+      RETURN
+      END
+
+C=======================================================================
 C COMPUTE PERTURBED ENERGY USING THE COMPUTED EIGENFUNCTION AND        =
 C THE SYSTEM MATRICES                                                  =
-C INCLUDING:                                                           = 
-C  1) FLUID POTENTIAL ENERGY                                           = 
+C INCLUDING:                                                           =
+C  1) FLUID POTENTIAL ENERGY                                           =
 C  2) FLIUD KINETIC ENERGY DUE TO INERTIAL AND PLASMA ROTATION         =
 C  3) KINETIC ENERGY DUE TO KINETIC PRESSURE PERTURBATION              =
 C SHOULD BE CALLED FROM MARS-F AFTER CALPAM(...)                       =
 C KENORM = 1: NORMALIZE ENERGY BY TOTAL PLASMA INERTIA ENERGY          =
-C          2: NORMALIZE ENERGY BY INERTIA ENERGY ASSOCIATED WITH X1    =
-C KEFORM = 1: RAW FORM FOR ALL DW* TERMS
-C          2: QUADRATIC FORM FOR DWP,DWJ,DWPPAR,DWPPER
+C          2: NORMALIZE ENERGY ASSOCIATED WITH X1                      =
+C KEFORM = 1: RAW FORM FOR ALL DW* TERMS                               =
+C          2: QUADRATIC FORM FOR DWP,DWJ,DWPPAR,DWPPER                 =
 C YQL, 09-2013                                                         =
 C=======================================================================
       SUBROUTINE ENERGYMAT(X,Y,
@@ -8650,19 +8749,16 @@ C=======================================================================
       PARAMETER     (IEXV2 = -1, IEXY=0)
       REAL*8        ZEM,ZEP,ZV2M,ZV2P,z3m,z3p
 
-      COMPLEX*16    AL0SAVE,CTMP
+      COMPLEX*16    CTMP
       CHARACTER*80  LINE
 
       INCLUDE 'integc.inc'
 
-C     FILL IN SYSTEM MATRICES WITH THE CONVERGED EIGENVALUE
-      AL0SAVE = AL0
-      AL0 = ALNORM
-      KJPKEY = 0
-      KPBKEY = 1
-      CALL LINEAR(ASUBM,BSUBM,CSUBM,DSUBM,ESUBM,FSUBM,GSUBM,HSUBM)
-      AL0 = AL0SAVE
-     
+C     THE CALLER SUPPLIES MATRICES ASSEMBLED AT THE CONVERGED
+C     EIGENVALUE.
+C     KNTV=21 NEEDS THEM BEFORE OUTPUT; OTHER MODES PREPARE THEM
+C     IMMEDIATELY BEFORE ENTERING THIS ROUTINE.
+
       ALLOCATE( DWPX(NTP1), DWPPARX(NTP1), DWPPERX(NTP1), DWJX(NTP1),
      &          DWQX(NTP1), DWVX(NTP1),    DWXIX(NTP1),   DWX2X(NTP1),
      &          DWRHOX(NTP1),
@@ -9429,8 +9525,9 @@ C     COMPUTATION OF PPERP AND PPARA
       INCLUDE 'compam.inc'
       INCLUDE 'comioc.inc'
       
-      INTEGER KP,IS,TOTINDX,INDX,I,J,FID
-      REAL*8 PI2
+      INTEGER KP,IS,TOTINDX,INDX,I,J,FID,MROW,MSA,LXROW,LYCOL
+      REAL*8 PI2,CACHEMAX,FIELDMAX,OPPARAMAX,OPPERPMAX,
+     &       PPARAMAX,PPERPMAX
       COMPLEX*16,DIMENSION(:),ALLOCATABLE:: DWPPARA,DWPPERP,DWK
       COMPLEX*16,DIMENSION(:,:),ALLOCATABLE::DWPPARX,DWPPERX,
      &                                       DWPPARY,DWPPERY
@@ -9459,6 +9556,7 @@ C     COMPUTATION OF PPERP AND PPARA
       
       PPARAC  = 0.0
       PPERPC  = 0.0
+      CACHEMAX = 0.0
       
       BUFFER_I  => BUFFER_DATA1
       BUFFER_I1 => BUFFER_DATA2
@@ -9481,6 +9579,10 @@ C     READ MARTIX FROM BINARY FILES ON EACH SURFACE
             BUFFERT => BUFFER_I1
             CALL READ_SURFACE_QUANTITIES (IS+1,1)
          ENDIF   
+
+         IF (IS.EQ.MAX(1,NR/2)) CACHEMAX = MAX(
+     &      MAXVAL(ABS(BUFFER_I)),MAXVAL(ABS(BUFFERM_I)),
+     &      MAXVAL(ABS(BUFFER_I1)))
          
          DO INDX=1,TOTINDX
 C     FILL IN THE GLOBAL MATRIX FOR PRESSURE CALCULATION
@@ -9500,6 +9602,35 @@ C     CALCULATE ENERGY PROFILE OF DIFFERENT COMPONENTS
 	  
          ENDDO
       ENDDO
+
+      FIELDMAX = MAX(MAXVAL(ABS(X1U)),MAXVAL(ABS(X2U)),
+     &               MAXVAL(ABS(B1U)),MAXVAL(ABS(B2U)),
+     &               MAXVAL(ABS(B3U)))
+      OPPARAMAX = 0.0
+      OPPERPMAX = 0.0
+      DO IS=1,NR
+         DO MROW=1,MSMAX
+            LXROW = (MROW-1)*NXCOMP
+            DO MSA=1,MSMAX
+               LYCOL = (MSA-1)*NYCOMP
+               IF (KYPPARA.GT.0) OPPARAMAX = MAX(OPPARAMAX,
+     &            ABS(HSUBM(LXROW+KXV1,LYCOL+KYPPARA,IS)),
+     &            ABS(ESUBM(LXROW+KXV1,LYCOL+KYPPARA,IS+1)))
+               IF (KYPPERP.GT.0) OPPERPMAX = MAX(OPPERPMAX,
+     &            ABS(HSUBM(LXROW+KXV1,LYCOL+KYPPERP,IS)),
+     &            ABS(ESUBM(LXROW+KXV1,LYCOL+KYPPERP,IS+1)))
+            ENDDO
+         ENDDO
+      ENDDO
+      PPARAMAX = MAXVAL(ABS(PPARAC))
+      PPERPMAX = MAXVAL(ABS(PPERPC))
+      WRITE(*,*) 'DWK CACHE/FIELD/OPPARA/OPPERP/PARA/PERP MAXIMA:',
+     &           CACHEMAX,FIELDMAX,OPPARAMAX,OPPERPMAX,
+     &           PPARAMAX,PPERPMAX
+      IF (CACHEMAX.LE.0.0.OR.FIELDMAX.LE.0.0.OR.
+     &    OPPARAMAX.LE.0.0.OR.OPPERPMAX.LE.0.0.OR.
+     &    MAX(PPARAMAX,PPERPMAX).LE.0.0)
+     &   STOP 'INVALID ZERO DWK CONTRACTION INPUT'
 
       PI2 = PI*PI*2.0
 C     CALCULATE THE TOTAL ENERGY OF EACH COMPONENT
@@ -9724,41 +9855,88 @@ C      WRITE (*,*) 'SUCCESS OF READ:', FILENAME
       IMPLICIT NONE
       
       INTEGER KP,INDX
+      INTEGER EXPECTED(NSPECIES,5)
       
       IF (.NOT. ODWKCOM) RETURN
-	
-      ALLOCATE (INDXDWKC(NSPECIES,5))
-      INDXDWKC = -1
-      
+
+      EXPECTED = -1
       INDX=0
       DO KP=1,NSPECIES
          IF (ABS(PSPECIES_AP(KP)).GT.0) THEN
             INDX=INDX+1
-            INDXDWKC(KP,1)=INDX
+            EXPECTED(KP,1)=INDX
          ENDIF
          IF (ABS(PSPECIES_AT(KP)).GT.0) THEN
             INDX=INDX+1
-            INDXDWKC(KP,2)=INDX
+            EXPECTED(KP,2)=INDX
          ENDIF
-           IF (ABS(PSPECIES_NP(KP)).GT.0) THEN
+         IF (ABS(PSPECIES_NP(KP)).GT.0) THEN
             INDX=INDX+1
-            INDXDWKC(KP,3)=INDX
+            EXPECTED(KP,3)=INDX
          ENDIF
          IF (ABS(PSPECIES_NTB(KP)).GT.0) THEN
             INDX=INDX+1
-            INDXDWKC(KP,4)=INDX
+            EXPECTED(KP,4)=INDX
          ENDIF
          IF (ABS(PSPECIES_NTD(KP)).GT.0) THEN
             INDX=INDX+1
-            INDXDWKC(KP,5)=INDX
+            EXPECTED(KP,5)=INDX
          ENDIF
       ENDDO
-      
+
+C     KJP RETAINS THE MASTER THREAD'S COMPONENT WORKSPACE UNTIL THE
+C     FINAL DWK/NTV DIAGNOSTIC.  REUSE THAT WORKSPACE IF, AND ONLY IF,
+C     ITS COMPLETE SHAPE AND COMPONENT MAP STILL MATCH THIS RUN.
+      IF (ALLOCATED(INDXDWKC)) THEN
+         IF (.NOT.ALLOCATED(VX1PARAC).OR.
+     &       .NOT.ALLOCATED(VX1PERPC).OR.
+     &       .NOT.ALLOCATED(VX2PARAC).OR.
+     &       .NOT.ALLOCATED(VX2PERPC).OR.
+     &       .NOT.ALLOCATED(VQ1PARAC).OR.
+     &       .NOT.ALLOCATED(VQ1PERPC).OR.
+     &       .NOT.ALLOCATED(VQ2PARAC).OR.
+     &       .NOT.ALLOCATED(VQ2PERPC).OR.
+     &       .NOT.ALLOCATED(VQ3PARAC).OR.
+     &       .NOT.ALLOCATED(VQ3PERPC))
+     &      STOP 'INCOMPLETE DWK COMPONENT WORKSPACE'
+         IF (SIZE(INDXDWKC,1).NE.NSPECIES.OR.
+     &       SIZE(INDXDWKC,2).NE.5.OR.
+     &       ANY(INDXDWKC.NE.EXPECTED))
+     &      STOP 'INCONSISTENT DWK COMPONENT MAP'
+         IF (SIZE(VX1PARAC,1).NE.MSMAX.OR.
+     &       SIZE(VX1PARAC,2).NE.MSMAX.OR.
+     &       SIZE(VX1PARAC,3).NE.INDX.OR.
+     &       ANY(SHAPE(VX1PERPC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VX2PARAC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VX2PERPC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VQ1PARAC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VQ1PERPC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VQ2PARAC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VQ2PERPC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VQ3PARAC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VQ3PERPC).NE.SHAPE(VX1PARAC)))
+     &      STOP 'INCONSISTENT DWK COMPONENT WORKSPACE'
+         RETURN
+      ENDIF
+
+      ALLOCATE (INDXDWKC(NSPECIES,5))
+      INDXDWKC = EXPECTED
+
       ALLOCATE ( VX1PARAC(MSMAX,MSMAX,INDX), VX1PERPC(MSMAX,MSMAX,INDX),
      &           VX2PARAC(MSMAX,MSMAX,INDX), VX2PERPC(MSMAX,MSMAX,INDX),
      &           VQ1PARAC(MSMAX,MSMAX,INDX), VQ1PERPC(MSMAX,MSMAX,INDX),
      &           VQ2PARAC(MSMAX,MSMAX,INDX), VQ2PERPC(MSMAX,MSMAX,INDX),
      &           VQ3PARAC(MSMAX,MSMAX,INDX), VQ3PERPC(MSMAX,MSMAX,INDX))
+      VX1PARAC = 0.
+      VX1PERPC = 0.
+      VX2PARAC = 0.
+      VX2PERPC = 0.
+      VQ1PARAC = 0.
+      VQ1PERPC = 0.
+      VQ2PARAC = 0.
+      VQ2PERPC = 0.
+      VQ3PARAC = 0.
+      VQ3PERPC = 0.
       END SUBROUTINE ALLOCATEDWKCOMPMAT
       
       SUBROUTINE DEALLOCATEDWKCOMPMAT
