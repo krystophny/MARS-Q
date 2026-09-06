@@ -39,14 +39,28 @@ build_provenance = importlib.util.module_from_spec(BUILD_SPEC)
 BUILD_SPEC.loader.exec_module(build_provenance)
 
 
+DEFAULT_MARS_EXE = ROOT / "build" / "marsq-gnu.x"
+
+
 def executable() -> Path | None:
+    """The MARS executable the black-box tests drive, or ``None``.
+
+    An explicit ``MARS_EXE`` always wins and is still required to exist, so
+    the documented ``MARS_EXE=...`` workflow is unchanged and a typo in it is
+    still a hard error rather than a silent fallback.  Without it, the default
+    in-tree build is used when it is present and executable, so a developer
+    who has built MARS gets the runtime tier without extra ceremony.  With
+    neither, the callers skip as before.
+    """
     value = os.environ.get("MARS_EXE")
-    if not value:
-        return None
-    path = Path(value).expanduser().resolve()
-    if not path.is_file():
-        raise AssertionError(f"MARS_EXE does not exist: {path}")
-    return path
+    if value:
+        path = Path(value).expanduser().resolve()
+        if not path.is_file():
+            raise AssertionError(f"MARS_EXE does not exist: {path}")
+        return path
+    if DEFAULT_MARS_EXE.is_file() and os.access(DEFAULT_MARS_EXE, os.X_OK):
+        return DEFAULT_MARS_EXE.resolve()
+    return None
 
 
 def run_with_input(run_input: str) -> subprocess.CompletedProcess[str]:

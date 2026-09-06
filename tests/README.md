@@ -25,17 +25,37 @@ upstream baseline `8824bb1`:
 | 2x5 DWK bilinear ledger | independent integer/half-mesh combination oracle and request-file contract | each pressure drive is separated into X1- and X2-work rows whose ten terms close against the unchanged pre-edge production density |
 | executable build provenance | profile/flag and manifest hash/tamper contracts | clean-tree build plus independent manifest verification |
 
-Run fast tests with:
+Run the tests with:
 
 ```sh
 make -C MarsQ_2FK test
 ```
 
-Add executable-level tests with:
+The source-contract tests need no compiler and always run.  The black-box
+executable tests need a built MARS, which is resolved in this order:
+
+1. `MARS_EXE`, when set.  It always wins, and a path that does not exist is a
+   hard error rather than a silent fallback, so the explicit workflow below
+   still fails loudly on a typo.
+2. otherwise the in-tree default build `build/marsq-gnu.x`, relative to the
+   repository root, when it exists and is executable.
+3. otherwise the executable tests skip.
+
+So a working tree that has been built runs the runtime tier by default; only a
+tree with no build at all falls back to the source-contract tier alone.
+
+Point the runtime tier at a different executable with:
 
 ```sh
-make -C MarsQ_2FK test-runtime MARS_EXE="$PWD/build/marsq-gnu.x"
+make -C MarsQ_2FK test-runtime MARS_EXE="$PWD/build/marsq-ifx.x"
 ```
+
+The default build is whatever was last written to `build/`, and nothing binds
+it to the checked-out source.  A runtime failure that the source-contract tests
+do not corroborate is therefore a stale-executable suspect first: compare
+`build/marsq-gnu.x.provenance.json` (`source.commit`, `source.dirty`) against
+`git rev-parse HEAD` before reading it as a code defect, and rebuild with
+`python3 tools/build_with_provenance.py --profile gnu` if they disagree.
 
 The long MAST-U and ITER system runs use external/private fixtures and are
 recorded in the consuming project rather than copied into this public source
