@@ -46,6 +46,7 @@ C=======================================================================
       PARAMETER (IEXV2=-1, IEXB3=1)
 
       INTEGER KCHECK
+      LOGICAL OTRACEREQUEST,KELLTRACEACTIVE
       
       INTEGER MXMAX_DUMMY,MYMAX_DUMMY,NRP1_DUMMY
       COMPLEX*16       ASUBM(MXMAX_DUMMY,MXMAX_DUMMY,*),
@@ -294,7 +295,25 @@ C     THE FILE CHANEL FOR OUTPUT KINETIC QUANTITY IN 2D PLOT
       ENDIF
 
       CALL ALLOCATEDWKCOMPMAT
-      
+
+C     A VALIDATED COMPONENT CACHE ALREADY CONTAINS THE EXPENSIVE OUTPUT
+C     OF KJPCOEFF ON BOTH RADIAL GRIDS.  KEEP THE MASTER COMPONENT MAP
+C     ALLOCATED FOR CALCDWKCOMP, BUT DO NOT RECOMPUTE OR OVERWRITE THE
+C     SERIALIZED RECORDS.  RDNAME RESTRICTS THIS TO FROZEN-FIELD KNTV=21.
+C     A DEFAULT-OFF ELL_TRACE REQUEST INITIALIZES THE ORBIT GEOMETRY
+C     AND RECOMPUTES ONLY THE LISTED SURFACES WITHOUT SERIALIZING THEM.
+C     CALCDWKCOMP STILL CONSUMES THE UNTOUCHED ACCEPTED CACHE.
+      INQUIRE(FILE='ELL_TRACE.REQUEST',EXIST=OTRACEREQUEST)
+      IF (KDWKREAD.EQ.1) THEN
+         IF (.NOT.OTRACEREQUEST) THEN
+            WRITE(*,*) 'KJP: REUSING VALIDATED DWK COMPONENT CACHE'
+            RETURN
+         ENDIF
+         IF (ISMPIRUN.NE.0)
+     &      STOP 'ELL TRACE CACHE REPLAY REQUIRES OPENMP MODE'
+         WRITE(*,*) 'KJP: TRACE-ONLY SELECTED-SURFACE CACHE REPLAY'
+      ENDIF
+
       ALLOCATE( LAMM(2*NLAMK+2), LAMHH(2*NLAMK), LAMTMP(2*NLAMK+2) )
 
       ALLOCATE( RCHI(NCHI+1), RCHI2(NCHI+1), RW1(NCHI+1),
@@ -812,7 +831,8 @@ C        WRITE (*,*) 'THREAD ID=',OMP_GET_THREAD_NUM(),
 C    $   'GRID 1 SURFACE ',PRIVATEJS
 c$OMP END CRITICAL(PARALLEL_LOOP1)
 
-         CALL KJPCOEFF( PRIVATEJS,PRIVATEJS, 1 )
+         IF (KDWKREAD.NE.1.OR.KELLTRACEACTIVE(PRIVATEJS,1))
+     &      CALL KJPCOEFF(PRIVATEJS,PRIVATEJS,1)
 
       ENDDO
      
@@ -838,7 +858,8 @@ C        WRITE (*,*) 'THREAD ID=',OMP_GET_THREAD_NUM(),
 C    $   'GRID 2 SURFACE ',PRIVATEJS
 c$OMP END CRITICAL(PARALLEL_LOOP2)
       
-         CALL KJPCOEFF(PRIVATEJS,PRIVATEJS,2)
+         IF (KDWKREAD.NE.1.OR.KELLTRACEACTIVE(PRIVATEJS,2))
+     &      CALL KJPCOEFF(PRIVATEJS,PRIVATEJS,2)
 
       END DO
 
@@ -1630,6 +1651,7 @@ C=======================================================================
       USE GLOBALM
       USE RCOMDM
       USE KINETICM
+      USE ToolBox
       IMPLICIT NONE
 
       INTEGER    JS,KGRID,M,L
@@ -2809,7 +2831,7 @@ C=======================================================================
       INTEGER IHE(100),NIHE
       
       KCHECK  = 1
-      KSMOOTH = 1
+      KSMOOTH = KSMOOTHB
 
       KM      = NKSMOOTHB
       ALLOCATE(BMC(KM+1),BMS(KM+1))
@@ -2887,6 +2909,26 @@ C     SMOOTH EQUILIBRIUM B FIELD FOR BAD EQUILIBRIUM
       ENDDO
       ENDDO
       ENDIF
+
+C     KEEP THE DRIFT GEOMETRY CONSISTENT WITH THE FILTERED FIELD.
+C     BPK IS USED BELOW FOR THE RADIAL AND POLOIDAL DRIFT DERIVATIVES.
+C     It must be rebuilt after BK is filtered; retaining the pre-filter
+C     BPK mixes two different equilibrium spectra in the same operator.
+      DO JS=2,NRP1
+         DO J=1,NCHI
+            BPK(JS,J,1)=RJA(JS,J)**2*BK(JS,J,1)/G22L(JS,J)/
+     &                  DPSIDS(JS)**2
+         ENDDO
+      ENDDO
+      DO JS=1,NR
+         DO J=1,NCHI
+            BPK(JS,J,2)=RJAM(JS,J)**2*BK(JS,J,2)/G22LM(JS,J)/
+     &                  DPSIDSM(JS)**2
+         ENDDO
+      ENDDO
+      DO J=1,NCHI
+         BPK(1,J,1)=BPK(1,J,2)
+      ENDDO
 
       DO J=1,NCHI
          DO JS=1,NRP1
@@ -3011,6 +3053,22 @@ C     DEFINE ADAPTIVE LAMBDA-MESH
       DO JS=1,NR
          NLAMK1(JS,2) = INT(HKMIN(JS,2)/RTMP) + NLAMIN
          NLAMK0(JS,2) = INT((HKMAX(JS,2)-HKMIN(JS,2))/RTMP) + NLAMIN
+      ENDDO
+
+C     FAIL BEFORE INDEXING THE ALLOCATED PITCH ARRAYS.
+      DO JS=1,NRP1
+         IF (NLAMK1(JS,1).GT.NLAMK.OR.NLAMK0(JS,1).GT.NLAMK) THEN
+            WRITE(*,*) ' KLAMBDA FULL-MESH COUNT EXCEEDS NLAMK:',
+     &                 JS,NLAMK1(JS,1),NLAMK0(JS,1),NLAMK
+            STOP 1
+         ENDIF
+      ENDDO
+      DO JS=1,NR
+         IF (NLAMK1(JS,2).GT.NLAMK.OR.NLAMK0(JS,2).GT.NLAMK) THEN
+            WRITE(*,*) ' KLAMBDA HALF-MESH COUNT EXCEEDS NLAMK:',
+     &                 JS,NLAMK1(JS,2),NLAMK0(JS,2),NLAMK
+            STOP 1
+         ENDIF
       ENDDO
 
 C     DEFINE PITCH ANGLE ARRAY FOR PASSING PARTICLES
@@ -3275,6 +3333,8 @@ C=======================================================================
 
       INTEGER KCHECK
       REAL*8 TI0_TMP,TE0_TMP
+      REAL*8, PARAMETER :: QE_SI=1.6021917E-19
+      REAL*8, PARAMETER :: MU0_SI=4.0E-7*PI
       KCHECK=0
 
 C     DENSITY FRACTION FOR THERMAL ELECTRONS IS ALWAYS 1
@@ -3336,8 +3396,19 @@ C     RESCALE THERMAL PRESSURE WITH THE EXPERIMENTAL TEMPERATURE PROFILES
           ENDDO
           ESPECIES_PRE(:,1,1) = PEQ-ESPECIES_PRE(:,1,2)
           ESPECIES_PRE(:,2,1) = PEQM-ESPECIES_PRE(:,2,2)
-          TI0_TMP=ALPHAP*ESPECIES_PRE(1,1,1)/ESPECIES_DEN(1,1,1)
-          TE0_TMP=(1-ALPHAP)*ESPECIES_PRE(1,1,1)/ESPECIES_DEN(1,1,2)
+          IF (KPROFTAUTH.EQ.1) THEN
+C           NPROFIE=4,NEXPV=1 retain the dimensional input amplitudes in
+C           ZTI0/ZTE0. Convert temperature directly to MARS pressure/density
+C           units; do not reconstruct it through PEQ, ALPHAP, or species
+C           density, which would make temperature authority charge-specific.
+             TI0_TMP=ZTI0*ZNE0*QE_SI/B0EXP**2*MU0_SI
+             TE0_TMP=ZTE0*ZNE0*QE_SI/B0EXP**2*MU0_SI
+          ELSE
+             TI0_TMP=ALPHAP*ESPECIES_PRE(1,1,1)
+     &              /ESPECIES_DEN(1,1,1)
+             TE0_TMP=(1-ALPHAP)*ESPECIES_PRE(1,1,1)
+     &              /ESPECIES_DEN(1,1,2)
+          ENDIF
           ESPECIES_TEM(:,1,1) = TI0_TMP*TEMPI  
           ESPECIES_TEM(:,2,1) = TI0_TMP*TEMPIM  
           ESPECIES_TEM(:,1,2) = TE0_TMP*TEMPE  
@@ -3346,15 +3417,23 @@ C     RESCALE THERMAL PRESSURE WITH THE EXPERIMENTAL TEMPERATURE PROFILES
 
           ESPECIES_PREF(:,:,1:2) = ESPECIES_TEM(:,:,1:2)
      &                           * ESPECIES_DEN(:,:,1:2)
-          ESPECIES_PREF(:,:,1) = ESPECIES_PREF(:,:,1)
-     &                         / ( ESPECIES_PREF(:,:,1)
-     &                         + ESPECIES_PREF(:,:,2) )
-          ESPECIES_PREF(:,:,2) = 1.0 
-     &                         - ESPECIES_PREF(:,:,1)
-          ESPECIES_PRE(:,:,2) = ESPECIES_PRE(:,:,1)
-     &                        * ESPECIES_PREF(:,:,2)
-          ESPECIES_PRE(:,:,1) = ESPECIES_PRE(:,:,1)
-     &                        * ESPECIES_PREF(:,:,1)
+          IF (KPROFTAUTH.EQ.1) THEN
+             ESPECIES_PRE(:,:,1:2) = ESPECIES_PREF(:,:,1:2)
+             ESPECIES_PREF(:,:,1) = ESPECIES_PRE(:,:,1)
+     &                            / ( ESPECIES_PRE(:,:,1)
+     &                            + ESPECIES_PRE(:,:,2) )
+             ESPECIES_PREF(:,:,2) = 1.0-ESPECIES_PREF(:,:,1)
+          ELSE
+             ESPECIES_PREF(:,:,1) = ESPECIES_PREF(:,:,1)
+     &                            / ( ESPECIES_PREF(:,:,1)
+     &                            + ESPECIES_PREF(:,:,2) )
+             ESPECIES_PREF(:,:,2) = 1.0
+     &                            - ESPECIES_PREF(:,:,1)
+             ESPECIES_PRE(:,:,2) = ESPECIES_PRE(:,:,1)
+     &                           * ESPECIES_PREF(:,:,2)
+             ESPECIES_PRE(:,:,1) = ESPECIES_PRE(:,:,1)
+     &                           * ESPECIES_PREF(:,:,1)
+          ENDIF
 
       ENDIF
 
@@ -4023,10 +4102,10 @@ C        DEFINE PRECESSION DRIFT WHICH IS NOT IN USE
          DRIFT = 0.0
 
 C        PARTCILE ENERGY INTEGRATION AT ZERO ORBIT WIDTH
-         CALL KI(JS,KGRID,1,0)
+         CALL KI(JS,JS_MAT,KGRID,1,0,J,1,1)
 
 C        COMPUTE G-FACTORS
-         CALL KG(1)
+         CALL KG(JS,KGRID,1)
 
 C        COMPUTE H-FACTORS
          CALL KH(JS,KGRID,1)
@@ -4039,16 +4118,16 @@ C        COMPUTE H-FACTORS
             HPSI0DPSIL = HPSI0DPSI(JS,J,KGRID)
             HPSI0DLAML = HPSI0DLAM(JS,J,KGRID)
 
-            CALL KI(JS,KGRID,1,1)
-            CALL KI(JS,KGRID,1,2)
-            CALL KI(JS,KGRID,1,3)
+            CALL KI(JS,JS_MAT,KGRID,1,1,J,1,1)
+            CALL KI(JS,JS_MAT,KGRID,1,2,J,1,1)
+            CALL KI(JS,JS_MAT,KGRID,1,3,J,1,1)
             CALL KG1(1)
             CALL KH1(JS,KGRID,1)
          ENDIF
 
          IF (IFOWP.EQ.0) THEN
-            CALL KJPFILL (JS,JS_MAT,KGRID,LAMH,1,1)
-            CALL KJPFILL (JS,JS_MAT,KGRID,LAMH,1,2)
+            CALL KJPFILL (JS,JS_MAT,KGRID,J,LAMH,1,1)
+            CALL KJPFILL (JS,JS_MAT,KGRID,J,LAMH,1,2)
          ELSE
             CALL KJPFILL1(JS,JS_MAT,KGRID,LAMH,1,1)
             CALL KJPFILL1(JS,JS_MAT,KGRID,LAMH,1,2)
@@ -4080,14 +4159,14 @@ C        ADD ADIABATIC CONTRIBUTION FROM PASSING PARTICLES
             CALL KG_ADIABATIC1(JS,KGRID,1)
          ENDIF
          IF (KANISOTROPIC.EQ.1.AND.IFOWP.EQ.0) 
-     &      CALL KJPFILL(JS,JS_MAT,KGRID,LAMH,1,5)
+     &      CALL KJPFILL(JS,JS_MAT,KGRID,J,LAMH,1,5)
          IF (IFOWP.EQ.1) CALL KJPFILL1(JS,JS_MAT,KGRID,LAMH,1,5)
       ENDDO
       
       IF (IPARTICLE.NE.1.AND.IPARTICLE.NE.2) GOTO 212
 
 C     ADD SPECIAL SINGULAR CONTRIBUTIONS 
-      IF (IFOWP.EQ.0) CALL KJPFILL (JS,JS_MAT,KGRID,0.,1,3)
+      IF (IFOWP.EQ.0) CALL KJPFILL (JS,JS_MAT,KGRID,0,0.,1,3)
       IF (IFOWP.EQ.1) CALL KJPFILL1(JS,JS_MAT,KGRID,0.,1,3)
 
 C     SFD OPERATION
@@ -4214,24 +4293,24 @@ C        COMPUTE PHI(CHI) AT SPECIFIC INTEGRATION POINTS
          CALL KPHI(JS,KGRID)
 
 C        ENERGY INTEGRATION AT ZERO ORBIT WIDTH
-         CALL KI(JS,KGRID,0,0)
+         CALL KI(JS,JS_MAT,KGRID,0,0,J,1,1)
 
 C        COMPUTE G-FACTORS
-         CALL KG(0)
+         CALL KG(JS,KGRID,0)
 
 C        COMPUTE H-FACTORS
          CALL KH(JS,KGRID,0)
 
          IF (IFOWT.EQ.1) THEN
-            CALL KI(JS,KGRID,0,2)
-            CALL KI(JS,KGRID,0,3)
+            CALL KI(JS,JS_MAT,KGRID,0,2,J,1,1)
+            CALL KI(JS,JS_MAT,KGRID,0,3,J,1,1)
             CALL KG1(0)
             CALL KH1(JS,KGRID,0)
          ENDIF
 
          IF ((IPARTICLE.EQ.1.OR.IPARTICLE.EQ.3).AND.IFOWT.EQ.0) THEN
-            CALL KJPFILL (JS,JS_MAT,KGRID,LAMH,0,1)
-            CALL KJPFILL (JS,JS_MAT,KGRID,LAMH,0,2)
+            CALL KJPFILL (JS,JS_MAT,KGRID,J,LAMH,0,1)
+            CALL KJPFILL (JS,JS_MAT,KGRID,J,LAMH,0,2)
          ENDIF
          IF ((IPARTICLE.EQ.1.OR.IPARTICLE.EQ.3).AND.IFOWT.EQ.1) THEN
             CALL KJPFILL1(JS,JS_MAT,KGRID,LAMH,0,1)
@@ -4253,7 +4332,7 @@ C        NOTE FOW ADIABATIC CONTRIBUTION FROM TRAPPED PARTICLES VANISHES
          IF (KANISOTROPIC.EQ.1) THEN
             CALL KIA_ADIABATIC(JS,KGRID,0,LAM,ZKIA)
             CALL KG_ADIABATIC(JS,KGRID,0)
-            CALL KJPFILL(JS,JS_MAT,KGRID,LAMH,0,5)
+            CALL KJPFILL(JS,JS_MAT,KGRID,J,LAMH,0,5)
          ENDIF
       ENDDO
 
@@ -4261,12 +4340,17 @@ C        NOTE FOW ADIABATIC CONTRIBUTION FROM TRAPPED PARTICLES VANISHES
 
 C     ADD SPECIAL SINGULAR CONTRIBUTION FROM RLM(L)=0
       IF (IFOWT.EQ.0) THEN
-         CALL KJPFILL (JS,JS_MAT,KGRID,0.,0,3)
-         IF (SLAMD0.GT.0.) CALL KJPFILL (JS,JS_MAT,KGRID,0.,0,4)
+         CALL KJPFILL (JS,JS_MAT,KGRID,0,0.,0,3)
+         IF (SLAMD0.GT.0.) CALL KJPFILL (JS,JS_MAT,KGRID,0,0.,0,4)
       ELSE
          CALL KJPFILL1(JS,JS_MAT,KGRID,0.,0,3)
          IF (SLAMD0.GT.0.) CALL KJPFILL1(JS,JS_MAT,KGRID,0.,0,4)
       ENDIF
+
+C     LOCAL KJPFILL PRESSURE-SOURCE BLOCKS, AFTER THE PITCH QUADRATURE
+C     AND ELL=0 SINGULAR ADD-BACK.  THESE CONTRIBUTION-SUMMED BLOCKS
+C     PRECEDE PRESSURE RECOVERY, RADIAL FOLDING, AND WORK ASSEMBLY.
+      CALL WRITEKJPMATRIXTRACE(JS,JS_MAT,KGRID)
 
 C     SFD OPERATION
 C     TRAPPED THERMAL ION BOUNCE FREQUENCY AVERAGE
@@ -4312,7 +4396,7 @@ C        INDEPENDENT OF PARTICLE ENERGY DISTRIBUTION
 
 C     ADD EXTRA TERM TO ADIABATIC CONTRIBUTION, 
 C     ASSOCIATED WITH ISOTROPIC SLOWING DOWN DISTRIBUTION 
-      IF (KFASTRUN.EQ.1) CALL KJPFILL(JS,JS_MAT,KGRID,0.,1,6)
+      IF (KFASTRUN.EQ.1) CALL KJPFILL(JS,JS_MAT,KGRID,0,0.,1,6)
 
 C     SFD FINAL CALIBRATION OF BOUNCE & PRECESSION FREQUNCIES
 C     FIND RESONANCE CONDITION FOR HOT IONS IN LOCAL SPACE    
@@ -4348,9 +4432,13 @@ C     SAVE ALL FREQUNCIES INTO A FILE
      &                   *ALPHAA3(JS,1,3)/ALPHAA1(JS,1,3)
          AOMEGADINSURF = AOMEGADIN*ESPECIES_TEM(JS,1,1)*B0K/OMEGACI0
          LAMH = 0.
-         DO L=1,MLMAX
-            IF (ABS(RLM(L)).LT.0.1) LAMH = SLAM0(L,3)
-         ENDDO
+C        FREQK(:,9) IS THE HOT-ION L=0 RESONANCE DIAGNOSTIC.  A
+C        TWO-SPECIES THERMAL RUN HAS NO THIRD SLAM0 COLUMN.
+         IF (NSPECIES.GE.3) THEN
+            DO L=1,MLMAX
+               IF (ABS(RLM(L)).LT.0.1) LAMH = SLAM0(L,3)
+            ENDDO
+         ENDIF
 
          FREQK(JS,1)  = AOMEGABPN
          FREQK(JS,2)  = AOMEGABTN
@@ -4392,7 +4480,11 @@ C     SFD RELEASE
 
       ENDIF
 
-      IF (INCSFD.GT.0) CALL WRITE_SURFACE_QUANTITIES(JS,KGRID)
+C     ODWK COMPONENT SERIALIZATION IS INDEPENDENT OF OPTIONAL SFD
+C     DIAGNOSTICS.  INCSFD IS ZERO IN PRODUCTION, BUT CALCDWKCOMP
+C     REQUIRES ONE THREAD-LOCAL COMPONENT FILE PER RADIAL SURFACE.
+      IF (ODWKCOM.AND.KDWKREAD.NE.1)
+     &   CALL WRITE_SURFACE_QUANTITIES(JS,KGRID)
       
       RETURN
       END
@@ -4410,7 +4502,7 @@ C            ISOTROPIC SLOWING DOWN DISTRIBUTION
 C ADDED PERTURBED ELECTROSTATIC POTENTIAL DPHI BY Y.Q.LIU IN JUNE 2023 
 C NOTE THAT ICASE=5,6 DOES NOT APPLY TO X1PARAE ETC.      
 C=======================================================================
-      SUBROUTINE KJPFILL(JS,JS_MAT,KGRID,LAMH,KPARTICLE,ICASE)
+      SUBROUTINE KJPFILL(JS,JS_MAT,KGRID,KPITCH,LAMH,KPARTICLE,ICASE)
 
       USE RCOMDM
       USE DIMENSIM
@@ -4419,7 +4511,7 @@ C=======================================================================
       USE ANISOTROPICM
       IMPLICIT NONE
 
-      INTEGER    JS,JS_MAT,KGRID,KPARTICLE,ICASE,R,
+      INTEGER    JS,JS_MAT,KGRID,KPITCH,KPARTICLE,ICASE,R,
      &           K,M,KP,J,L,N,M00,J00,J2M,J1M,J1P,J2P
       REAL*8     LAMH,LAM1,LAM2,H1,H3,H4
       COMPLEX*16 CTMP,CTM2,CTM3,CTM4
@@ -4428,7 +4520,11 @@ C=======================================================================
      &           X1PERP,X2PERP,Q1PERP,Q2PERP,Q3PERP,DPPERP,
      &           X1DPHI,X2DPHI,Q1DPHI,Q2DPHI,Q3DPHI,DPDPHI
       INTEGER KCHECK
+      LOGICAL OTRACE
       KCHECK = 0
+
+      OTRACE = .FALSE.
+      CALL KELLTRACESELECT(JS,KGRID,OTRACE)
 
       LAM1   = HKMIN(JS,KGRID)
       LAM2   = HKMAX(JS,KGRID)
@@ -4443,6 +4539,8 @@ C=======================================================================
      &           X1DPHI(NSPECIES,2),X2DPHI(NSPECIES,2), 
      &           Q1DPHI(NSPECIES,2),Q2DPHI(NSPECIES,2), 
      &           Q3DPHI(NSPECIES,2),DPDPHI(NSPECIES,2) )
+      IF (OTRACE) CALL WRITEKJPFACTORTRACE(JS,JS_MAT,KGRID,
+     & KPITCH,KPARTICLE,ICASE,LAM,LAMH)
       DO K=1,MSMAX
       DO M=1,MSMAX
 
@@ -4469,6 +4567,9 @@ C=======================================================================
       CASE (1)
          DO KP=1,NSPECIES
          DO L=1,MLMAX
+            IF (KNTVELL.NE.999) THEN
+               IF (NINT(RLM(L)).NE.KNTVELL) CYCLE
+            ENDIF
             IF (KPARTICLE.EQ.0 .AND. ABS(RLM(L)).LT.0.1) THEN
                R=2
             ELSE
@@ -4525,6 +4626,9 @@ C=======================================================================
       CASE (2)
          DO KP=1,NSPECIES
          DO L=1,MLMAX
+         IF (KNTVELL.NE.999) THEN
+            IF (NINT(RLM(L)).NE.KNTVELL) CYCLE
+         ENDIF
          IF (SLAM0(L,KP).GT.0.) THEN
             IF (KPARTICLE.EQ.0 .AND. ABS(RLM(L)).LT.0.1) THEN
                R=2
@@ -4587,6 +4691,9 @@ C=======================================================================
       CASE (3)
          DO KP=1,NSPECIES
          DO L=1,MLMAX
+         IF (KNTVELL.NE.999) THEN
+            IF (NINT(RLM(L)).NE.KNTVELL) CYCLE
+         ENDIF
          IF (SLAM0(L,KP).GT.0.) THEN
             IF (KPARTICLE.EQ.0 .AND. ABS(RLM(L)).LT.0.1) THEN
                R=2
@@ -4636,6 +4743,9 @@ C=======================================================================
       CASE (4)
          DO KP=1,NSPECIES
          DO L=1,MLMAX
+         IF (KNTVELL.NE.999) THEN
+            IF (NINT(RLM(L)).NE.KNTVELL) CYCLE
+         ENDIF
          IF (ABS(RLM(L)).LT.0.1.AND.KPARTICLE.EQ.0) THEN
             R=2
             CTMP   = VI0(1,KP)*H3
@@ -4666,6 +4776,7 @@ C=======================================================================
 
       CASE (5)   
          R=1
+         IF (KNTVELL.NE.999.AND.KNTVELL.NE.998) CYCLE
          DO KP=1,NSPECIES
          L = M-K + (M2-M1) + 1
          X1PARA(KP,R) = ZKIA(1,KP)*ZGL0PA(L)*LAMH*H3
@@ -4686,6 +4797,7 @@ C=======================================================================
          ENDDO
       CASE (6)
          R=1
+         IF (KNTVELL.NE.999.AND.KNTVELL.NE.998) CYCLE
          DO KP=1,NSPECIES
          IF ((ISPECIES_F0(KP).EQ.1.OR.ISPECIES_F0(KP).EQ.2)
      &       .AND.ABS(PSPECIES_AT(KP)).GT.0.) THEN
@@ -4853,6 +4965,248 @@ C         TRANSIT COMPONENT
      &            X1DPHI,X2DPHI,Q1DPHI,Q2DPHI,Q3DPHI,DPDPHI)
       RETURN
       END
+
+C=======================================================================
+C DEFAULT-OFF PRE-ACCUMULATION KJPFILL FACTOR TRACE.                    =
+C                                                                       =
+C EACH TERM STORES FOUR KINETIC SCALARS, THREE K-SIDE FACTORS, AND SIX  =
+C M-SIDE FACTORS.  THEIR OUTER PRODUCTS RECONSTRUCT ALL 18 LOCAL        =
+C CHANNELS WITHOUT SERIALIZING ONE DENSE MATRIX PER PITCH CALL.         =
+C=======================================================================
+      SUBROUTINE WRITEKJPFACTORTRACE(JS,JS_MAT,KGRID,KPITCH,
+     & KPARTICLE,ICASE,RLAM,RLAMH)
+
+      USE DIMENSIM
+      USE GLOBALM
+      USE KINETICM
+      USE ToolBox
+      IMPLICIT NONE
+
+      INTEGER JS,JS_MAT,KGRID,KPITCH,KPARTICLE,ICASE,KP,R,L,FID,
+     & KCALL
+      INTEGER, ALLOCATABLE, SAVE :: KCALLCOUNT(:,:)
+      INTEGER KTERMCOUNT(6)
+      REAL*8 RLAM,RLAMH,H1,H3,H4,BASE,HEADERLAM,HEADERLAMH
+      COMPLEX*16 SCALAR(4),CALLPAYLOAD(6)
+      LOGICAL OEXIST
+      CHARACTER*72 PATH
+
+      IF (KNTVELL.EQ.999) STOP 'KJP FACTOR TRACE REQUIRES KNTVELL'
+      IF (ICASE.LT.1.OR.ICASE.GT.4) RETURN
+      WRITE(PATH,
+     & '("ELL_TRACE_JS",I4.4,"_G",I1,"_KJPFACTOR.OUT")')
+     & JS,KGRID
+C     USE AN ATOMIC RUNTIME-ALLOCATED UNIT AS WELL AS THE TRACE LOCK.  THE
+C     LOCK SERIALIZES OPTIONAL WRITERS, WHILE NEWUNIT ALSO EXCLUDES LEGACY
+C     WRITERS OUTSIDE THIS LOCK FROM REBINDING FID MID-CALL.
+C$OMP CRITICAL(ELL_TRACE_WRITE)
+      IF (.NOT.ALLOCATED(KCALLCOUNT)) THEN
+         ALLOCATE(KCALLCOUNT(NRP1,2))
+         KCALLCOUNT=0
+      ENDIF
+      INQUIRE(FILE=PATH,EXIST=OEXIST)
+      IF (KCALLCOUNT(JS,KGRID).EQ.0.AND.OEXIST) THEN
+         WRITE(*,*) ' STALE KJP FACTOR TRACE FILE: ',TRIM(PATH)
+         STOP 1
+      ENDIF
+      IF (KCALLCOUNT(JS,KGRID).GT.0.AND..NOT.OEXIST) THEN
+         WRITE(*,*) ' MISSING ACTIVE KJP FACTOR TRACE FILE: ',TRIM(PATH)
+         STOP 1
+      ENDIF
+      KCALLCOUNT(JS,KGRID)=KCALLCOUNT(JS,KGRID)+1
+      KCALL=KCALLCOUNT(JS,KGRID)
+      OPEN(NEWUNIT=FID,FILE=PATH,STATUS='UNKNOWN',POSITION='APPEND',
+     &     ACTION='WRITE')
+      IF (.NOT.OEXIST) THEN
+         WRITE(FID,*) '% PRE-ACCUMULATION KJPFILL FACTORS'
+         WRITE(FID,*) '% SCHEMA 2'
+         WRITE(FID,*) '% TERM 1=REGULAR_BASE 2=ELL0_REGULAR_SUB',
+     &    ' 3=PITCH_SINGULAR_BASE 4=PITCH_SINGULAR_SUB',
+     &    ' 5=ANALYTIC_ADDBACK 6=ELL0_ADDBACK'
+         WRITE(FID,*) '% SIDE 0=SCALAR 1=K_LEFT 2=M_RIGHT'
+         WRITE(FID,*) '% JS G JSMAT CALL PITCH PARTICLE ICASE KP',
+     &    ' CLASS ELL TERM SIDE INDEX HARMONIC KOPT LINDEX',
+     &    ' LAMBDA LAMBDA_WEIGHT',
+     &    ' SIX COMPLEX PAYLOAD VALUES'
+      ENDIF
+
+      H3=WFUN(JS,KGRID)
+      KTERMCOUNT=0
+      DO L=1,MLMAX
+         IF (NINT(RLM(L)).NE.KNTVELL) CYCLE
+         DO KP=1,NSPECIES
+            IF (ICASE.EQ.1) THEN
+               KTERMCOUNT(1)=KTERMCOUNT(1)+1
+               IF (KPARTICLE.EQ.0 .AND. ABS(RLM(L)).LT.0.1 .AND.
+     &             SLAMD0.GT.0.) KTERMCOUNT(2)=KTERMCOUNT(2)+1
+            ELSEIF (ICASE.EQ.2) THEN
+               IF (SLAM0(L,KP).GT.0.) THEN
+                  KTERMCOUNT(3)=KTERMCOUNT(3)+1
+                  KTERMCOUNT(4)=KTERMCOUNT(4)+1
+               ENDIF
+            ELSEIF (ICASE.EQ.3) THEN
+               IF (SLAM0(L,KP).GT.0.) KTERMCOUNT(5)=KTERMCOUNT(5)+1
+            ELSEIF (ICASE.EQ.4) THEN
+               IF (KPARTICLE.EQ.0 .AND. ABS(RLM(L)).LT.0.1)
+     &            KTERMCOUNT(6)=KTERMCOUNT(6)+1
+            ENDIF
+         ENDDO
+      ENDDO
+      DO KP=1,6
+         CALLPAYLOAD(KP)=DCMPLX(DFLOAT(KTERMCOUNT(KP)),0.D0)
+      ENDDO
+      HEADERLAM=RLAM
+      HEADERLAMH=RLAMH
+      IF (ICASE.EQ.3.OR.ICASE.EQ.4) THEN
+         HEADERLAM=0.D0
+         HEADERLAMH=0.D0
+      ENDIF
+C     KJPFILL CONSUMES THE KOPT=0 VI ARRAY.  L IS THE NATIVE RLM INDEX.
+      WRITE(FID,1000) JS,KGRID,JS_MAT,KCALL,KPITCH,KPARTICLE,
+     & ICASE,0,0,KNTVELL,0,3,0,0,0,0,HEADERLAM,HEADERLAMH,CALLPAYLOAD
+
+      DO L=1,MLMAX
+         IF (NINT(RLM(L)).NE.KNTVELL) CYCLE
+         DO KP=1,NSPECIES
+            IF (KPARTICLE.EQ.0 .AND. ABS(RLM(L)).LT.0.1) THEN
+               R=2
+            ELSE
+               R=1
+            ENDIF
+            IF (ICASE.EQ.1) THEN
+               SCALAR(1)=VI(1,L,KP)*RLAMH*H3
+               SCALAR(2)=VI(2,L,KP)*RLAMH*H3
+               SCALAR(3)=VI(3,L,KP)*RLAMH*H3
+               SCALAR(4)=VI(4,L,KP)*RLAMH*H3
+               CALL WRITEKJPFACTORTERM(FID,JS,JS_MAT,KGRID,KCALL,KPITCH,
+     &          KPARTICLE,ICASE,KP,R,L,1,RLAM,RLAMH,SCALAR,
+     &          VPARA(:,L),VPERP(:,L),VDPHI(:,L),VX1(:,L),VX2(:,L),
+     &          VQ1(:,L),VQ2(:,L),VQ3(:,L),VDP(:,L))
+               IF (KPARTICLE.EQ.0 .AND. ABS(RLM(L)).LT.0.1) THEN
+                  IF (SLAMD0.GT.0.) THEN
+                     SCALAR=-SCALAR
+                     CALL WRITEKJPFACTORTERM(FID,JS,JS_MAT,KGRID,KCALL,
+     &                KPITCH,KPARTICLE,ICASE,KP,R,L,2,RLAM,RLAMH,
+     &                SCALAR,VPARA0(:,L),VPERP0(:,L),VDPHI0(:,L),
+     &                VX10(:,L),VX20(:,L),VQ10(:,L),VQ20(:,L),
+     &                VQ30(:,L),VDP0(:,L))
+                  ENDIF
+               ENDIF
+            ELSEIF (ICASE.EQ.2) THEN
+               H1=SLAM0(L,KP)
+               IF (H1.GT.0.) THEN
+                  IF (KPARTICLE.EQ.1) THEN
+                     H4=PSPECIES_NP(KP)
+                  ELSEIF (ABS(RLM(L)).GT.0.1) THEN
+                     H4=PSPECIES_NTB(KP)
+                  ELSE
+                     H4=PSPECIES_NTD(KP)
+                  ENDIF
+                  SCALAR(1)=LOG(ABS(RLAM-H1))*SF0(L,KP,0,1)
+     &                     *RLAMH*H3*H4
+                  SCALAR(2)=LOG(ABS(RLAM-H1))*SF0(L,KP,0,2)
+     &                     *RLAMH*H3*H4
+                  SCALAR(3)=LOG(ABS(RLAM-H1))*SF0(L,KP,0,3)
+     &                     *RLAMH*H3*H4
+                  SCALAR(4)=LOG(ABS(RLAM-H1))*SF0(L,KP,0,4)
+     &                     *RLAMH*H3*H4
+                  CALL WRITEKJPFACTORTERM(FID,JS,JS_MAT,KGRID,KCALL,
+     &             KPITCH,KPARTICLE,ICASE,KP,R,L,3,RLAM,RLAMH,
+     &             SCALAR,VPARA(:,L),VPERP(:,L),VDPHI(:,L),
+     &             VX1(:,L),VX2(:,L),VQ1(:,L),VQ2(:,L),VQ3(:,L),
+     &             VDP(:,L))
+                  SCALAR=-SCALAR
+                  CALL WRITEKJPFACTORTERM(FID,JS,JS_MAT,KGRID,KCALL,
+     &             KPITCH,KPARTICLE,ICASE,KP,R,L,4,RLAM,RLAMH,
+     &             SCALAR,SVPARA0(:,L,KP),SVPERP0(:,L,KP),
+     &             SVDPHI0(:,L,KP),SVX10(:,L,KP),SVX20(:,L,KP),
+     &             SVQ10(:,L,KP),SVQ20(:,L,KP),SVQ30(:,L,KP),
+     &             SVDP0(:,L,KP))
+               ENDIF
+            ELSEIF (ICASE.EQ.3) THEN
+               H1=SLAM0(L,KP)
+               IF (H1.GT.0.) THEN
+                  IF (KPARTICLE.EQ.1) THEN
+                     H4=PSPECIES_NP(KP)
+                     BASE=(H1)*(LOG(H1)-1.)
+     &                   +(HKMIN(JS,KGRID)-H1)
+     &                   *(LOG(HKMIN(JS,KGRID)-H1)-1.)
+                  ELSE
+                     IF (ABS(RLM(L)).GT.0.1) THEN
+                        H4=PSPECIES_NTB(KP)
+                     ELSE
+                        H4=PSPECIES_NTD(KP)
+                     ENDIF
+                     BASE=(H1-HKMIN(JS,KGRID))
+     &                   *(LOG(H1-HKMIN(JS,KGRID))-1.)
+     &                   +(HKMAX(JS,KGRID)-H1)
+     &                   *(LOG(HKMAX(JS,KGRID)-H1)-1.)
+                  ENDIF
+                  SCALAR(1)=BASE*SF0(L,KP,0,1)
+     &                     /(B0K*SQRT(PI))*H3*H4
+                  SCALAR(2)=BASE*SF0(L,KP,0,2)
+     &                     /(B0K*SQRT(PI))*H3*H4
+                  SCALAR(3)=BASE*SF0(L,KP,0,3)
+     &                     /(B0K*SQRT(PI))*H3*H4
+                  SCALAR(4)=BASE*SF0(L,KP,0,4)
+     &                     /(B0K*SQRT(PI))*H3*H4
+                  CALL WRITEKJPFACTORTERM(FID,JS,JS_MAT,KGRID,KCALL,
+     &             KPITCH,KPARTICLE,ICASE,KP,R,L,5,H1,0.D0,
+     &             SCALAR,SVPARA0(:,L,KP),SVPERP0(:,L,KP),
+     &             SVDPHI0(:,L,KP),SVX10(:,L,KP),SVX20(:,L,KP),
+     &             SVQ10(:,L,KP),SVQ20(:,L,KP),SVQ30(:,L,KP),
+     &             SVDP0(:,L,KP))
+               ENDIF
+            ELSEIF (ICASE.EQ.4) THEN
+               IF (KPARTICLE.EQ.0 .AND. ABS(RLM(L)).LT.0.1) THEN
+                  SCALAR(1)=VI0(1,KP)*H3
+                  SCALAR(2)=VI0(2,KP)*H3
+                  SCALAR(3)=VI0(3,KP)*H3
+                  SCALAR(4)=VI0(4,KP)*H3
+                  CALL WRITEKJPFACTORTERM(FID,JS,JS_MAT,KGRID,KCALL,
+     &             KPITCH,KPARTICLE,ICASE,KP,R,L,6,SLAMD0,0.D0,
+     &             SCALAR,VPARA0(:,L),VPERP0(:,L),VDPHI0(:,L),
+     &             VX10(:,L),VX20(:,L),VQ10(:,L),VQ20(:,L),
+     &             VQ30(:,L),VDP0(:,L))
+               ENDIF
+            ENDIF
+         ENDDO
+      ENDDO
+      CLOSE(FID)
+C$OMP END CRITICAL(ELL_TRACE_WRITE)
+ 1000 FORMAT(16I8,14(1X,E24.16))
+      END SUBROUTINE WRITEKJPFACTORTRACE
+
+      SUBROUTINE WRITEKJPFACTORTERM(FID,JS,JS_MAT,KGRID,KCALL,KPITCH,
+     & KPARTICLE,ICASE,KP,R,L,TERM,RLAM,RLAMH,FS,FLPARA,FLPERP,
+     & FLDPHI,FRX1,FRX2,FRQ1,FRQ2,FRQ3,FRDP)
+
+      USE DIMENSIM
+      USE GLOBALM
+      USE KINETICM
+      IMPLICIT NONE
+
+      INTEGER FID,JS,JS_MAT,KGRID,KCALL,KPITCH,KPARTICLE,ICASE,KP,R,L,
+     & TERM,K
+      REAL*8 RLAM,RLAMH
+      COMPLEX*16 FS(4),FLPARA(*),FLPERP(*),FLDPHI(*),FRX1(*),
+     & FRX2(*),FRQ1(*),FRQ2(*),FRQ3(*),FRDP(*),FZERO
+
+      FZERO=(0.D0,0.D0)
+      WRITE(FID,1000) JS,KGRID,JS_MAT,KCALL,KPITCH,KPARTICLE,ICASE,KP,R,
+     & NINT(RLM(L)),TERM,0,0,0,0,L,RLAM,RLAMH,FS,FZERO,FZERO
+      DO K=1,MSMAX
+         WRITE(FID,1000) JS,KGRID,JS_MAT,KCALL,KPITCH,KPARTICLE,ICASE,
+     &    KP,R,NINT(RLM(L)),TERM,1,K,NINT(RM(K,2)),0,L,RLAM,RLAMH,
+     &    FLPARA(K),FLPERP(K),FLDPHI(K),FZERO,FZERO,FZERO
+      ENDDO
+      DO K=1,MSMAX
+         WRITE(FID,1000) JS,KGRID,JS_MAT,KCALL,KPITCH,KPARTICLE,ICASE,
+     &    KP,R,NINT(RLM(L)),TERM,2,K,NINT(RM(K,2)),0,L,RLAM,RLAMH,
+     &    FRX1(K),FRX2(K),FRQ1(K),FRQ2(K),FRQ3(K),FRDP(K)
+      ENDDO
+ 1000 FORMAT(16I8,14(1X,E24.16))
+      END SUBROUTINE WRITEKJPFACTORTERM
 
 C=======================================================================
 C PUT ALL I,H,G FACTORS TOGETHER AND FILL INTO MATRIX ELEMENTS 
@@ -6040,7 +6394,7 @@ C     FIND INITIAL GUESS
      &   WRITE(*,*) 'HPL,HPU',HPL,HPU,JS,KGRID
 
       IF (HPL.LE.0.0.OR.HPU.GE.0.0)
-     &  STOP 'KINETIC:HPL<0 | HPU>0,TRY KSMOOTH=1'
+     &  STOP 'KINETIC:HPL<0 | HPU>0,TRY KSMOOTHB=1'
       RETURN
       END
       
@@ -6136,7 +6490,7 @@ C     IF (HPU.GT.0.AND.HPL.LT.0.AND.0.EQ.1) THEN
       ENDIF
 
       IF (HPL.LE.0.0.OR.HPU.GE.0.0) 
-     &   STOP 'KINETIC:HPL<0 | HPU>0,TRY KSMOOTH=1'
+     &   STOP 'KINETIC:HPL<0 | HPU>0,TRY KSMOOTHB=1'
 
       RETURN
       END
@@ -7021,7 +7375,8 @@ C   ZVI: COMPUTED ENERGY INTEGRATION VALUE
 C NUMERICAL ENERGY INTEGRATION ADDED BY Z.R.WANG
 C YQL, 06-2013                                                         
 C=======================================================================
-      SUBROUTINE KI_PRECESSION(JS,KGRID,KPARTICLE,KP,KOPT,ZVI)
+      SUBROUTINE KI_PRECESSION(JS,JS_MAT,KGRID,KPARTICLE,KP,KOPT,
+     &                         KPITCH,ICASE,KTERM,KTRACEJOIN,ZVI)
 
       USE RCOMDM
       USE DIMENSIM
@@ -7033,7 +7388,8 @@ C=======================================================================
       IMPLICIT NONE
       INCLUDE 'compam.inc'
 
-      INTEGER    JS,KGRID,KPARTICLE,KP,KOPT,L,IF0TYPE,J
+      INTEGER    JS,JS_MAT,KGRID,KPARTICLE,KP,KOPT,KPITCH,ICASE,KTERM,
+     &           KTRACEJOIN,L,IF0TYPE,J
 
       REAL*8     OMEGAE,RTMP,REPS,SIG
       COMPLEX*16 ZVI(4),OMEGAN,OMEGASA,OMEGASB,OMEGASC,
@@ -7172,11 +7528,19 @@ C     ALL OTHER CASES USE NUMERICAL INTEGRATION ALONG PARTICLE ENERGY
       ELSE
          DO L=1,MLMAX
             IF (ABS(RLM(L)).LT.0.1) THEN 
-               CALL KIA_TRAP(JS,KGRID,KP,KOPT,L,LAM,0,ZVI(1))
+               CALL KIA_TRAP(JS,JS_MAT,KGRID,KP,KOPT,L,KPITCH,
+     &                       KPARTICLE,ICASE,KTERM,KTRACEJOIN,
+     &                       LAM,0,ZVI(1))
                IF (INCDPHI.GT.0) THEN
-                  CALL KIA_TRAP(JS,KGRID,KP,KOPT,L,LAM,1,ZVI(2))
-                  CALL KIA_TRAP(JS,KGRID,KP,KOPT,L,LAM,2,ZVI(3))
-                  CALL KIA_TRAP(JS,KGRID,KP,KOPT,L,LAM,3,ZVI(4))
+                  CALL KIA_TRAP(JS,JS_MAT,KGRID,KP,KOPT,L,KPITCH,
+     &                          KPARTICLE,ICASE,KTERM,KTRACEJOIN,
+     &                          LAM,1,ZVI(2))
+                  CALL KIA_TRAP(JS,JS_MAT,KGRID,KP,KOPT,L,KPITCH,
+     &                          KPARTICLE,ICASE,KTERM,KTRACEJOIN,
+     &                          LAM,2,ZVI(3))
+                  CALL KIA_TRAP(JS,JS_MAT,KGRID,KP,KOPT,L,KPITCH,
+     &                          KPARTICLE,ICASE,KTERM,KTRACEJOIN,
+     &                          LAM,3,ZVI(4))
                ENDIF
             ENDIF
          ENDDO
@@ -7217,7 +7581,8 @@ C NUMERICAL ENERGY INTEGRATION ADDED BY Z.R.WANG
 C YQL, 06-2013                                                         
 C THE CURRENT IMPLEMENTATION ONLY FOR KOPT=0
 C=======================================================================
-      SUBROUTINE KI_BOUNCE(JS,KGRID,KP,KOPT,L,ZVI)
+      SUBROUTINE KI_BOUNCE(JS,JS_MAT,KGRID,KP,KOPT,L,KPITCH,
+     &                     ICASE,KTERM,ZVI)
 
       USE RCOMDM
       USE DIMENSIM
@@ -7228,7 +7593,8 @@ C=======================================================================
       IMPLICIT NONE
       INCLUDE 'compam.inc'
 
-      INTEGER    JS,KGRID,KP,KOPT,L,IF0TYPE,J
+      INTEGER    JS,JS_MAT,KGRID,KP,KOPT,L,KPITCH,ICASE,KTERM,
+     &           IF0TYPE,J
 
       REAL*8     RL,OMEGAE,RTMP,REPS
       COMPLEX*16 ZVI(4),OMEGAN,OMEGASA,OMEGASB,OMEGASC,
@@ -7345,11 +7711,15 @@ C     SUBTRACT SINGULAR CONTRIBUTION FOR LATER PITCH ANGLE INTEGRATION
 
 C     ALL OTHER CASES USE NUMERICAL INTEGRATION ALONG PARTICLE ENERGY
       ELSE
-         CALL KIA_TRAP(JS,KGRID,KP,KOPT,L,LAM,0,ZVI(1))
+         CALL KIA_TRAP(JS,JS_MAT,KGRID,KP,KOPT,L,KPITCH,0,ICASE,
+     &                 KTERM,1,LAM,0,ZVI(1))
          IF (INCDPHI.GT.0) THEN
-            CALL KIA_TRAP(JS,KGRID,KP,KOPT,L,LAM,1,ZVI(2))
-            CALL KIA_TRAP(JS,KGRID,KP,KOPT,L,LAM,2,ZVI(3))
-            CALL KIA_TRAP(JS,KGRID,KP,KOPT,L,LAM,3,ZVI(4))
+            CALL KIA_TRAP(JS,JS_MAT,KGRID,KP,KOPT,L,KPITCH,0,ICASE,
+     &                    KTERM,1,LAM,1,ZVI(2))
+            CALL KIA_TRAP(JS,JS_MAT,KGRID,KP,KOPT,L,KPITCH,0,ICASE,
+     &                    KTERM,1,LAM,2,ZVI(3))
+            CALL KIA_TRAP(JS,JS_MAT,KGRID,KP,KOPT,L,KPITCH,0,ICASE,
+     &                    KTERM,1,LAM,3,ZVI(4))
          ENDIF
       ENDIF
 
@@ -7544,13 +7914,13 @@ C OUTPUT:
 C   VI: AN ARRAY FROM ALL BOUNCE HARMONICS 
 C YQL, 06-2013 
 C=======================================================================
-      SUBROUTINE KI(JS,KGRID,KPARTICLE,KOPT)
+      SUBROUTINE KI(JS,JS_MAT,KGRID,KPARTICLE,KOPT,KPITCH,ICASE,KTERM)
 
       USE GLOBALM
       USE KINETICM
       IMPLICIT NONE
 
-      INTEGER    JS,KGRID,KPARTICLE,L,KP,KOPT
+      INTEGER    JS,JS_MAT,KGRID,KPARTICLE,L,KP,KOPT,KPITCH,ICASE,KTERM
       REAL*8     RL
       COMPLEX*16 ZVI(4)
       COMPLEX*16,DIMENSION(:,:,:),ALLOCATABLE::VVI
@@ -7577,10 +7947,12 @@ C     CONTRIBUTION FROM TRAPPED PARTICLES
       DO L=1,MLMAX
          RL = RLM(L)
          IF (ABS(RL).LT.0.1.AND.ABS(PSPECIES_NTD(KP)).GT.0.) THEN
-            CALL KI_PRECESSION(JS,KGRID,KPARTICLE,KP,KOPT,ZVI)
+            CALL KI_PRECESSION(JS,JS_MAT,KGRID,KPARTICLE,KP,KOPT,
+     &                         KPITCH,ICASE,KTERM,1,ZVI)
             VVI(:,L,KP) = VVI(:,L,KP) + ZVI*PSPECIES_NTD(KP)
          ELSEIF (ABS(RL).GT.0.1.AND.ABS(PSPECIES_NTB(KP)).GT.0.) THEN
-            CALL KI_BOUNCE(JS,KGRID,KP,KOPT,L,ZVI)
+            CALL KI_BOUNCE(JS,JS_MAT,KGRID,KP,KOPT,L,KPITCH,ICASE,
+     &                     KTERM,ZVI)
             VVI(:,L,KP) = VVI(:,L,KP) + ZVI*PSPECIES_NTB(KP)
          ENDIF
       ENDDO
@@ -7664,6 +8036,10 @@ C     FIRST ORDER FOW CONTRIBUTION VANISHES FOR PRECESSIONAL DRIFTS
 C     SET KI-CONTRIBUTIONS VANISH NEAR RATIONAL SURFACES
       IF (ABS(WFUN(JS,KGRID)).LT.1.0E-13) THEN      
          IF (KOPT.EQ.0) VI0  = 0.
+C        RECORD THE MASKED SURFACES TOO.  A RECONSTRUCTION THAT SAW ONLY
+C        THE INTEGRATED ONES COULD NOT TELL A MASKED SURFACE FROM A
+C        MISSING ONE, AND THE RECORDED WFUN SHOWS WHY VI0 IS ZERO HERE.
+         IF (KOPT.EQ.0) CALL WRITE_KI0_FACTOR(JS,KGRID,SLAMD0)
          RETURN
       ENDIF
 
@@ -7741,7 +8117,7 @@ C     INTEGRATION OVER NEW LAMN
          DO KP=1,NSPECIES
             IF (ABS(PSPECIES_NTD(KP)).GT.0.) THEN
             CALL KDISTRIBF_TYPE(JS,KGRID,KP,LAM)
-            CALL KI_PRECESSION(JS,KGRID,0,KP,KOPT,ZVI)
+            CALL KI_PRECESSION(JS,0,KGRID,0,KP,KOPT,0,0,0,0,ZVI)
             VVI0(:,KP) = VVI0(:,KP) + ZVI*PSPECIES_NTD(KP)*LAMNH(J)
             ENDIF
          ENDDO
@@ -7810,6 +8186,80 @@ C     NUMERICAL TREATMENT OF OMEGAD SINGULARITY FOR ANY SPECIES
          WRITE(*,120) LAM0,DPRM,VI0
       ENDIF
  120  FORMAT('CHECK KI0: LAM0,DPRM,VI0=',4E14.5)
+
+C     DIAGNOSTIC EXPORT OF THE PRECESSION-RESONANCE ENERGY FACTOR.  THE
+C     STDOUT CHECK ABOVE IS COMPILED OFF AND COVERS ONE SURFACE; THIS
+C     WRITES EVERY SURFACE, GRID AND SPECIES SO THE FACTOR CAN BE
+C     COMPARED AGAINST AN INDEPENDENT RECONSTRUCTION.
+      IF (KOPT.EQ.0) CALL WRITE_KI0_FACTOR(JS,KGRID,LAM0)
+
+      RETURN
+      END
+
+C=======================================================================
+C WRITE THE PRECESSION-RESONANCE ENERGY FACTOR VI0 AND ITS CONTEXT
+C
+C ONE RECORD PER CONTRIBUTING SPECIES.  THE FACTOR ALONE IS NOT
+C CHECKABLE: IT DEPENDS ON THE RESONANT PITCH SLAMD0, THE DRIFT
+C DERIVATIVE DPRM, THE RATIONAL MASK WFUN, AND THE COMPLEX DETUNING
+C BUILT FROM OMEGAE0 AND NUEFF, SO EVERY RECORD CARRIES THEM.
+C
+C KI0 RUNS UNDER OPENMP OVER SURFACES, SO THE APPEND IS SERIALISED AND
+C THE FILE IS NOT IN SURFACE ORDER; EVERY RECORD IDENTIFIES ITSELF BY
+C JS, KGRID AND SPECIES.
+C
+C DIAGNOSTIC ONLY.  NOTHING THE SOLVE READS IS TOUCHED.
+C=======================================================================
+      SUBROUTINE WRITE_KI0_FACTOR(JS,KGRID,LAM0)
+
+      USE RCOMDM
+      USE DIMENSIM
+      USE GLOBALM
+      USE KINETICM
+      USE ANISOTROPICM
+      USE ToolBox
+
+      IMPLICIT NONE
+      INCLUDE 'compam.inc'
+
+      INTEGER    JS,KGRID
+      REAL*8     LAM0
+      INTEGER    KP,FID,K
+      LOGICAL    EXISTS
+      COMPLEX*16 OMEGAN
+
+      IF (.NOT. OKI0FAC) RETURN
+      IF (ISWEEP.NE.NSWEEP) RETURN
+
+C$OMP CRITICAL(WRITE_KI0_FACTOR_FILE)
+      INQUIRE(FILE='KI0_FACTOR.OUT',EXIST=EXISTS)
+      FID = ASSIGNFREEFILEUNIT()
+      IF (EXISTS) THEN
+         OPEN(UNIT=FID,FILE='KI0_FACTOR.OUT',STATUS='OLD',
+     &        POSITION='APPEND',ACTION='WRITE')
+      ELSE
+         OPEN(UNIT=FID,FILE='KI0_FACTOR.OUT',STATUS='REPLACE',
+     &        ACTION='WRITE')
+         WRITE(FID,'(A)') '% MARS-K precession-resonance energy factor'
+         WRITE(FID,'(A)') '% JS KGRID KP SLAMD0 DPRM WFUN '//
+     &      'Re(OMEGAN) Im(OMEGAN) then Re,Im of VI0(1:4)'
+         WRITE(FID,'(A)') '% OMEGAN = RNTOR*OMEGAE0 - OMEGA - i*NUEFF'
+         WRITE(FID,'(A)') '% not in surface order; each record is keyed'
+         WRITE(FID,'(A)') '% |WFUN| < 1e-13 marks a rational-surface'//
+     &      ' mask, where VI0 is set to zero rather than integrated'
+      ENDIF
+      DO KP=1,NSPECIES
+         IF (ABS(PSPECIES_NTD(KP)).LE.0.) CYCLE
+         OMEGAN = RNTOR*OMEGAE0(JS,KGRID)-OMEGA-CI*NUEFF(JS,KGRID,KP)
+         WRITE(FID,130) JS,KGRID,KP,LAM0,DPRM,WFUN(JS,KGRID),
+     &      DREAL(OMEGAN),DIMAG(OMEGAN),
+     &      (DREAL(VI0(K,KP)),DIMAG(VI0(K,KP)),K=1,4)
+      ENDDO
+      FLUSH(FID)
+      CLOSE(FID)
+C$OMP END CRITICAL(WRITE_KI0_FACTOR_FILE)
+
+ 130  FORMAT(3(1X,I6),13(1X,E24.16))
 
       RETURN
       END
@@ -8008,7 +8458,7 @@ C=======================================================================
                CALL KPHI(JS,KGRID)
             ENDIF
 
-            CALL KG(KPARTICLE)
+            CALL KG(JS,KGRID,KPARTICLE)
             SVPARA0(:,L,KP) = VPARA(:,L)
             SVPERP0(:,L,KP) = VPERP(:,L)
             SVDPHI0(:,L,KP) = VDPHI(:,L)
@@ -8049,7 +8499,7 @@ C=======================================================================
          OMEGAB = PI/RTK(NCHI2+2)
          CALL KPHI(JS,KGRID)
 
-         CALL KG(0)
+         CALL KG(JS,KGRID,0)
          VPARA0 = VPARA
          VPERP0 = VPERP
          VDPHI0 = VDPHI
@@ -8110,7 +8560,7 @@ C SINGULAR INTEGRALS FOR TRAPPED PARTICLES ARE TREATED ANALYTICALLY    =
 C G-FACTORS STORED AS VPARA, VPERP AND VDPHI                           =
 C YQL, 08-2007                                                         =
 C=======================================================================
-      SUBROUTINE KG(KPARTICLE)
+      SUBROUTINE KG(JS,KGRID,KPARTICLE)
 
       USE RCOMDM
       USE DIMENSIM
@@ -8118,9 +8568,10 @@ C=======================================================================
       USE KINETICM
       IMPLICIT NONE
 
-      INTEGER    KPARTICLE,J,K,L
+      INTEGER    JS,KGRID,KPARTICLE,J,K,L
       REAL*8     PHASE,DIFPI
       COMPLEX*16 EPHASE,FL,FU,CTMP
+      LOGICAL    OTRACE
       
       REAL*8 DIFFERCHI
 
@@ -8130,6 +8581,8 @@ C=======================================================================
       VPARA = 0.0
       VPERP = 0.0
       VDPHI = 0.0
+      OTRACE = .FALSE.
+      IF (KPARTICLE.EQ.0) CALL KELLTRACESELECT(JS,KGRID,OTRACE)
 
       DO J=2,NCHI2+1
          RVAK1(J) = RJBK(J)*SQRT(1-LAM/RHK(J))
@@ -8191,6 +8644,9 @@ C           PASSING PARTICLES
       VPERP = VPERP*RCHIHK/4/PI
       VDPHI = VDPHI*RCHIHK/4/PI
 
+      IF (OTRACE) CALL WRITEKGACTIONTRACE(JS,KGRID,KPARTICLE,LAM,
+     &                                    VPARA,VPERP,VDPHI)
+
       IF (KCHECK.EQ.2.AND.
      &   ABS(RQK-Q(JS0)).LT.1.0E-13) THEN
          IF (ABS(LAMM(2)-LAM).LT.1.0E-13)
@@ -8203,6 +8659,167 @@ C           PASSING PARTICLES
 
       RETURN
       END
+
+C=======================================================================
+C DEFAULT-OFF TRACE OF LOCAL KJPFILL PRESSURE-SOURCE BLOCKS.           =
+C                                                                       =
+C The diagonal G_k H_k phase test is a necessary condition for Wang's   =
+C squared action, not a sufficient one: it omits the cross terms, the   =
+C energy-integrated I_ell weights, and the singular add-back.  This     =
+C writer emits the assembled blocks after the pitch quadrature and      =
+C after the ell=0 singular contribution.  The blocks have already       =
+C summed the executed quadrature contributions and are still upstream   =
+C of FILLMATDWKCOMP, CALCPRECOMP, CALCDWKPROF, radial folding, and the   =
+C final work rows.  They are not the complete action or torque matrix.   =
+C                                                                       =
+C Written only for surfaces named in ELL_TRACE.REQUEST.  Nothing is     =
+C changed: these are the production arrays, read after they are built.  =
+C=======================================================================
+      SUBROUTINE WRITEKJPMATRIXTRACE(JS,JS_MAT,KGRID)
+
+      USE DIMENSIM
+      USE GLOBALM
+      USE KINETICM
+      USE ToolBox
+      IMPLICIT NONE
+
+      INTEGER JS,JS_MAT,KGRID,K,M,FID
+      LOGICAL OTRACE,OEXIST,ODPHI
+      CHARACTER*64 PATH
+
+      OTRACE = .FALSE.
+      CALL KELLTRACESELECT(JS,KGRID,OTRACE)
+      IF (.NOT.OTRACE) RETURN
+
+      WRITE(PATH,'("ELL_TRACE_JS",I4.4,"_G",I1,"_KJPMAT.OUT")')
+     &      JS,KGRID
+C     KJPCOEFF RUNS INSIDE THE OPENMP SURFACE LOOP (KINETIC.F:835,862), SO
+C     UNIT ASSIGNMENT AND FILE OPENING MUST BE SERIALIZED. WITHOUT THIS,
+C     TWO THREADS TAKE THE SAME UNIT FROM ASSIGNFREEFILEUNIT AND BOTH OPEN
+C     IT, WHICH SEGFAULTS IN THE RUNTIME I/O LAYER. SAME CRITICAL NAME AS
+C     THE KG AND KH TRACES, WHICH ALREADY DO THIS.
+C$OMP CRITICAL(ELL_TRACE_WRITE)
+      INQUIRE(FILE=PATH,EXIST=OEXIST)
+      IF (OEXIST) GOTO 900
+      FID=ASSIGNFREEFILEUNIT()
+      OPEN(FID,FILE=PATH,STATUS='REPLACE',ACTION='WRITE')
+C     THE SIX *DPHI BLOCKS ARE ALLOCATED ONLY WHEN INCDPHI.GT.0
+C     (KINETIC.F:165 AND :273). READING THEM UNCONDITIONALLY DEREFERENCES
+C     UNALLOCATED ALLOCATABLES AND SEGFAULTS WHILE THE WRITE ARGUMENTS ARE
+C     EVALUATED, WHICH LEAVES THE FILE AT ZERO BYTES. TEST ALLOCATION
+C     RATHER THAN THE FLAG, SO THE TRACE FOLLOWS WHAT WAS ACTUALLY BUILT.
+      ODPHI = ALLOCATED(VX1DPHI).AND.ALLOCATED(VX2DPHI).AND.
+     &        ALLOCATED(VQ1DPHI).AND.ALLOCATED(VQ2DPHI).AND.
+     &        ALLOCATED(VQ3DPHI).AND.ALLOCATED(VDPDPHI)
+      WRITE(FID,*) '% LOCAL KJPFILL PRESSURE-SOURCE BLOCKS AFTER PITCH',
+     & ' QUADRATURE AND ELL=0 SINGULAR ADD-BACK'
+      WRITE(FID,*) '% CONTRIBUTION-SUMMED; PRE-PRESSURE-RECOVERY;',
+     & ' NOT A COMPLETE ACTION OR TORQUE MATRIX'
+      WRITE(FID,*) '% JS G MSMAX', JS, KGRID, MSMAX
+      WRITE(FID,*) '% KNTVELL', KNTVELL
+      WRITE(FID,*) '% INCDPHI DPHIBLOCKS', INCDPHI, ODPHI
+      IF (ODPHI) THEN
+         WRITE(FID,*) '% K M MK MM',
+     &    ' X1PARA X1PERP X1DPHI X2PARA X2PERP X2DPHI',
+     &    ' Q1PARA Q1PERP Q1DPHI Q2PARA Q2PERP Q2DPHI',
+     &    ' Q3PARA Q3PERP Q3DPHI DPPARA DPPERP DPDPHI (RE,IM PAIRS)'
+      ELSE
+         WRITE(FID,*) '% K M MK MM',
+     &    ' X1PARA X1PERP X2PARA X2PERP',
+     &    ' Q1PARA Q1PERP Q2PARA Q2PERP',
+     &    ' Q3PARA Q3PERP DPPARA DPPERP (RE,IM PAIRS)'
+      ENDIF
+      DO K=1,MSMAX
+      DO M=1,MSMAX
+C        KJPFILL ROUTES FULL-GRID TERMS TO THE UNSUFFIXED ARRAYS AND
+C        HALF-GRID TERMS TO THE *M ARRAYS.  SERIALIZE THE SAME TARGET.
+         IF (ODPHI.AND.KGRID.EQ.1) THEN
+            WRITE(FID,1000) K,M,RM(K,2),RM(M,2),
+     &      VX1PARA(K,M,JS_MAT),VX1PERP(K,M,JS_MAT),VX1DPHI(K,M,JS_MAT),
+     &      VX2PARA(K,M,JS_MAT),VX2PERP(K,M,JS_MAT),VX2DPHI(K,M,JS_MAT),
+     &      VQ1PARA(K,M,JS_MAT),VQ1PERP(K,M,JS_MAT),VQ1DPHI(K,M,JS_MAT),
+     &      VQ2PARA(K,M,JS_MAT),VQ2PERP(K,M,JS_MAT),VQ2DPHI(K,M,JS_MAT),
+     &      VQ3PARA(K,M,JS_MAT),VQ3PERP(K,M,JS_MAT),VQ3DPHI(K,M,JS_MAT),
+     &      VDPPARA(K,M,JS_MAT),VDPPERP(K,M,JS_MAT),VDPDPHI(K,M,JS_MAT)
+         ELSEIF (ODPHI) THEN
+            WRITE(FID,1000) K,M,RM(K,2),RM(M,2),
+     &      VX1PARAM(K,M,JS_MAT),VX1PERPM(K,M,JS_MAT),VX1DPHIM(K,M,JS_MAT),
+     &      VX2PARAM(K,M,JS_MAT),VX2PERPM(K,M,JS_MAT),VX2DPHIM(K,M,JS_MAT),
+     &      VQ1PARAM(K,M,JS_MAT),VQ1PERPM(K,M,JS_MAT),VQ1DPHIM(K,M,JS_MAT),
+     &      VQ2PARAM(K,M,JS_MAT),VQ2PERPM(K,M,JS_MAT),VQ2DPHIM(K,M,JS_MAT),
+     &      VQ3PARAM(K,M,JS_MAT),VQ3PERPM(K,M,JS_MAT),VQ3DPHIM(K,M,JS_MAT),
+     &      VDPPARAM(K,M,JS_MAT),VDPPERPM(K,M,JS_MAT),VDPDPHIM(K,M,JS_MAT)
+         ELSEIF (KGRID.EQ.1) THEN
+            WRITE(FID,1000) K,M,RM(K,2),RM(M,2),
+     &      VX1PARA(K,M,JS_MAT),VX1PERP(K,M,JS_MAT),
+     &      VX2PARA(K,M,JS_MAT),VX2PERP(K,M,JS_MAT),
+     &      VQ1PARA(K,M,JS_MAT),VQ1PERP(K,M,JS_MAT),
+     &      VQ2PARA(K,M,JS_MAT),VQ2PERP(K,M,JS_MAT),
+     &      VQ3PARA(K,M,JS_MAT),VQ3PERP(K,M,JS_MAT),
+     &      VDPPARA(K,M,JS_MAT),VDPPERP(K,M,JS_MAT)
+         ELSE
+            WRITE(FID,1000) K,M,RM(K,2),RM(M,2),
+     &      VX1PARAM(K,M,JS_MAT),VX1PERPM(K,M,JS_MAT),
+     &      VX2PARAM(K,M,JS_MAT),VX2PERPM(K,M,JS_MAT),
+     &      VQ1PARAM(K,M,JS_MAT),VQ1PERPM(K,M,JS_MAT),
+     &      VQ2PARAM(K,M,JS_MAT),VQ2PERPM(K,M,JS_MAT),
+     &      VQ3PARAM(K,M,JS_MAT),VQ3PERPM(K,M,JS_MAT),
+     &      VDPPARAM(K,M,JS_MAT),VDPPERPM(K,M,JS_MAT)
+         ENDIF
+      ENDDO
+      ENDDO
+      CLOSE(FID)
+  900 CONTINUE
+C$OMP END CRITICAL(ELL_TRACE_WRITE)
+ 1000 FORMAT(2I8,2F8.1,36(1X,E24.16))
+      END SUBROUTINE WRITEKJPMATRIXTRACE
+
+C=======================================================================
+C DEFAULT-OFF TRACE OF THE EXECUTED TRAPPED-PARTICLE G-FACTORS.         =
+C THE REQUEST FILE AND SURFACE SELECTION ARE SHARED WITH THE SELECTED   =
+C KH ACTION TRACE, SO THE TWO FILES CARRY THE SAME (LAMBDA,ELL) ROWS.   =
+C THE PAIR IS WHAT WANG EQ. (15) NEEDS: THE MOMENT-SIDE G WEIGHT AND    =
+C THE LAGRANGIAN-SIDE H WEIGHT OF THE SAME ORBIT ACTION.                =
+C=======================================================================
+      SUBROUTINE WRITEKGACTIONTRACE(JS,KGRID,KPARTICLE,RLAM,
+     &                              ZVPARA,ZVPERP,ZVDPHI)
+
+      USE DIMENSIM
+      USE GLOBALM
+      USE KINETICM
+      USE ToolBox
+      IMPLICIT NONE
+
+      INTEGER JS,KGRID,KPARTICLE,K,L,FID
+      REAL*8  RLAM
+      COMPLEX*16 ZVPARA(MSMAX,MLMAX),ZVPERP(MSMAX,MLMAX),
+     &           ZVDPHI(MSMAX,MLMAX)
+      LOGICAL OEXIST
+      CHARACTER*64 PATH
+
+      IF (KPARTICLE.NE.0) RETURN
+      WRITE(PATH,'("ELL_TRACE_JS",I4.4,"_G",I1,"_KG.OUT")')
+     &      JS,KGRID
+C$OMP CRITICAL(ELL_TRACE_WRITE)
+      INQUIRE(FILE=PATH,EXIST=OEXIST)
+      FID=ASSIGNFREEFILEUNIT()
+      OPEN(FID,FILE=PATH,STATUS='UNKNOWN',POSITION='APPEND',
+     &     ACTION='WRITE')
+      IF (.NOT.OEXIST) WRITE(FID,*)
+     & '% JS G CLASS LAMBDA M ELL VPARA_RE VPARA_IM VPERP_RE VPERP_IM',
+     & ' VDPHI_RE VDPHI_IM'
+      DO L=1,MLMAX
+         IF (NINT(RLM(L)).EQ.KNTVELL) THEN
+            DO K=1,MSMAX
+               WRITE(FID,1000) JS,KGRID,KPARTICLE,RLAM,RM(K,2),
+     &            RLM(L),ZVPARA(K,L),ZVPERP(K,L),ZVDPHI(K,L)
+            ENDDO
+         ENDIF
+      ENDDO
+      CLOSE(FID)
+C$OMP END CRITICAL(ELL_TRACE_WRITE)
+ 1000 FORMAT(3I8,9(1X,E24.16))
+      END SUBROUTINE WRITEKGACTIONTRACE
 
 C=======================================================================
 C G-FACTOR FUE TO FIRST ORDER FOW CORRECTION 
@@ -8301,6 +8918,7 @@ C=======================================================================
       COMPLEX*16 EPHASE,CTMP,CTMPL,CTMPU,CALPHA,
      &           FLX1,FLX2,FLQ1,FLQ2,FLQ3,FLDP,
      &           FUX1,FUX2,FUQ1,FUQ2,FUQ3,FUDP
+      LOGICAL    OTRACE
      
       REAL*8 DIFFERCHI
       
@@ -8312,6 +8930,8 @@ C=======================================================================
       VQ2 = 0.0
       VQ3 = 0.0
       VDP = 0.0
+      OTRACE = .FALSE.
+      IF (KPARTICLE.EQ.0) CALL KELLTRACESELECT(JS,KGRID,OTRACE)
 
       IF (KGRID.EQ.1) THEN
 C        OMEGAE = OMEGAE0(JS,1)
@@ -8410,6 +9030,9 @@ C     PASSING PARTICLE DOES NOT HAVE SINGULAR INTEGRATION
       VQ3 = VQ3*PHASE
       VDP = VDP*PHASE
 
+      IF (OTRACE) CALL WRITEKHACTIONTRACE(JS,KGRID,KPARTICLE,LAM,
+     &                                    VX1,VX2,VQ1,VQ2,VQ3,VDP)
+
       KCHECK=0
       IF (KCHECK.EQ.1.AND.KPARTICLE.EQ.0.AND.
      &   ABS(RQK-Q(JS0)).LT.1.0E-13) THEN
@@ -8506,6 +9129,54 @@ C     PASSING PARTICLE DOES NOT HAVE SINGULAR INTEGRATION
 
       RETURN
       END
+
+C=======================================================================
+C DEFAULT-OFF TRACE OF THE EXECUTED TRAPPED-PARTICLE H-FACTORS.         =
+C THE REQUEST FILE AND SURFACE SELECTION ARE SHARED WITH THE SELECTED   =
+C RESPONSE TRACE.  ONLY KNTVELL IS WRITTEN; ALL STABILITY HARMONICS ARE =
+C RETAINED SO THE ORBIT-PROJECTED ACTION CAN BE COMPARED DIRECTLY.      =
+C=======================================================================
+      SUBROUTINE WRITEKHACTIONTRACE(JS,KGRID,KPARTICLE,RLAM,
+     &                              ZVX1,ZVX2,ZVQ1,ZVQ2,ZVQ3,ZVDP)
+
+      USE DIMENSIM
+      USE GLOBALM
+      USE KINETICM
+      USE ToolBox
+      IMPLICIT NONE
+
+      INTEGER JS,KGRID,KPARTICLE,M,L,FID
+      REAL*8  RLAM
+      COMPLEX*16 ZVX1(MSMAX,MLMAX),ZVX2(MSMAX,MLMAX),
+     &           ZVQ1(MSMAX,MLMAX),ZVQ2(MSMAX,MLMAX),
+     &           ZVQ3(MSMAX,MLMAX),ZVDP(MSMAX,MLMAX)
+      LOGICAL OEXIST
+      CHARACTER*64 PATH
+
+      IF (KPARTICLE.NE.0) RETURN
+      WRITE(PATH,'("ELL_TRACE_JS",I4.4,"_G",I1,"_KH.OUT")')
+     &      JS,KGRID
+C$OMP CRITICAL(ELL_TRACE_WRITE)
+      INQUIRE(FILE=PATH,EXIST=OEXIST)
+      FID=ASSIGNFREEFILEUNIT()
+      OPEN(FID,FILE=PATH,STATUS='UNKNOWN',POSITION='APPEND',
+     &     ACTION='WRITE')
+      IF (.NOT.OEXIST) WRITE(FID,*)
+     & '% JS G CLASS LAMBDA M ELL VX1_RE VX1_IM VX2_RE VX2_IM',
+     & ' VQ1_RE VQ1_IM VQ2_RE VQ2_IM VQ3_RE VQ3_IM VDP_RE VDP_IM'
+      DO L=1,MLMAX
+         IF (NINT(RLM(L)).EQ.KNTVELL) THEN
+            DO M=1,MSMAX
+               WRITE(FID,1000) JS,KGRID,KPARTICLE,RLAM,RM(M,2),
+     &            RLM(L),ZVX1(M,L),ZVX2(M,L),ZVQ1(M,L),ZVQ2(M,L),
+     &            ZVQ3(M,L),ZVDP(M,L)
+            ENDDO
+         ENDIF
+      ENDDO
+      CLOSE(FID)
+C$OMP END CRITICAL(ELL_TRACE_WRITE)
+ 1000 FORMAT(3I8,15(1X,E24.16))
+      END SUBROUTINE WRITEKHACTIONTRACE
 
 C=======================================================================
 C H-FACTOR DUE TO FIRST ORDER FOW CORRECTION
@@ -8607,17 +9278,80 @@ C     TRAPPED PARTICLES DO NOT HAVE SINGULARITY EITHER
       END
 
 C=======================================================================
+C ASSEMBLE THE PASSIVE KINETIC-PRESSURE ENERGY OPERATOR WITHOUT        =
+C RECOMPUTING KJP RESPONSE COEFFICIENTS.                               =
+C=======================================================================
+      SUBROUTINE PREPAREKINETICENERGYMAT(
+     &                  ASUBM,BSUBM,CSUBM,DSUBM,ESUBM,FSUBM,GSUBM,HSUBM)
+
+      USE RCOMDM
+      USE DIMENSIM
+      USE GLOBALM
+      USE KINETICM
+      USE FEEDBACKM, ONLY: KTREST
+      IMPLICIT NONE
+      INCLUDE 'specmat.inc'
+      INCLUDE 'compam.inc'
+      INCLUDE 'comioc.inc'
+
+      COMPLEX*16 AL0SAVE
+      INTEGER    J,KTRESTSAVE
+
+C     IPERTURB=1 SETS KPBKEY=0 SO THE KINETIC PRESSURE DOES NOT ALTER
+C     THE FLUID RESPONSE.  THE NTV ENERGY CONTRACTION STILL REQUIRES
+C     THE RECIPROCAL PRESSURE-TO-DISPLACEMENT BLOCKS (ESUBM/HSUBM).
+C     BUILD THAT PASSIVE OPERATOR WITH KJP DISABLED: THE EXPENSIVE
+C     RESPONSE COEFFICIENTS COME FROM THE VALIDATED PCOEF CACHE.  WHEN
+C     THE FIELD WAS IMPORTED, THE CALLER RESTORES THE VALIDATED B/X
+C     ARRAYS AFTER THIS ROUTINE RETURNS.
+C     FEEDCTRL temporarily sets T/TM=1 for the discarded carrier solve.
+C     The normal LINEAR pass brackets KJP with the saved equilibrium arrays,
+C     but this passive KJPKEY=0 pass also consumes T/TM throughout PLASMALIN
+C     and KCOEFFI.  Expose the saved equilibrium F(s) for this whole pass;
+C     otherwise the reciprocal pressure-to-displacement blocks are built on
+C     the vacuum toroidal field even though the KJP coefficients used by the
+C     torque contraction were built on the equilibrium field.
+      AL0SAVE = AL0
+      AL0 = ALNORM
+      KJPKEY = 0
+      KPBKEY = 1
+      KTRESTSAVE = KTREST
+      IF (KTRESTSAVE.NE.0) THEN
+         DO J=1,NRP1
+            T(J)  = TSAVE(J)
+         ENDDO
+         DO J=1,NR
+            TM(J) = TMSAVE(J)
+         ENDDO
+         KTREST = 0
+      ENDIF
+      CALL LINEAR(ASUBM,BSUBM,CSUBM,DSUBM,ESUBM,FSUBM,GSUBM,HSUBM)
+      IF (KTRESTSAVE.NE.0) THEN
+         DO J=1,NRP1
+            T(J)  = 1.0
+         ENDDO
+         DO J=1,NR
+            TM(J) = 1.0
+         ENDDO
+         KTREST = KTRESTSAVE
+      ENDIF
+      AL0 = AL0SAVE
+
+      RETURN
+      END
+
+C=======================================================================
 C COMPUTE PERTURBED ENERGY USING THE COMPUTED EIGENFUNCTION AND        =
 C THE SYSTEM MATRICES                                                  =
-C INCLUDING:                                                           = 
-C  1) FLUID POTENTIAL ENERGY                                           = 
+C INCLUDING:                                                           =
+C  1) FLUID POTENTIAL ENERGY                                           =
 C  2) FLIUD KINETIC ENERGY DUE TO INERTIAL AND PLASMA ROTATION         =
 C  3) KINETIC ENERGY DUE TO KINETIC PRESSURE PERTURBATION              =
 C SHOULD BE CALLED FROM MARS-F AFTER CALPAM(...)                       =
 C KENORM = 1: NORMALIZE ENERGY BY TOTAL PLASMA INERTIA ENERGY          =
-C          2: NORMALIZE ENERGY BY INERTIA ENERGY ASSOCIATED WITH X1    =
-C KEFORM = 1: RAW FORM FOR ALL DW* TERMS
-C          2: QUADRATIC FORM FOR DWP,DWJ,DWPPAR,DWPPER
+C          2: NORMALIZE ENERGY ASSOCIATED WITH X1                      =
+C KEFORM = 1: RAW FORM FOR ALL DW* TERMS                               =
+C          2: QUADRATIC FORM FOR DWP,DWJ,DWPPAR,DWPPER                 =
 C YQL, 09-2013                                                         =
 C=======================================================================
       SUBROUTINE ENERGYMAT(X,Y,
@@ -8650,19 +9384,16 @@ C=======================================================================
       PARAMETER     (IEXV2 = -1, IEXY=0)
       REAL*8        ZEM,ZEP,ZV2M,ZV2P,z3m,z3p
 
-      COMPLEX*16    AL0SAVE,CTMP
+      COMPLEX*16    CTMP
       CHARACTER*80  LINE
 
       INCLUDE 'integc.inc'
 
-C     FILL IN SYSTEM MATRICES WITH THE CONVERGED EIGENVALUE
-      AL0SAVE = AL0
-      AL0 = ALNORM
-      KJPKEY = 0
-      KPBKEY = 1
-      CALL LINEAR(ASUBM,BSUBM,CSUBM,DSUBM,ESUBM,FSUBM,GSUBM,HSUBM)
-      AL0 = AL0SAVE
-     
+C     THE CALLER SUPPLIES MATRICES ASSEMBLED AT THE CONVERGED
+C     EIGENVALUE.
+C     KNTV=21 NEEDS THEM BEFORE OUTPUT; OTHER MODES PREPARE THEM
+C     IMMEDIATELY BEFORE ENTERING THIS ROUTINE.
+
       ALLOCATE( DWPX(NTP1), DWPPARX(NTP1), DWPPERX(NTP1), DWJX(NTP1),
      &          DWQX(NTP1), DWVX(NTP1),    DWXIX(NTP1),   DWX2X(NTP1),
      &          DWRHOX(NTP1),
@@ -9251,7 +9982,7 @@ C     PERPENDICULAR KINETIC PRESSURE
          ENDDO
       END SUBROUTINE FILLMATDWKCOMP
       
-      SUBROUTINE CALCPRECOMP(I,PPARAC,PPERPC,
+      SUBROUTINE CALCPRECOMP(I,IDRIVE,PPARAC,PPERPC,
      &                       ASUBM,BSUBM,CSUBM,DSUBM,
      &                       ESUBM,FSUBM,GSUBM,HSUBM)
       USE RCOMDM
@@ -9265,7 +9996,7 @@ C     PERPENDICULAR KINETIC PRESSURE
       INCLUDE 'compam.inc'
       INCLUDE 'comioc.inc'
 
-      INTEGER    I,J,MROW,MSA,MSB,MS
+      INTEGER    I,IDRIVE,J,MROW,MSA,MSB,MS
       INTEGER    LXCOL,LYCOL,LXROW,LYROW
       REAL*8     HCHI
       COMPLEX*16 CTMP1
@@ -9282,23 +10013,42 @@ C     PERPENDICULAR KINETIC PRESSURE
       LXCOL = (MSA -1)*NXCOMP
       LYROW = (MROW-1)*NYCOMP
       LYCOL = (MSA -1)*NYCOMP
-C     COMPUTATION OF JPPARA AND JPPERP	  
+C     COMPUTATION OF JPPARA AND JPPERP.  IDRIVE=0 IS THE UNCHANGED
+C     PRODUCTION SUM; 1: X1, 2: X2, 3: B1, 4: B2, 5: B3.
+      IF (IDRIVE.EQ.0.OR.IDRIVE.EQ.1) THEN
       JPPARA(MROW)=JPPARA(MROW)+
      &             FSUBM(KYPPARA+LYROW,KXX1+LXCOL,I)*X1U(I,MSA) +
-     &             GSUBM(KYPPARA+LYROW,KXX1+LXCOL,I)*X1U(I+1,MSA)+
-     &             FSUBM(KYPPARA+LYROW,KXB1+LXCOL,I)*B1U(I,MSA) +
-     &             GSUBM(KYPPARA+LYROW,KXB1+LXCOL,I)*B1U(I+1,MSA)+
-     &             DSUBM(KYPPARA+LYROW,KYX2+LYCOL,I)*X2U(I,MSA)+
-     &             DSUBM(KYPPARA+LYROW,KYB2+LYCOL,I)*B2U(I,MSA)+
-     &             DSUBM(KYPPARA+LYROW,KYB3+LYCOL,I)*B3U(I,MSA)
+     &             GSUBM(KYPPARA+LYROW,KXX1+LXCOL,I)*X1U(I+1,MSA)
       JPPERP(MROW)=JPPERP(MROW)+
      &             FSUBM(KYPPERP+LYROW,KXX1+LXCOL,I)*X1U(I,MSA) +
-     &             GSUBM(KYPPERP+LYROW,KXX1+LXCOL,I)*X1U(I+1,MSA)+
+     &             GSUBM(KYPPERP+LYROW,KXX1+LXCOL,I)*X1U(I+1,MSA)
+      ENDIF
+      IF (IDRIVE.EQ.0.OR.IDRIVE.EQ.2) THEN
+      JPPARA(MROW)=JPPARA(MROW)+
+     &             DSUBM(KYPPARA+LYROW,KYX2+LYCOL,I)*X2U(I,MSA)
+      JPPERP(MROW)=JPPERP(MROW)+
+     &             DSUBM(KYPPERP+LYROW,KYX2+LYCOL,I)*X2U(I,MSA)
+      ENDIF
+      IF (IDRIVE.EQ.0.OR.IDRIVE.EQ.3) THEN
+      JPPARA(MROW)=JPPARA(MROW)+
+     &             FSUBM(KYPPARA+LYROW,KXB1+LXCOL,I)*B1U(I,MSA) +
+     &             GSUBM(KYPPARA+LYROW,KXB1+LXCOL,I)*B1U(I+1,MSA)
+      JPPERP(MROW)=JPPERP(MROW)+
      &             FSUBM(KYPPERP+LYROW,KXB1+LXCOL,I)*B1U(I,MSA) +
-     &             GSUBM(KYPPERP+LYROW,KXB1+LXCOL,I)*B1U(I+1,MSA)+
-     &             DSUBM(KYPPERP+LYROW,KYX2+LYCOL,I)*X2U(I,MSA)+
-     &             DSUBM(KYPPERP+LYROW,KYB2+LYCOL,I)*B2U(I,MSA)+
-     &             DSUBM(KYPPERP+LYROW,KYB3+LYCOL,I)*B3U(I,MSA)					
+     &             GSUBM(KYPPERP+LYROW,KXB1+LXCOL,I)*B1U(I+1,MSA)
+      ENDIF
+      IF (IDRIVE.EQ.0.OR.IDRIVE.EQ.4) THEN
+      JPPARA(MROW)=JPPARA(MROW)+
+     &             DSUBM(KYPPARA+LYROW,KYB2+LYCOL,I)*B2U(I,MSA)
+      JPPERP(MROW)=JPPERP(MROW)+
+     &             DSUBM(KYPPERP+LYROW,KYB2+LYCOL,I)*B2U(I,MSA)
+      ENDIF
+      IF (IDRIVE.EQ.0.OR.IDRIVE.EQ.5) THEN
+      JPPARA(MROW)=JPPARA(MROW)+
+     &             DSUBM(KYPPARA+LYROW,KYB3+LYCOL,I)*B3U(I,MSA)
+      JPPERP(MROW)=JPPERP(MROW)+
+     &             DSUBM(KYPPERP+LYROW,KYB3+LYCOL,I)*B3U(I,MSA)
+      ENDIF
       ENDDO
       ENDDO
 	  
@@ -9332,6 +10082,8 @@ C     COMPUTATION OF PPERP AND PPARA
       
       SUBROUTINE CALCDWKPROF (IS,PPARAC,PPERPC,
      &                        DWPPERX,DWPPERY,DWPPARX,DWPPARY,
+     &                        DWK2BASEX,DWK2BASEY,DWK2CROSSY,
+     &                        DWK2CROSSX1Y,DWK2CROSSX2Y,
      &                        ASUBM,BSUBM,CSUBM,DSUBM,
      &                        ESUBM,FSUBM,GSUBM,HSUBM)
       USE RCOMDM
@@ -9348,7 +10100,10 @@ C     COMPUTATION OF PPERP AND PPARA
       INTEGER IS
       COMPLEX*16,DIMENSION(NRP1,MSMAX)::PPARAC,PPERPC
       COMPLEX*16,DIMENSION(NRP1)::DWPPARX,DWPPERX,
-     &                                     DWPPARY,DWPPERY      
+     &                                     DWPPARY,DWPPERY,
+     &                                     DWK2BASEX,DWK2BASEY,
+     &                                     DWK2CROSSY,
+     &                                     DWK2CROSSX1Y,DWK2CROSSX2Y
       INTEGER    MROW,MSA,MSB,MSMI,MSPL,NSA,NSB,I
       PARAMETER  (NSA=2,NSB=1)
       INTEGER    LXCOL,LYCOL,LXROW,LYROW
@@ -9372,6 +10127,8 @@ C     COMPUTATION OF PPERP AND PPARA
             IF (KEFORM.EQ.2.AND.INCKIN.GT.0) THEN
                DWPPERX(I)=DWPPERX(I) - CONJG(X1U(I,MROW))*
      &         HSUBM(LXROW+KXV1,LYCOL+KYPPARA,I)*PPERPC(I-1,MSA)
+               DWK2BASEX(I)=DWK2BASEX(I) - CONJG(X1U(I,MROW))*
+     &         HSUBM(LXROW+KXV1,LYCOL+KYPPARA,I)*PPERPC(I-1,MSA)
             ENDIF
             IF (KYPPARA.GT.0)
      &         DWPPARX(I)=DWPPARX(I) + CONJG(X1U(I,MROW))*
@@ -9388,11 +10145,24 @@ C     COMPUTATION OF PPERP AND PPARA
             IF (INCKIN.GT.0) THEN
                DWPPERY(I)=DWPPERY(I) - ZEM*CONJG(X2U(I,MROW))*
      &         DSUBM(LYROW+KYV2,LYCOL+KYPPARA,I)*PPERPC(I,MSA)
+               DWK2BASEY(I)=DWK2BASEY(I) - ZEM*CONJG(X2U(I,MROW))*
+     &         DSUBM(LYROW+KYV2,LYCOL+KYPPARA,I)*PPERPC(I,MSA)
 
                DWPPERY(I)=DWPPERY(I) + ZEM*PPERPC(I,MROW)*CONJG(
      &         FSUBM(LYROW+KYPR,LXCOL+KXV1,I)*X1U(I,MSA)+
      &         GSUBM(LYROW+KYPR,LXCOL+KXV1,I)*X1U(I+1,MSA)+
      &         DSUBM(LYROW+KYPR,LYCOL+KYV2,I)*X2U(I,MSA)) 
+               DWK2CROSSY(I)=DWK2CROSSY(I)+ZEM*PPERPC(I,MROW)*CONJG(
+     &         FSUBM(LYROW+KYPR,LXCOL+KXV1,I)*X1U(I,MSA)+
+     &         GSUBM(LYROW+KYPR,LXCOL+KXV1,I)*X1U(I+1,MSA)+
+     &         DSUBM(LYROW+KYPR,LYCOL+KYV2,I)*X2U(I,MSA))
+               DWK2CROSSX1Y(I)=DWK2CROSSX1Y(I)+
+     &         ZEM*PPERPC(I,MROW)*CONJG(
+     &         FSUBM(LYROW+KYPR,LXCOL+KXV1,I)*X1U(I,MSA)+
+     &         GSUBM(LYROW+KYPR,LXCOL+KXV1,I)*X1U(I+1,MSA))
+               DWK2CROSSX2Y(I)=DWK2CROSSX2Y(I)+
+     &         ZEM*PPERPC(I,MROW)*CONJG(
+     &         DSUBM(LYROW+KYPR,LYCOL+KYV2,I)*X2U(I,MSA))
             ENDIF
             ENDIF
             IF (KYPPARA.GT.0) 
@@ -9405,6 +10175,8 @@ C     COMPUTATION OF PPERP AND PPARA
             ENDIF
             IF (KEFORM.EQ.2.AND.INCKIN.GT.0) THEN
                DWPPERX(I)=DWPPERX(I) - CONJG(X1U(I,MROW))*
+     &         ESUBM(LXROW+KXV1,LYCOL+KYPPARA,I)*PPERPC(I,MSA)
+               DWK2BASEX(I)=DWK2BASEX(I) - CONJG(X1U(I,MROW))*
      &         ESUBM(LXROW+KXV1,LYCOL+KYPPARA,I)*PPERPC(I,MSA)
             ENDIF
             IF (KYPPARA.GT.0) 
@@ -9424,17 +10196,33 @@ C     COMPUTATION OF PPERP AND PPARA
       USE CONVOLCOFM
       USE TORQUEM
       USE ToolBox
+      USE, INTRINSIC :: IEEE_ARITHMETIC, ONLY: IEEE_IS_FINITE
       IMPLICIT NONE
       INCLUDE 'specmat.inc'
       INCLUDE 'compam.inc'
       INCLUDE 'comioc.inc'
       
-      INTEGER KP,IS,TOTINDX,INDX,I,J,FID
-      REAL*8 PI2
+      INTEGER KP,IS,TOTINDX,INDX,I,J,FID,MROW,MSA,LXROW,LYCOL,
+     &        IDRIVE,IREQ,IOS,FIDACTION
+      LOGICAL ODIRECT,OBREAKDOWN,ODRIVELEDGER,OBILINEAR,
+     &        OPRESSURETRACE,ODRIVETERMS,OKELEDGER,OCACHEFINITE,
+     &        OACTIONMAP,ACTIONSELECTED(NRP1)
+      REAL*8 PI2,CACHEMAX,FIELDMAX,OPPARAMAX,OPPERPMAX,
+     &       PPARAMAX,PPERPMAX,DRIVERESID,DRIVESCALE
       COMPLEX*16,DIMENSION(:),ALLOCATABLE:: DWPPARA,DWPPERP,DWK
       COMPLEX*16,DIMENSION(:,:),ALLOCATABLE::DWPPARX,DWPPERX,
-     &                                       DWPPARY,DWPPERY
+     &                                       DWPPARY,DWPPERY,
+     &                                       DWK2BASEX,DWK2BASEY,
+     &                                       DWK2CROSSY,
+     &                                       DWK2CROSSX1Y,DWK2CROSSX2Y
       COMPLEX*16,DIMENSION(:,:,:),ALLOCATABLE:: PPARAC,PPERPC
+      COMPLEX*16,DIMENSION(:,:,:,:),ALLOCATABLE:: PPARAD,PPERPD
+      COMPLEX*16,DIMENSION(:,:,:),ALLOCATABLE::DWPPARXD,DWPPERXD,
+     &                                        DWPPARYD,DWPTERYD,
+     &                                        DWK2BASEXD,DWK2BASEYD,
+     &                                        DWK2CROSSYD,
+     &                                        DWK2CROSSX1YD,
+     &                                        DWK2CROSSX2YD
       COMPLEX*16,DIMENSION(:,:,:,:),ALLOCATABLE,TARGET:: 
      &                  BUFFER_DATA1,BUFFER_DATA2,BUFFER_DATAM
       COMPLEX*16,DIMENSION(:,:,:,:),POINTER:: TMPPOT
@@ -9445,10 +10233,76 @@ C     COMPUTATION OF PPERP AND PPARA
       
       CALL ALLOCATEDWKCOMPMAT
       TOTINDX = SIZE(VX1PARAC,3)
+      INQUIRE(FILE='DWK_DRIVE_LEDGER.REQUEST',EXIST=ODRIVELEDGER)
+      INQUIRE(FILE='DWK_BILINEAR_LEDGER.REQUEST',EXIST=OBILINEAR)
+      INQUIRE(FILE='DWK_PRESSURE_TRACE.REQUEST',EXIST=OPRESSURETRACE)
+      INQUIRE(FILE='DWK_ACTION_MAP.REQUEST',EXIST=OACTIONMAP)
+      ODRIVETERMS=ODRIVELEDGER.OR.OBILINEAR.OR.OPRESSURETRACE
+      ACTIONSELECTED=.FALSE.
+      IF (OACTIONMAP) THEN
+         IREQ=ASSIGNFREEFILEUNIT()
+         OPEN(IREQ,FILE='DWK_ACTION_MAP.REQUEST',STATUS='OLD',
+     &        ACTION='READ')
+ 5       CONTINUE
+         READ(IREQ,*,IOSTAT=IOS) I
+         IF (IOS.LT.0) GOTO 6
+         IF (IOS.GT.0) STOP 'INVALID DWK ACTION MAP REQUEST'
+         IF (I.LT.1.OR.I.GT.NR) STOP 'DWK ACTION MAP IS OUT OF RANGE'
+         IF (ACTIONSELECTED(I)) STOP 'DUPLICATE DWK ACTION MAP IS'
+         ACTIONSELECTED(I)=.TRUE.
+         GOTO 5
+ 6       CLOSE(IREQ)
+         IF (.NOT.ANY(ACTIONSELECTED(1:NR)))
+     &      STOP 'EMPTY DWK ACTION MAP REQUEST'
+         FIDACTION=ASSIGNFREEFILEUNIT()
+         OPEN(FIDACTION,FILE='DWK_ACTION_MAP.OUT',FORM='FORMATTED',
+     &        STATUS='REPLACE',ACTION='WRITE')
+         WRITE(FIDACTION,*) '% STATIC DOWNSTREAM MAP; NATIVE BASIS'
+         WRITE(FIDACTION,*) '% G: IS DRIVE MOMENT OUTNODE INNODE COEFF;',
+     &      ' SPARSE GF/GG RADIAL MAP'
+         WRITE(FIDACTION,*) '% C: IS INDX KP EFFECT; COMPONENT MAP'
+         WRITE(FIDACTION,*) '% P: IS INDX DRIVE MOMENT NODE MROW MSA',
+     &      ' MOUT MIN RE IM; NODE=-1 LOWER, 0 HALF, +1 UPPER'
+         WRITE(FIDACTION,*) '% R: IS MOUT MIN RJAM_FOURIER_RE IM'
+         WRITE(FIDACTION,*) '% O: IS WORK MOMENT FIELDNODE OUTPUTNODE',
+     &      ' MWORK MPRESS HWORK HPRESS RE IM; FULL WORK BASIS'
+         WRITE(FIDACTION,*) '% W: IS WORK MOMENT MPRESS RE IM;',
+     &      ' WORK=1 X1, 2 X2 BASE, 3 P-X1, 4 P-X2'
+         WRITE(FIDACTION,*) '% F: IS SLOT COEFF;',
+     &      ' SLOT=1 HALF-Y, 2 LOWER-X, 3 UPPER-X'
+      ENDIF
       ALLOCATE (DWPPARA(TOTINDX),DWPPERP(TOTINDX),DWK(TOTINDX))
       ALLOCATE (DWPPARX(NRP1,TOTINDX),DWPPERX(NRP1,TOTINDX),
      &          DWPPARY(NRP1,TOTINDX),DWPPERY(NRP1,TOTINDX) )
+      ALLOCATE (DWK2BASEX(NRP1,TOTINDX),DWK2BASEY(NRP1,TOTINDX),
+     &          DWK2CROSSY(NRP1,TOTINDX),
+     &          DWK2CROSSX1Y(NRP1,TOTINDX),
+     &          DWK2CROSSX2Y(NRP1,TOTINDX))
       ALLOCATE (PPARAC(NRP1,MSMAX,TOTINDX),PPERPC(NRP1,MSMAX,TOTINDX))
+      IF (ODRIVETERMS) THEN
+         ALLOCATE(PPARAD(NRP1,MSMAX,TOTINDX,5),
+     &            PPERPD(NRP1,MSMAX,TOTINDX,5))
+         ALLOCATE(DWPPARXD(NRP1,TOTINDX,5),
+     &            DWPPERXD(NRP1,TOTINDX,5),
+     &            DWPPARYD(NRP1,TOTINDX,5),
+     &            DWPTERYD(NRP1,TOTINDX,5),
+     &            DWK2BASEXD(NRP1,TOTINDX,5),
+     &            DWK2BASEYD(NRP1,TOTINDX,5),
+     &            DWK2CROSSYD(NRP1,TOTINDX,5),
+     &            DWK2CROSSX1YD(NRP1,TOTINDX,5),
+     &            DWK2CROSSX2YD(NRP1,TOTINDX,5))
+         PPARAD=0.0
+         PPERPD=0.0
+         DWPPARXD=0.0
+         DWPPERXD=0.0
+         DWPPARYD=0.0
+         DWPTERYD=0.0
+         DWK2BASEXD=0.0
+         DWK2BASEYD=0.0
+         DWK2CROSSYD=0.0
+         DWK2CROSSX1YD=0.0
+         DWK2CROSSX2YD=0.0
+      ENDIF
       ALLOCATE (BUFFER_DATA1(MSMAX,MSMAX,TOTINDX,30),
      &          BUFFER_DATA2(MSMAX,MSMAX,TOTINDX,30),
      &          BUFFER_DATAM(MSMAX,MSMAX,TOTINDX,30))
@@ -9456,9 +10310,16 @@ C     COMPUTATION OF PPERP AND PPARA
       DWPPERX = 0.0
       DWPPARY = 0.0
       DWPPERY = 0.0
+      DWK2BASEX = 0.0
+      DWK2BASEY = 0.0
+      DWK2CROSSY = 0.0
+      DWK2CROSSX1Y = 0.0
+      DWK2CROSSX2Y = 0.0
       
       PPARAC  = 0.0
       PPERPC  = 0.0
+      CACHEMAX = 0.0
+      OCACHEFINITE = .TRUE.
       
       BUFFER_I  => BUFFER_DATA1
       BUFFER_I1 => BUFFER_DATA2
@@ -9481,25 +10342,119 @@ C     READ MARTIX FROM BINARY FILES ON EACH SURFACE
             BUFFERT => BUFFER_I1
             CALL READ_SURFACE_QUANTITIES (IS+1,1)
          ENDIF   
+
+         OCACHEFINITE = OCACHEFINITE.AND.
+     &      ALL(IEEE_IS_FINITE(REAL(BUFFER_I))).AND.
+     &      ALL(IEEE_IS_FINITE(AIMAG(BUFFER_I))).AND.
+     &      ALL(IEEE_IS_FINITE(REAL(BUFFERM_I))).AND.
+     &      ALL(IEEE_IS_FINITE(AIMAG(BUFFERM_I))).AND.
+     &      ALL(IEEE_IS_FINITE(REAL(BUFFER_I1))).AND.
+     &      ALL(IEEE_IS_FINITE(AIMAG(BUFFER_I1)))
+         CACHEMAX = MAX(CACHEMAX,
+     &      MAXVAL(ABS(BUFFER_I)),MAXVAL(ABS(BUFFERM_I)),
+     &      MAXVAL(ABS(BUFFER_I1)))
          
          DO INDX=1,TOTINDX
 C     FILL IN THE GLOBAL MATRIX FOR PRESSURE CALCULATION
             CALL FILLMATDWKCOMP(IS,INDX,
      &                          ASUBM,BSUBM,CSUBM,DSUBM,
      &                          ESUBM,FSUBM,GSUBM,HSUBM)         
+            IF (OACTIONMAP.AND.ACTIONSELECTED(IS))
+     &         CALL WRITEDWKACTIONMAP(IS,INDX,FIDACTION,
+     &                                ASUBM,BSUBM,CSUBM,DSUBM,
+     &                                ESUBM,FSUBM,GSUBM,HSUBM)
 C     CALCULATE THE COMPONENTS OF PRESSURE     
-            CALL CALCPRECOMP(IS,PPARAC(:,:,INDX),PPERPC(:,:,INDX),
+            CALL CALCPRECOMP(IS,0,PPARAC(:,:,INDX),PPERPC(:,:,INDX),
      &                       ASUBM,BSUBM,CSUBM,DSUBM,
      &                       ESUBM,FSUBM,GSUBM,HSUBM)
 C     CALCULATE ENERGY PROFILE OF DIFFERENT COMPONENTS
             CALL CALCDWKPROF (IS,PPARAC(:,:,INDX),PPERPC(:,:,INDX),
      &                        DWPPERX(:,INDX),DWPPERY(:,INDX),
      &                        DWPPARX(:,INDX),DWPPARY(:,INDX),
+     &                        DWK2BASEX(:,INDX),DWK2BASEY(:,INDX),
+     &                        DWK2CROSSY(:,INDX),
+     &                        DWK2CROSSX1Y(:,INDX),
+     &                        DWK2CROSSX2Y(:,INDX),
      &                        ASUBM,BSUBM,CSUBM,DSUBM,
      &                        ESUBM,FSUBM,GSUBM,HSUBM)
+
+            IF (ODRIVETERMS) THEN
+            DO IDRIVE=1,5
+               CALL CALCPRECOMP(IS,IDRIVE,
+     &                          PPARAD(:,:,INDX,IDRIVE),
+     &                          PPERPD(:,:,INDX,IDRIVE),
+     &                          ASUBM,BSUBM,CSUBM,DSUBM,
+     &                          ESUBM,FSUBM,GSUBM,HSUBM)
+               CALL CALCDWKPROF(IS,PPARAD(:,:,INDX,IDRIVE),
+     &                          PPERPD(:,:,INDX,IDRIVE),
+     &                          DWPPERXD(:,INDX,IDRIVE),
+     &                          DWPTERYD(:,INDX,IDRIVE),
+     &                          DWPPARXD(:,INDX,IDRIVE),
+     &                          DWPPARYD(:,INDX,IDRIVE),
+     &                          DWK2BASEXD(:,INDX,IDRIVE),
+     &                          DWK2BASEYD(:,INDX,IDRIVE),
+     &                          DWK2CROSSYD(:,INDX,IDRIVE),
+     &                          DWK2CROSSX1YD(:,INDX,IDRIVE),
+     &                          DWK2CROSSX2YD(:,INDX,IDRIVE),
+     &                          ASUBM,BSUBM,CSUBM,DSUBM,
+     &                          ESUBM,FSUBM,GSUBM,HSUBM)
+            ENDDO
+            ENDIF
 	  
          ENDDO
       ENDDO
+
+      IF (OACTIONMAP) THEN
+         CLOSE(FIDACTION)
+         WRITE(*,*) 'WROTE DWK_ACTION_MAP.OUT'
+      ENDIF
+
+      FIELDMAX = MAX(MAXVAL(ABS(X1U)),MAXVAL(ABS(X2U)),
+     &               MAXVAL(ABS(B1U)),MAXVAL(ABS(B2U)),
+     &               MAXVAL(ABS(B3U)))
+      OPPARAMAX = 0.0
+      OPPERPMAX = 0.0
+      DO IS=1,NR
+         DO MROW=1,MSMAX
+            LXROW = (MROW-1)*NXCOMP
+            DO MSA=1,MSMAX
+               LYCOL = (MSA-1)*NYCOMP
+               IF (KYPPARA.GT.0) OPPARAMAX = MAX(OPPARAMAX,
+     &            ABS(HSUBM(LXROW+KXV1,LYCOL+KYPPARA,IS)),
+     &            ABS(ESUBM(LXROW+KXV1,LYCOL+KYPPARA,IS+1)))
+               IF (KYPPERP.GT.0) OPPERPMAX = MAX(OPPERPMAX,
+     &            ABS(HSUBM(LXROW+KXV1,LYCOL+KYPPERP,IS)),
+     &            ABS(ESUBM(LXROW+KXV1,LYCOL+KYPPERP,IS+1)))
+            ENDDO
+         ENDDO
+      ENDDO
+      PPARAMAX = MAXVAL(ABS(PPARAC))
+      PPERPMAX = MAXVAL(ABS(PPERPC))
+      IF (.NOT.OCACHEFINITE)
+     &   STOP 'NON-FINITE DWK COEFFICIENT CACHE'
+      WRITE(*,*) 'DWK CACHE/FIELD/OPPARA/OPPERP/PARA/PERP MAXIMA:',
+     &           CACHEMAX,FIELDMAX,OPPARAMAX,OPPERPMAX,
+     &           PPARAMAX,PPERPMAX
+      IF (CACHEMAX.LE.0.0.OR.FIELDMAX.LE.0.0.OR.
+     &    OPPARAMAX.LE.0.0.OR.OPPERPMAX.LE.0.0.OR.
+     &    MAX(PPARAMAX,PPERPMAX).LE.0.0)
+     &   STOP 'INVALID ZERO DWK CONTRACTION INPUT'
+
+C     Optional integer/half-mesh work breakdown.  It must consume the raw
+C     arrays before the production radial combination below; the writer
+C     applies that combination once and does not apply the radial integration
+C     weight CSH to a torque density.
+      INQUIRE(FILE='DWK_BREAKDOWN.REQUEST',EXIST=OBREAKDOWN)
+      IF (OBREAKDOWN) CALL WRITEDWKBREAKDOWN(DWPPARX,DWPPERX,
+     &                                      DWPPARY,DWPPERY,TOTINDX)
+
+      IF (OBILINEAR) CALL WRITEDWKBILINEARLEDGER(
+     &   DWPPARX,DWPPERX,DWPPARY,DWPPERY,
+     &   DWPPARXD,DWPPERXD,DWPPARYD,DWPTERYD,
+     &   DWK2BASEYD,DWK2CROSSYD,
+     &   DWK2CROSSX1YD,DWK2CROSSX2YD,TOTINDX)
+      IF (OPRESSURETRACE) CALL WRITEDWKPRESSURETRACE(
+     &   PPARAC,PPERPC,PPARAD,PPERPD,TOTINDX)
 
       PI2 = PI*PI*2.0
 C     CALCULATE THE TOTAL ENERGY OF EACH COMPONENT
@@ -9509,12 +10464,53 @@ C     CALCULATE THE TOTAL ENERGY OF EACH COMPONENT
      
          DWPPERY(IS,:) = 
      &   PI2*(DWPPERY(IS,:)+(DWPPERX(IS,:)+DWPPERX(IS+1,:))*0.5)
+         DWK2BASEY(IS,:) = PI2*(DWK2BASEY(IS,:)+
+     &      (DWK2BASEX(IS,:)+DWK2BASEX(IS+1,:))*0.5)
+         DWK2CROSSY(IS,:) = PI2*DWK2CROSSY(IS,:)
+         IF (ODRIVETERMS) THEN
+         DO IDRIVE=1,5
+            DWPPARYD(IS,:,IDRIVE)=PI2*(DWPPARYD(IS,:,IDRIVE)+
+     &         0.5*(DWPPARXD(IS,:,IDRIVE)+
+     &              DWPPARXD(IS+1,:,IDRIVE)))
+            DWPTERYD(IS,:,IDRIVE)=PI2*(DWPTERYD(IS,:,IDRIVE)+
+     &         0.5*(DWPPERXD(IS,:,IDRIVE)+
+     &              DWPPERXD(IS+1,:,IDRIVE)))
+         ENDDO
+         ENDIF
       ENDDO
+
+C     The five selected pressure drives must reconstruct the unchanged
+C     production contraction before CTEDGE clipping or torque smoothing.
+      IF (ODRIVELEDGER) THEN
+         DRIVERESID=MAX(
+     &      MAXVAL(ABS(DWPPARY(1:NR,:)-
+     &                 SUM(DWPPARYD(1:NR,:,:),DIM=3))),
+     &      MAXVAL(ABS(DWPPERY(1:NR,:)-
+     &                 SUM(DWPTERYD(1:NR,:,:),DIM=3))))
+         DRIVESCALE=MAX(MAXVAL(ABS(DWPPARYD(1:NR,:,:))),
+     &                  MAXVAL(ABS(DWPTERYD(1:NR,:,:))))
+         WRITE(*,*) 'DWK DRIVE LEDGER MAX RESIDUAL/SCALE:',
+     &              DRIVERESID,DRIVESCALE
+         IF (DRIVERESID.GT.1.0D-11*MAX(DRIVESCALE,1.0D-300))
+     &      STOP 'DWK DRIVE LEDGER FAILED TO RECONSTRUCT TOTAL'
+         CALL WRITEDWKDRIVELEDGER(DWPPARYD,DWPTERYD,TOTINDX,
+     &                            DRIVERESID,DRIVESCALE)
+      ENDIF
+
+C     OPTIONAL INDEPENDENT QUADRATIC-FORM CHECK.  Evaluate it before
+C     CTEDGE mutates the assembled work so both sides retain identical
+C     radial support.  This request-file-controlled check never changes
+C     TORQUENTV or any production output profile.
+      INQUIRE(FILE='DWK_DIRECT_CHECK.REQUEST',EXIST=ODIRECT)
+      IF (ODIRECT) CALL CALCDWKDIRECTCHECK(PPARAC,PPERPC,
+     &                                    DWPPARY,DWPPERY,TOTINDX)
       
       DO IS=1,NR
          IF (CSM(IS).GT.CTEDGE) THEN
             DWPPARY(IS,:)    = 0.
             DWPPERY(IS,:)    = 0.
+            DWK2BASEY(IS,:)  = 0.
+            DWK2CROSSY(IS,:) = 0.
          ENDIF
       ENDDO
 
@@ -9552,6 +10548,34 @@ C     USING: T_NTV = -2*N*IM(DWKA)/(4*PI^2)
       TORQUENTV  = TORQUENTVI + TORQUENTVE
       ENDIF
 
+C     Optional decomposition of the KEFORM=2 perpendicular work into the
+C     direct -<xi,O_parallel p_perp> term and the adjoint pressure-equation
+C     cross term.  It is diagnostic only and leaves TORQUENTV unchanged.
+      INQUIRE(FILE='DWK_KEFORM2_LEDGER.REQUEST',EXIST=OKELEDGER)
+      IF (OKELEDGER) THEN
+         IF (KEFORM.NE.2) STOP 'DWK KEFORM2 LEDGER REQUIRES KEFORM=2'
+         IF (MAXVAL(ABS(DWPPERY(1:NR,:)-DWK2BASEY(1:NR,:)-
+     &              DWK2CROSSY(1:NR,:))).GT.1.0E-9*
+     &       MAX(1.0D0,MAXVAL(ABS(DWPPERY(1:NR,:)))))
+     &       STOP 'DWK KEFORM2 LEDGER DOES NOT RECONSTRUCT PERP WORK'
+         FID=ASSIGNFREEFILEUNIT()
+         OPEN(FID,FILE='DWK_KEFORM2_LEDGER.OUT',FORM='FORMATTED',
+     &        STATUS='REPLACE')
+         DO IS=1,NR
+         DO KP=1,NSPECIES
+         DO I=1,5
+            INDX=INDXDWKC(KP,I)
+            IF (INDX.LT.0) CYCLE
+            WRITE(FID,1051) KP,I,CSM(IS),CSH(IS),
+     &         -DWK2BASEY(IS,INDX),-DWK2CROSSY(IS,INDX),
+     &         -DWPPERY(IS,INDX)
+         ENDDO
+         ENDDO
+         ENDDO
+         CLOSE(FID)
+         WRITE(*,*) 'WROTE DWK_KEFORM2_LEDGER.OUT'
+      ENDIF
+1051  FORMAT (2I5,8(E13.5))
 C     OUTPUT THE PROFILES OF ENERGY DENSITY
       FID=ASSIGNFREEFILEUNIT () 
       OPEN(FID,FILE='DWK_ENERGY_DENSITY.OUT',FORM='FORMATTED',
@@ -9637,12 +10661,705 @@ C     OUTPUT THE ENERGY COMPONENTS
       WRITE (*,*) SUM(DWPPERP)
       DEALLOCATE (DWPPARA,DWPPERP,DWK)
       DEALLOCATE (DWPPARX,DWPPERX,DWPPARY,DWPPERY)
+      DEALLOCATE (DWK2BASEX,DWK2BASEY,DWK2CROSSY,
+     &            DWK2CROSSX1Y,DWK2CROSSX2Y)
       DEALLOCATE (PPARAC,PPERPC)
+      IF (ODRIVETERMS) THEN
+         DEALLOCATE(PPARAD,PPERPD,DWPPARXD,DWPPERXD,
+     &              DWPPARYD,DWPTERYD,DWK2BASEXD,DWK2BASEYD,
+     &              DWK2CROSSYD,DWK2CROSSX1YD,DWK2CROSSX2YD)
+      ENDIF
       DEALLOCATE (BUFFER_DATA1,BUFFER_DATA2,BUFFER_DATAM)
 
       CALL DEALLOCATEDWKCOMPMAT
 
       END SUBROUTINE CALCDWKCOMP
+
+C=======================================================================
+C WRITE STATIC MAPS DOWNSTREAM OF ONE KJPFILL COMPONENT BLOCK           =
+C                                                                       =
+C The request file contains MARS half-mesh indices.  P records are the  =
+C exact GF/GG pressure-source rows split into the five native field     =
+C drives.  R records are the RJAM Fourier recovery.  W records are the  =
+C four pressure-to-work covectors after the native finite-element fold; =
+C F records expose that fold separately.  No production array changes. =
+C=======================================================================
+      SUBROUTINE WRITEDWKACTIONMAP(IS,INDX,FID,
+     &                             ASUBM,BSUBM,CSUBM,DSUBM,
+     &                             ESUBM,FSUBM,GSUBM,HSUBM)
+      USE RCOMDM
+      USE DIMENSIM
+      USE GLOBALM
+      USE KINETICM
+      USE GIJLM
+      USE CONVOLCOFM
+      IMPLICIT NONE
+      INCLUDE 'specmat.inc'
+      INCLUDE 'compam.inc'
+      INCLUDE 'comioc.inc'
+      INTEGER IS,INDX,FID,MROW,MSA,J,LXROW,LXCOL,LYROW,LYCOL,
+     &        MOMENT,KP,IEFFECT,KPOUT,IEFFECTOUT
+      REAL*8 HCHI,THETA,PI2,ZEM,PTRAP,ZV2M,ZV2P,ZB3M,ZB3P
+      COMPLEX*16 RECOV,W1,W2,W3,W4,OLOW,OUP,OHALF
+
+      KPOUT=0
+      IEFFECTOUT=0
+      DO KP=1,NSPECIES
+         DO IEFFECT=1,NDWKCOMP
+            IF (INDXDWKC(KP,IEFFECT).EQ.INDX) THEN
+               KPOUT=KP
+               IEFFECTOUT=IEFFECT
+            ENDIF
+         ENDDO
+      ENDDO
+      IF (KPOUT.EQ.0) STOP 'UNKNOWN DWK ACTION MAP COMPONENT'
+      WRITE(FID,1002) 'C',IS,INDX,KPOUT,IEFFECTOUT
+
+      DO MROW=1,MSMAX
+         LYROW=(MROW-1)*NYCOMP
+         DO MSA=1,MSMAX
+            LXCOL=(MSA-1)*NXCOMP
+            LYCOL=(MSA-1)*NYCOMP
+C           Five pressure drives; moment 1=parallel, 2=perpendicular.
+            WRITE(FID,1000) 'P',IS,INDX,1,1,-1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
+     &         FSUBM(KYPPARA+LYROW,KXX1+LXCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,1,1, 1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
+     &         GSUBM(KYPPARA+LYROW,KXX1+LXCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,1,2,-1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
+     &         FSUBM(KYPPERP+LYROW,KXX1+LXCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,1,2, 1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
+     &         GSUBM(KYPPERP+LYROW,KXX1+LXCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,2,1, 0,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
+     &         DSUBM(KYPPARA+LYROW,KYX2+LYCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,2,2, 0,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
+     &         DSUBM(KYPPERP+LYROW,KYX2+LYCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,3,1,-1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
+     &         FSUBM(KYPPARA+LYROW,KXB1+LXCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,3,1, 1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
+     &         GSUBM(KYPPARA+LYROW,KXB1+LXCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,3,2,-1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
+     &         FSUBM(KYPPERP+LYROW,KXB1+LXCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,3,2, 1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
+     &         GSUBM(KYPPERP+LYROW,KXB1+LXCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,4,1, 0,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
+     &         DSUBM(KYPPARA+LYROW,KYB2+LYCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,4,2, 0,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
+     &         DSUBM(KYPPERP+LYROW,KYB2+LYCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,5,1, 0,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
+     &         DSUBM(KYPPARA+LYROW,KYB3+LYCOL,IS)
+            WRITE(FID,1000) 'P',IS,INDX,5,2, 0,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),
+     &         DSUBM(KYPPERP+LYROW,KYB3+LYCOL,IS)
+         ENDDO
+      ENDDO
+
+      IF (INDX.NE.1) RETURN
+      PTRAP=PTRAPH
+      ZV2M=(CS(IS)/CSM(IS))**(-1)
+      ZV2P=(CS(IS+1)/CSM(IS))**(-1)
+      ZB3M=CS(IS)/CSM(IS)
+      ZB3P=CS(IS+1)/CSM(IS)
+      DO MOMENT=1,2
+C        GF maps for X1 and B1: OUTNODE selects FSUBM/GSUBM.
+         WRITE(FID,1005) 'G',IS,1,MOMENT,-1,-1,0.5D0*PTRAP
+         WRITE(FID,1005) 'G',IS,1,MOMENT,-1, 0,
+     &      0.5D0*(1.0D0-PTRAP)
+         WRITE(FID,1005) 'G',IS,1,MOMENT, 1, 1,0.5D0*PTRAP
+         WRITE(FID,1005) 'G',IS,1,MOMENT, 1, 0,
+     &      0.5D0*(1.0D0-PTRAP)
+         WRITE(FID,1005) 'G',IS,3,MOMENT,-1,-1,0.5D0*PTRAP
+         WRITE(FID,1005) 'G',IS,3,MOMENT,-1, 0,
+     &      0.5D0*(1.0D0-PTRAP)
+         WRITE(FID,1005) 'G',IS,3,MOMENT, 1, 1,0.5D0*PTRAP
+         WRITE(FID,1005) 'G',IS,3,MOMENT, 1, 0,
+     &      0.5D0*(1.0D0-PTRAP)
+C        GG maps for X2, B2, and B3: OUTNODE is the half mesh.
+         WRITE(FID,1005) 'G',IS,2,MOMENT,0, 0,1.0D0-PTRAP
+         WRITE(FID,1005) 'G',IS,2,MOMENT,0,-1,0.5D0*PTRAP*ZV2M
+         WRITE(FID,1005) 'G',IS,2,MOMENT,0, 1,0.5D0*PTRAP*ZV2P
+         WRITE(FID,1005) 'G',IS,4,MOMENT,0, 0,1.0D0-PTRAP
+         WRITE(FID,1005) 'G',IS,4,MOMENT,0,-1,0.5D0*PTRAP
+         WRITE(FID,1005) 'G',IS,4,MOMENT,0, 1,0.5D0*PTRAP
+         WRITE(FID,1005) 'G',IS,5,MOMENT,0, 0,1.0D0-PTRAP
+         WRITE(FID,1005) 'G',IS,5,MOMENT,0,-1,0.5D0*PTRAP*ZB3M
+         WRITE(FID,1005) 'G',IS,5,MOMENT,0, 1,0.5D0*PTRAP*ZB3P
+      ENDDO
+      HCHI=2.0D0*PI/DFLOAT(NCHI)
+      DO MROW=1,MSMAX
+         DO MSA=1,MSMAX
+            RECOV=(0.0D0,0.0D0)
+            DO J=1,NCHI
+               THETA=DFLOAT(J-1)*HCHI
+               RECOV=RECOV+EXP(CI*(RM(MSA,2)-RM(MROW,2))*THETA)
+     &                      /RJAM(IS,J)
+            ENDDO
+            RECOV=RECOV/DFLOAT(NCHI)
+            WRITE(FID,1010) 'R',IS,NINT(RM(MROW,2)),
+     &         NINT(RM(MSA,2)),RECOV
+         ENDDO
+      ENDDO
+
+      PI2=2.0D0*PI*PI
+      ZEM=CSM(IS)**0
+      DO MROW=1,MSMAX
+         LXROW=(MROW-1)*NXCOMP
+         LYROW=(MROW-1)*NYCOMP
+         DO MSA=1,MSMAX
+            LXCOL=(MSA-1)*NXCOMP
+            LYCOL=(MSA-1)*NYCOMP
+C           Work 1: lower/upper integer X1 against recovered pressure.
+            OLOW=ESUBM(LXROW+KXV1,LYCOL+KYPPARA,IS)
+            OUP=HSUBM(LXROW+KXV1,LYCOL+KYPPARA,IS+1)
+            WRITE(FID,1015) 'O',IS,1,1,-1,-1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),OLOW
+            WRITE(FID,1015) 'O',IS,1,1, 1, 1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),OUP
+            OLOW=(0.0D0,0.0D0)
+            OUP=(0.0D0,0.0D0)
+            IF (KEFORM.EQ.1.AND.KYPPERP.GT.0) THEN
+               OLOW=ESUBM(LXROW+KXV1,LYCOL+KYPPERP,IS)
+               OUP=HSUBM(LXROW+KXV1,LYCOL+KYPPERP,IS+1)
+            ELSEIF (KEFORM.EQ.2.AND.INCKIN.GT.0) THEN
+               OLOW=-ESUBM(LXROW+KXV1,LYCOL+KYPPARA,IS)
+               OUP=-HSUBM(LXROW+KXV1,LYCOL+KYPPARA,IS+1)
+            ENDIF
+            WRITE(FID,1015) 'O',IS,1,2,-1,-1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),OLOW
+            WRITE(FID,1015) 'O',IS,1,2, 1, 1,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),OUP
+C           Work 2: half-mesh X2 base term.
+            OHALF=ZEM*DSUBM(LYROW+KYV2,LYCOL+KYPPARA,IS)
+            WRITE(FID,1015) 'O',IS,2,1,0,0,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),OHALF
+            OHALF=(0.0D0,0.0D0)
+            IF (KEFORM.EQ.1.AND.KYPPERP.GT.0) THEN
+               OHALF=ZEM*DSUBM(LYROW+KYV2,LYCOL+KYPPERP,IS)
+            ELSEIF (KEFORM.EQ.2.AND.INCKIN.GT.0) THEN
+               OHALF=-ZEM*DSUBM(LYROW+KYV2,LYCOL+KYPPARA,IS)
+            ENDIF
+            WRITE(FID,1015) 'O',IS,2,2,0,0,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),OHALF
+C           Works 3/4: pressure-equation X1/X2 cross terms.  MSA is
+C           the pressure harmonic and MROW is the conjugated field basis.
+            OLOW=(0.0D0,0.0D0)
+            OUP=(0.0D0,0.0D0)
+            OHALF=(0.0D0,0.0D0)
+            IF (KEFORM.EQ.2.AND.INCKIN.GT.0) THEN
+               OLOW=ZEM*CONJG(
+     &            FSUBM(LYCOL+KYPR,LXROW+KXV1,IS))
+               OUP=ZEM*CONJG(
+     &            GSUBM(LYCOL+KYPR,LXROW+KXV1,IS))
+               OHALF=ZEM*CONJG(
+     &            DSUBM(LYCOL+KYPR,LYROW+KYV2,IS))
+            ENDIF
+            WRITE(FID,1015) 'O',IS,3,2,-1,0,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),OLOW
+            WRITE(FID,1015) 'O',IS,3,2, 1,0,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),OUP
+            WRITE(FID,1015) 'O',IS,4,2,0,0,MROW,MSA,
+     &         NINT(RM(MROW,2)),NINT(RM(MSA,2)),OHALF
+         ENDDO
+      ENDDO
+
+      DO MSA=1,MSMAX
+         W1=(0.0D0,0.0D0)
+         W2=(0.0D0,0.0D0)
+         DO MROW=1,MSMAX
+            LXROW=(MROW-1)*NXCOMP
+            LYROW=(MROW-1)*NYCOMP
+            LYCOL=(MSA-1)*NYCOMP
+            W1=W1+PI2*0.5D0*(CONJG(X1U(IS,MROW))*
+     &         ESUBM(LXROW+KXV1,LYCOL+KYPPARA,IS)+
+     &         CONJG(X1U(IS+1,MROW))*
+     &         HSUBM(LXROW+KXV1,LYCOL+KYPPARA,IS+1))
+            W2=W2+PI2*ZEM*CONJG(X2U(IS,MROW))*
+     &         DSUBM(LYROW+KYV2,LYCOL+KYPPARA,IS)
+         ENDDO
+         WRITE(FID,1020) 'W',IS,1,1,NINT(RM(MSA,2)),W1
+         WRITE(FID,1020) 'W',IS,2,1,NINT(RM(MSA,2)),W2
+
+         W1=(0.0D0,0.0D0)
+         W2=(0.0D0,0.0D0)
+         IF (KEFORM.EQ.1.AND.KYPPERP.GT.0) THEN
+            DO MROW=1,MSMAX
+               LXROW=(MROW-1)*NXCOMP
+               LYROW=(MROW-1)*NYCOMP
+               LYCOL=(MSA-1)*NYCOMP
+               W1=W1+PI2*0.5D0*(CONJG(X1U(IS,MROW))*
+     &            ESUBM(LXROW+KXV1,LYCOL+KYPPERP,IS)+
+     &            CONJG(X1U(IS+1,MROW))*
+     &            HSUBM(LXROW+KXV1,LYCOL+KYPPERP,IS+1))
+               W2=W2+PI2*ZEM*CONJG(X2U(IS,MROW))*
+     &            DSUBM(LYROW+KYV2,LYCOL+KYPPERP,IS)
+            ENDDO
+         ELSEIF (KEFORM.EQ.2.AND.INCKIN.GT.0) THEN
+            DO MROW=1,MSMAX
+               LXROW=(MROW-1)*NXCOMP
+               LYROW=(MROW-1)*NYCOMP
+               LYCOL=(MSA-1)*NYCOMP
+               W1=W1-PI2*0.5D0*(CONJG(X1U(IS,MROW))*
+     &            ESUBM(LXROW+KXV1,LYCOL+KYPPARA,IS)+
+     &            CONJG(X1U(IS+1,MROW))*
+     &            HSUBM(LXROW+KXV1,LYCOL+KYPPARA,IS+1))
+               W2=W2-PI2*ZEM*CONJG(X2U(IS,MROW))*
+     &            DSUBM(LYROW+KYV2,LYCOL+KYPPARA,IS)
+            ENDDO
+         ENDIF
+         WRITE(FID,1020) 'W',IS,1,2,NINT(RM(MSA,2)),W1
+         WRITE(FID,1020) 'W',IS,2,2,NINT(RM(MSA,2)),W2
+
+         LYROW=(MSA-1)*NYCOMP
+         W3=(0.0D0,0.0D0)
+         W4=(0.0D0,0.0D0)
+         DO MROW=1,MSMAX
+            LXCOL=(MROW-1)*NXCOMP
+            LYCOL=(MROW-1)*NYCOMP
+            W3=W3+PI2*ZEM*CONJG(
+     &         FSUBM(LYROW+KYPR,LXCOL+KXV1,IS)*X1U(IS,MROW)+
+     &         GSUBM(LYROW+KYPR,LXCOL+KXV1,IS)*X1U(IS+1,MROW))
+            W4=W4+PI2*ZEM*CONJG(
+     &         DSUBM(LYROW+KYPR,LYCOL+KYV2,IS)*X2U(IS,MROW))
+         ENDDO
+         IF (KEFORM.NE.2.OR.INCKIN.LE.0) THEN
+            W3=(0.0D0,0.0D0)
+            W4=(0.0D0,0.0D0)
+         ENDIF
+         WRITE(FID,1020) 'W',IS,3,2,NINT(RM(MSA,2)),W3
+         WRITE(FID,1020) 'W',IS,4,2,NINT(RM(MSA,2)),W4
+      ENDDO
+      WRITE(FID,1030) 'F',IS,1,PI2
+      WRITE(FID,1030) 'F',IS,2,0.5D0*PI2
+      WRITE(FID,1030) 'F',IS,3,0.5D0*PI2
+ 1000 FORMAT(A1,9(1X,I7),2(1X,E26.17))
+ 1002 FORMAT(A1,4(1X,I7))
+ 1005 FORMAT(A1,5(1X,I7),1X,E26.17)
+ 1010 FORMAT(A1,3(1X,I7),2(1X,E26.17))
+ 1015 FORMAT(A1,9(1X,I7),2(1X,E26.17))
+ 1020 FORMAT(A1,4(1X,I7),2(1X,E26.17))
+ 1030 FORMAT(A1,2(1X,I7),1X,E26.17)
+      END SUBROUTINE WRITEDWKACTIONMAP
+
+C=======================================================================
+C WRITE AN EXACT LEDGER OF THE FIVE KINETIC PRESSURE DRIVES             =
+C                                                                       =
+C The inputs have already received the same radial finite-element       =
+C combination as the production work density, but no CTEDGE clipping   =
+C or native torque smoothing.  There is no X3 pressure-drive slot in    =
+C CALCPRECOMP.  This diagnostic never changes production arrays.        =
+C=======================================================================
+      SUBROUTINE WRITEDWKDRIVELEDGER(DWPPARYD,DWPTERYD,TOTINDX,
+     &                               DRIVERESID,DRIVESCALE)
+      USE DIMENSIM
+      USE GLOBALM
+      USE RCOMDM
+      USE ToolBox
+      IMPLICIT NONE
+      INTEGER TOTINDX,IS,INDX,IDRIVE,FID
+      REAL*8 DRIVERESID,DRIVESCALE,TORQUEFAC
+      COMPLEX*16,DIMENSION(NRP1,TOTINDX,5)::DWPPARYD,DWPTERYD
+
+      TORQUEFAC=-2.0D0*RNTOR/(4.0D0*PI*PI)
+      FID=ASSIGNFREEFILEUNIT()
+      OPEN(FID,FILE='DWK_DRIVE_LEDGER.OUT',FORM='FORMATTED',
+     &     STATUS='REPLACE',ACTION='WRITE')
+      WRITE(FID,*) '% DRIVE: 1=X1 2=X2 3=B1 4=B2 5=B3; X3 ABSENT'
+      WRITE(FID,*) '% PRE-CTEDGE, PRE-SMOOTHING, EXECUTABLE-NATIVE SIGN'
+      WRITE(FID,*) '% MAX_RECONSTRUCTION_RESIDUAL SCALE',
+     &             DRIVERESID,DRIVESCALE
+      WRITE(FID,*) '% IS INDX DRIVE CSM PARA_RE PARA_IM PERP_RE',
+     &             ' PERP_IM TORQUE_DENSITY'
+      DO IS=1,NR
+         DO INDX=1,TOTINDX
+            DO IDRIVE=1,5
+               WRITE(FID,1000) IS,INDX,IDRIVE,CSM(IS),
+     &            DWPPARYD(IS,INDX,IDRIVE),
+     &            DWPTERYD(IS,INDX,IDRIVE),
+     &            TORQUEFAC*AIMAG(-DWPPARYD(IS,INDX,IDRIVE)-
+     &                                  DWPTERYD(IS,INDX,IDRIVE))
+            ENDDO
+         ENDDO
+      ENDDO
+ 1000 FORMAT(3I7,6(1X,E18.10))
+      CLOSE(FID)
+      WRITE(*,*) 'WROTE DWK_DRIVE_LEDGER.OUT'
+      END SUBROUTINE WRITEDWKDRIVELEDGER
+
+C=======================================================================
+C WRITE SELECTED COMPLEX KINETIC PRESSURE SPECTRA BEFORE CONTRACTION    =
+C                                                                       =
+C DWK_PRESSURE_TRACE.REQUEST contains one integer MARS half-mesh index  =
+C per line.  The five drive spectra must reconstruct the unchanged      =
+C production pressure globally before any selected rows are written.    =
+C This request-file diagnostic never changes production arrays.         =
+C=======================================================================
+      SUBROUTINE WRITEDWKPRESSURETRACE(
+     &   PPARAC,PPERPC,PPARAD,PPERPD,TOTINDX)
+      USE DIMENSIM
+      USE GLOBALM
+      USE KINETICM
+      USE RCOMDM
+      USE ToolBox
+      IMPLICIT NONE
+      INTEGER TOTINDX,IS,INDX,IDRIVE,MS,KP,IEFFECT,FID,IREQ,IOS
+      INTEGER KPOUT,IEFFECTOUT
+      LOGICAL SELECTED(NRP1)
+      REAL*8 RESIDUAL,SCALE
+      COMPLEX*16,DIMENSION(NRP1,MSMAX,TOTINDX)::PPARAC,PPERPC
+      COMPLEX*16,DIMENSION(NRP1,MSMAX,TOTINDX,5)::PPARAD,PPERPD
+
+      RESIDUAL=MAX(
+     &   MAXVAL(ABS(PPARAC-SUM(PPARAD,DIM=4))),
+     &   MAXVAL(ABS(PPERPC-SUM(PPERPD,DIM=4))))
+      SCALE=MAX(MAXVAL(ABS(PPARAC)),MAXVAL(ABS(PPERPC)),
+     &          MAXVAL(ABS(PPARAD)),MAXVAL(ABS(PPERPD)))
+      WRITE(*,*) 'DWK PRESSURE TRACE MAX RESIDUAL/SCALE:',
+     &           RESIDUAL,SCALE
+      IF (RESIDUAL.GT.1.0D-11*MAX(SCALE,1.0D-300))
+     &   STOP 'DWK PRESSURE DRIVES FAILED TO RECONSTRUCT TOTAL'
+
+      SELECTED=.FALSE.
+      IREQ=ASSIGNFREEFILEUNIT()
+      OPEN(IREQ,FILE='DWK_PRESSURE_TRACE.REQUEST',STATUS='OLD',
+     &     ACTION='READ')
+ 10   CONTINUE
+      READ(IREQ,*,IOSTAT=IOS) IS
+      IF (IOS.LT.0) GOTO 20
+      IF (IOS.GT.0) STOP 'INVALID DWK PRESSURE TRACE REQUEST'
+      IF (IS.LT.1.OR.IS.GT.NR) STOP 'PRESSURE TRACE IS OUT OF RANGE'
+      IF (SELECTED(IS)) STOP 'DUPLICATE PRESSURE TRACE IS'
+      SELECTED(IS)=.TRUE.
+      GOTO 10
+ 20   CLOSE(IREQ)
+      IF (.NOT.ANY(SELECTED(1:NR)))
+     &   STOP 'EMPTY DWK PRESSURE TRACE REQUEST'
+
+      FID=ASSIGNFREEFILEUNIT()
+      OPEN(FID,FILE='DWK_PRESSURE_TRACE.OUT',FORM='FORMATTED',
+     &     STATUS='REPLACE',ACTION='WRITE')
+      WRITE(FID,*) '% DRIVE: 1=X1 2=X2 3=B1 4=B2 5=B3'
+      WRITE(FID,*) '% PRE-CONTRACTION COMPLEX PRESSURE; NATIVE BASIS'
+      WRITE(FID,*) '% MAX_RECONSTRUCTION_RESIDUAL SCALE',
+     &             RESIDUAL,SCALE
+      WRITE(FID,*) '% IS INDX KP EFFECT DRIVE M CSM',
+     &             ' PPARA_RE PPARA_IM PPERP_RE PPERP_IM'
+      DO IS=1,NR
+         IF (.NOT.SELECTED(IS)) CYCLE
+         DO INDX=1,TOTINDX
+            KPOUT=0
+            IEFFECTOUT=0
+            DO KP=1,NSPECIES
+               DO IEFFECT=1,NDWKCOMP
+                  IF (INDXDWKC(KP,IEFFECT).EQ.INDX) THEN
+                     KPOUT=KP
+                     IEFFECTOUT=IEFFECT
+                  ENDIF
+               ENDDO
+            ENDDO
+            IF (KPOUT.EQ.0) STOP 'UNKNOWN PRESSURE TRACE COMPONENT'
+            DO IDRIVE=1,5
+               DO MS=1,MSMAX
+                  WRITE(FID,1000) IS,INDX,KPOUT,IEFFECTOUT,
+     &               IDRIVE,NINT(RM(MS,2)),CSM(IS),
+     &               PPARAD(IS,MS,INDX,IDRIVE),
+     &               PPERPD(IS,MS,INDX,IDRIVE)
+               ENDDO
+            ENDDO
+         ENDDO
+      ENDDO
+ 1000 FORMAT(6I7,5(1X,E18.10))
+      CLOSE(FID)
+      WRITE(*,*) 'WROTE DWK_PRESSURE_TRACE.OUT'
+      END SUBROUTINE WRITEDWKPRESSURETRACE
+
+C=======================================================================
+C WRITE THE TWO WORK ROWS AGAINST EACH OF THE FIVE PRESSURE DRIVES      =
+C                                                                       =
+C WORK=1 IS INTEGER-MESH X1, 2 HALF-MESH X2 BASE, 3 PRESSURE-X1        =
+C CROSS, AND 4 PRESSURE-X2 CROSS.  Their sum over WORK AND DRIVE        =
+C reconstructs unchanged production work before CTEDGE and smoothing.  =
+C This request-file diagnostic never changes production arrays.         =
+C=======================================================================
+      SUBROUTINE WRITEDWKBILINEARLEDGER(
+     &   DWPPARX,DWPPERX,DWPPARY,DWPPERY,
+     &   DWPPARXD,DWPPERXD,DWPPARYD,DWPTERYD,
+     &   DWK2BASEYD,DWK2CROSSYD,
+     &   DWK2CROSSX1YD,DWK2CROSSX2YD,TOTINDX)
+      USE DIMENSIM
+      USE GLOBALM
+      USE RCOMDM
+      USE ToolBox
+      IMPLICIT NONE
+      INTEGER TOTINDX,IS,INDX,IDRIVE,IWORK,FID
+      REAL*8 PI2,TORQUEFAC,RESIDUAL,SCALE,SPLITRESID,SPLITSCALE
+      COMPLEX*16 PARA,PERP,PRODPARA,PRODPERP,SUMPARA,SUMPERP
+      COMPLEX*16,DIMENSION(NRP1,TOTINDX)::
+     &   DWPPARX,DWPPERX,DWPPARY,DWPPERY
+      COMPLEX*16,DIMENSION(NRP1,TOTINDX,5)::
+     &   DWPPARXD,DWPPERXD,DWPPARYD,DWPTERYD,
+     &   DWK2BASEYD,DWK2CROSSYD,
+     &   DWK2CROSSX1YD,DWK2CROSSX2YD
+
+      PI2=2.0D0*PI*PI
+      TORQUEFAC=-2.0D0*RNTOR/(4.0D0*PI*PI)
+      RESIDUAL=0.0D0
+      SCALE=0.0D0
+      DO IS=1,NR
+         DO INDX=1,TOTINDX
+            PRODPARA=PI2*(DWPPARY(IS,INDX)+0.5D0*(
+     &         DWPPARX(IS,INDX)+DWPPARX(IS+1,INDX)))
+            PRODPERP=PI2*(DWPPERY(IS,INDX)+0.5D0*(
+     &         DWPPERX(IS,INDX)+DWPPERX(IS+1,INDX)))
+            SUMPARA=(0.0D0,0.0D0)
+            SUMPERP=(0.0D0,0.0D0)
+            DO IDRIVE=1,5
+               PARA=PI2*(DWPPARYD(IS,INDX,IDRIVE)+
+     &            0.5D0*(DWPPARXD(IS,INDX,IDRIVE)+
+     &                   DWPPARXD(IS+1,INDX,IDRIVE)))
+               PERP=PI2*(0.5D0*(DWPPERXD(IS,INDX,IDRIVE)+
+     &                   DWPPERXD(IS+1,INDX,IDRIVE))+
+     &            DWK2BASEYD(IS,INDX,IDRIVE)+
+     &            DWK2CROSSX1YD(IS,INDX,IDRIVE)+
+     &            DWK2CROSSX2YD(IS,INDX,IDRIVE))
+               SUMPARA=SUMPARA+PARA
+               SUMPERP=SUMPERP+PERP
+               SCALE=MAX(SCALE,ABS(PARA),ABS(PERP))
+            ENDDO
+            RESIDUAL=MAX(RESIDUAL,ABS(PRODPARA-SUMPARA),
+     &                              ABS(PRODPERP-SUMPERP))
+            SCALE=MAX(SCALE,ABS(PRODPARA),ABS(PRODPERP))
+         ENDDO
+      ENDDO
+      WRITE(*,*) 'DWK BILINEAR LEDGER MAX RESIDUAL/SCALE:',
+     &           RESIDUAL,SCALE
+      IF (RESIDUAL.GT.1.0D-11*MAX(SCALE,1.0D-300))
+     &   STOP 'DWK BILINEAR LEDGER FAILED TO RECONSTRUCT TOTAL'
+
+      SPLITRESID=MAX(
+     &   MAXVAL(ABS(DWPTERYD-DWK2BASEYD-
+     &              DWK2CROSSX1YD-DWK2CROSSX2YD)),
+     &   MAXVAL(ABS(DWK2CROSSYD-DWK2CROSSX1YD-DWK2CROSSX2YD)))
+      SPLITSCALE=MAX(MAXVAL(ABS(DWPTERYD)),
+     &   MAXVAL(ABS(DWK2BASEYD)),MAXVAL(ABS(DWK2CROSSYD)),
+     &   MAXVAL(ABS(DWK2CROSSX1YD)),MAXVAL(ABS(DWK2CROSSX2YD)))
+      WRITE(*,*) 'DWK FOUR-WORK SPLIT MAX RESIDUAL/SCALE:',
+     &           SPLITRESID,SPLITSCALE
+      IF (SPLITRESID.GT.1.0D-11*MAX(SPLITSCALE,1.0D-300))
+     &   STOP 'DWK FOUR-WORK SPLIT FAILED TO RECONSTRUCT HALF ROW'
+
+      FID=ASSIGNFREEFILEUNIT()
+      OPEN(FID,FILE='DWK_BILINEAR_LEDGER.OUT',FORM='FORMATTED',
+     &     STATUS='REPLACE',ACTION='WRITE')
+      WRITE(FID,*) '% DRIVE: 1=X1 2=X2 3=B1 4=B2 5=B3'
+      WRITE(FID,*) '% WORK: 1=X1 INTEGER 2=X2 BASE 3=P-X1 4=P-X2'
+      WRITE(FID,*) '% PRE-CTEDGE, PRE-SMOOTHING, EXECUTABLE-NATIVE SIGN'
+      WRITE(FID,*) '% MAX_RECONSTRUCTION_RESIDUAL SCALE',
+     &             RESIDUAL,SCALE
+      WRITE(FID,*) '% MAX_WORK_SPLIT_RESIDUAL SCALE',
+     &             SPLITRESID,SPLITSCALE
+      WRITE(FID,*) '% IS INDX DRIVE WORK CSM PARA_RE PARA_IM',
+     &             ' PERP_RE PERP_IM TORQUE_DENSITY'
+      DO IS=1,NR
+         DO INDX=1,TOTINDX
+            DO IDRIVE=1,5
+               DO IWORK=1,4
+                  IF (IWORK.EQ.1) THEN
+                     PARA=PI2*0.5D0*(
+     &                  DWPPARXD(IS,INDX,IDRIVE)+
+     &                  DWPPARXD(IS+1,INDX,IDRIVE))
+                     PERP=PI2*0.5D0*(
+     &                  DWPPERXD(IS,INDX,IDRIVE)+
+     &                  DWPPERXD(IS+1,INDX,IDRIVE))
+                  ELSEIF (IWORK.EQ.2) THEN
+                     PARA=PI2*DWPPARYD(IS,INDX,IDRIVE)
+                     PERP=PI2*DWK2BASEYD(IS,INDX,IDRIVE)
+                  ELSEIF (IWORK.EQ.3) THEN
+                     PARA=(0.0D0,0.0D0)
+                     PERP=PI2*DWK2CROSSX1YD(IS,INDX,IDRIVE)
+                  ELSE
+                     PARA=(0.0D0,0.0D0)
+                     PERP=PI2*DWK2CROSSX2YD(IS,INDX,IDRIVE)
+                  ENDIF
+                  WRITE(FID,1000) IS,INDX,IDRIVE,IWORK,CSM(IS),
+     &               PARA,PERP,TORQUEFAC*AIMAG(-PARA-PERP)
+               ENDDO
+            ENDDO
+         ENDDO
+      ENDDO
+ 1000 FORMAT(4I7,6(1X,E18.10))
+      CLOSE(FID)
+      WRITE(*,*) 'WROTE DWK_BILINEAR_LEDGER.OUT'
+      END SUBROUTINE WRITEDWKBILINEARLEDGER
+
+C=======================================================================
+C WRITE THE PRE-SMOOTHING KINETIC WORK-DENSITY BREAKDOWN               =
+C                                                                       =
+C Each row is one radial surface and one cached (species,effect) index.
+C PX/PY are the integer/half-mesh terms before radial combination; PARA
+C and PERP are the values after the exact 2*PI^2 finite-element combination.
+C TORQUE is the corresponding native KNTV=21 contribution.  This routine
+C never changes the production arrays and is enabled only by a request
+C file in the run directory.
+C=======================================================================
+      SUBROUTINE WRITEDWKBREAKDOWN(DWPPARX,DWPPERX,DWPPARY,DWPPERY,
+     &                             TOTINDX)
+      USE DIMENSIM
+      USE GLOBALM
+      USE RCOMDM
+      IMPLICIT NONE
+      INTEGER TOTINDX,IS,INDX,FID
+      REAL*8 PI2,TORQUEFAC
+      COMPLEX*16,DIMENSION(NRP1,TOTINDX)::DWPPARX,DWPPERX
+      COMPLEX*16,DIMENSION(NRP1,TOTINDX)::DWPPARY,DWPPERY
+      COMPLEX*16 PARA_X,PERP_X,PARA_Y,PERP_Y,PARA,PERP
+
+      PI2 = 2.0D0*ACOS(-1.0D0)**2
+      TORQUEFAC = -2.0D0*RNTOR/(2.0D0*PI2)
+      FID = 97
+      OPEN(FID,FILE='DWK_BREAKDOWN.OUT',FORM='FORMATTED',
+     &     STATUS='REPLACE')
+      WRITE(FID,*) '% IS INDX CSM CSH PX_RE PX_IM PERPX_RE PERPX_IM',
+     &             ' PY_RE PY_IM PERPY_RE PERPY_IM PARA_RE PARA_IM',
+     &             ' PERP_RE PERP_IM TORQUE'
+      DO IS=1,NR
+         DO INDX=1,TOTINDX
+            PARA_X = PI2*0.5D0*(DWPPARX(IS,INDX)+
+     &                           DWPPARX(IS+1,INDX))
+            PERP_X = PI2*0.5D0*(DWPPERX(IS,INDX)+
+     &                           DWPPERX(IS+1,INDX))
+            PARA_Y = PI2*DWPPARY(IS,INDX)
+            PERP_Y = PI2*DWPPERY(IS,INDX)
+            PARA = PARA_X + PARA_Y
+            PERP = PERP_X + PERP_Y
+            WRITE(FID,100) IS,INDX,CSM(IS),CSH(IS),
+     &         REAL(PARA_X),AIMAG(PARA_X),REAL(PERP_X),AIMAG(PERP_X),
+     &         REAL(PARA_Y),AIMAG(PARA_Y),REAL(PERP_Y),AIMAG(PERP_Y),
+     &         REAL(PARA),AIMAG(PARA),REAL(PERP),AIMAG(PERP),
+     &         TORQUEFAC*AIMAG(-PARA-PERP)
+         ENDDO
+      ENDDO
+      CLOSE(FID)
+ 100  FORMAT(2I7,2(1X,E16.8),13(1X,E16.8))
+      END SUBROUTINE WRITEDWKBREAKDOWN
+
+C=======================================================================
+C INDEPENDENT CHECK OF THE QUADRATIC DWK WORK DENSITY                 =
+C                                                                       =
+C Reconstruct the imported perturbation field and the pressure field    =
+C represented by PPARAC/PPERPC, then evaluate the same quadratic-form  =
+C integrand used by KDWKDENSITY.  The resulting file contains the      =
+C independent value, CALCDWKCOMP value, and their complex residual.     =
+C                                                                       =
+C This routine is diagnostic only and is enabled by the presence of    =
+C DWK_DIRECT_CHECK.REQUEST in the run directory.                       =
+C=======================================================================
+      SUBROUTINE CALCDWKDIRECTCHECK(PPARAC,PPERPC,
+     &                              DWPPARY,DWPPERY,TOTINDX)
+      USE DIMENSIM
+      USE GLOBALM
+      USE RCOMDM
+      USE KINETICM
+      USE ToolBox
+      IMPLICIT NONE
+      INCLUDE 'comioc.inc'
+
+      INTEGER TOTINDX,INDX,I,J,MS,FID
+      REAL*8 HCHI,B2MVAL,B2CVAL,B2VALM,B2VALP
+      COMPLEX*16,DIMENSION(NRP1,MSMAX,TOTINDX)::PPARAC,PPERPC
+      COMPLEX*16,DIMENSION(NRP1,TOTINDX)::DWPPARY,DWPPERY
+      COMPLEX*16 OB1,OB2,OB3,OX1,OX2,OPE,OPA,CTMP1,OFW
+      COMPLEX*16 DIRECT,ACTUAL,RESIDUAL
+      REAL*8,DIMENSION(:,:),ALLOCATABLE::B2,B2M,B2C
+
+      HCHI = 2.*PI/NCHI
+      ALLOCATE(B2(NRP1,NCHI),B2M(NR,NCHI),B2C(NR,NCHI))
+
+C     Reproduce the equilibrium B^2 and d(B^2)/dchi construction from
+C     KDWKDENSITY without reading any serialized diagnostic values.
+      DO J=1,NCHI
+         DO I=2,NRP1
+            B2(I,J)=G22L(I,J)*DPSIDS(I)**2/RJA(I,J)**2+
+     &              T(I)**2/REQ(I,J)**2
+         ENDDO
+         B2(1,J)=T(1)**2/REQ(1,J)**2
+         DO I=1,NR
+            B2M(I,J)=G22LM(I,J)*DPSIDSM(I)**2/RJAM(I,J)**2+
+     &                TM(I)**2/REQM(I,J)**2
+         ENDDO
+      ENDDO
+      CALL DERCHI(B2M,B2C,NR,NR)
+
+      FID=ASSIGNFREEFILEUNIT()
+      OPEN(FID,FILE='DWK_DIRECT_CHECK.OUT',FORM='FORMATTED',
+     &     STATUS='REPLACE',ACTION='WRITE')
+      WRITE(FID,*) '% INDX I CSM DIRECT_RE DIRECT_IM ACTUAL_RE',
+     &             ' ACTUAL_IM RESIDUAL_RE RESIDUAL_IM'
+      WRITE(FID,*) '% DIRECT = quadratic KDWKDENSITY reconstruction;',
+     &             ' ACTUAL = -(DWPPARY+DWPPERY)'
+
+      DO INDX=1,TOTINDX
+         DO I=1,NR
+            DIRECT=(0.,0.)
+            DO J=1,NCHI
+               OB1=(0.,0.)
+               OB2=(0.,0.)
+               OB3=(0.,0.)
+               OX1=(0.,0.)
+               OX2=(0.,0.)
+               OPE=(0.,0.)
+               OPA=(0.,0.)
+               DO MS=1,MSMAX
+                  CTMP1=EXP(CI*RM(MS,2)*(J-1)*HCHI)
+                  OB1=OB1+0.5*(B1U(I,MS)+B1U(I+1,MS))*CTMP1
+                  OB2=OB2+B2U(I,MS)*CTMP1
+                  OB3=OB3+B3U(I,MS)*CTMP1
+                  OX1=OX1+0.5*(X1U(I,MS)+X1U(I+1,MS))*CTMP1
+                  OX2=OX2+X2U(I,MS)*CTMP1
+                  OPE=OPE+PPERPC(I,MS,INDX)*CTMP1
+                  OPA=OPA+PPARAC(I,MS,INDX)*CTMP1
+               ENDDO
+               B2MVAL=B2M(I,J)
+               B2CVAL=B2C(I,J)
+               B2VALM=B2(I,J)
+               B2VALP=B2(I+1,J)
+               OFW=DPSIDSM(I)*G12LM(I,J)/RJAM(I,J)/B2MVAL*
+     &                 CONJG(OB1)*OPE+
+     &              DPSIDSM(I)*G22LM(I,J)/RJAM(I,J)/B2MVAL*
+     &                 CONJG(OB2)*OPE+
+     &              TM(I)/B2MVAL*CONJG(OB3)*OPE+
+     &              RJAM(I,J)/B2MVAL*PPEQM(I)*DPSIDSM(I)*
+     &                 CONJG(OX1)*OPA+
+     &             (RJAM(I,J)/2./B2MVAL*(B2VALP-B2VALM)/CSH(I)-
+     &              DPSIDSM(I)**2*G12LM(I,J)/2./RJAM(I,J)/
+     &              B2MVAL**2*B2CVAL)*CONJG(OX1)*(OPE+OPA)+
+     &              RJAM(I,J)*TM(I)/2./B2MVAL**2*B2CVAL*
+     &              CONJG(OX2)*(OPE+OPA)
+               DIRECT=DIRECT+OFW
+            ENDDO
+            DIRECT=DIRECT*PI*HCHI
+            ACTUAL=-(DWPPARY(I,INDX)+DWPPERY(I,INDX))
+            RESIDUAL=DIRECT-ACTUAL
+            WRITE(FID,1000) INDX,I,CSM(I),DIRECT,ACTUAL,RESIDUAL
+         ENDDO
+      ENDDO
+1000  FORMAT(2I6,7E18.10)
+      CLOSE(FID)
+      DEALLOCATE(B2,B2M,B2C)
+      WRITE(*,*) 'WROTE DWK_DIRECT_CHECK.OUT'
+      RETURN
+      END SUBROUTINE CALCDWKDIRECTCHECK
       
       SUBROUTINE WRITE_SURFACE_QUANTITIES (IS,KGRID)
       USE KINETICM
@@ -9724,41 +11441,88 @@ C      WRITE (*,*) 'SUCCESS OF READ:', FILENAME
       IMPLICIT NONE
       
       INTEGER KP,INDX
+      INTEGER EXPECTED(NSPECIES,5)
       
       IF (.NOT. ODWKCOM) RETURN
-	
-      ALLOCATE (INDXDWKC(NSPECIES,5))
-      INDXDWKC = -1
-      
+
+      EXPECTED = -1
       INDX=0
       DO KP=1,NSPECIES
          IF (ABS(PSPECIES_AP(KP)).GT.0) THEN
             INDX=INDX+1
-            INDXDWKC(KP,1)=INDX
+            EXPECTED(KP,1)=INDX
          ENDIF
          IF (ABS(PSPECIES_AT(KP)).GT.0) THEN
             INDX=INDX+1
-            INDXDWKC(KP,2)=INDX
+            EXPECTED(KP,2)=INDX
          ENDIF
-           IF (ABS(PSPECIES_NP(KP)).GT.0) THEN
+         IF (ABS(PSPECIES_NP(KP)).GT.0) THEN
             INDX=INDX+1
-            INDXDWKC(KP,3)=INDX
+            EXPECTED(KP,3)=INDX
          ENDIF
          IF (ABS(PSPECIES_NTB(KP)).GT.0) THEN
             INDX=INDX+1
-            INDXDWKC(KP,4)=INDX
+            EXPECTED(KP,4)=INDX
          ENDIF
          IF (ABS(PSPECIES_NTD(KP)).GT.0) THEN
             INDX=INDX+1
-            INDXDWKC(KP,5)=INDX
+            EXPECTED(KP,5)=INDX
          ENDIF
       ENDDO
-      
+
+C     KJP RETAINS THE MASTER THREAD'S COMPONENT WORKSPACE UNTIL THE
+C     FINAL DWK/NTV DIAGNOSTIC.  REUSE THAT WORKSPACE IF, AND ONLY IF,
+C     ITS COMPLETE SHAPE AND COMPONENT MAP STILL MATCH THIS RUN.
+      IF (ALLOCATED(INDXDWKC)) THEN
+         IF (.NOT.ALLOCATED(VX1PARAC).OR.
+     &       .NOT.ALLOCATED(VX1PERPC).OR.
+     &       .NOT.ALLOCATED(VX2PARAC).OR.
+     &       .NOT.ALLOCATED(VX2PERPC).OR.
+     &       .NOT.ALLOCATED(VQ1PARAC).OR.
+     &       .NOT.ALLOCATED(VQ1PERPC).OR.
+     &       .NOT.ALLOCATED(VQ2PARAC).OR.
+     &       .NOT.ALLOCATED(VQ2PERPC).OR.
+     &       .NOT.ALLOCATED(VQ3PARAC).OR.
+     &       .NOT.ALLOCATED(VQ3PERPC))
+     &      STOP 'INCOMPLETE DWK COMPONENT WORKSPACE'
+         IF (SIZE(INDXDWKC,1).NE.NSPECIES.OR.
+     &       SIZE(INDXDWKC,2).NE.5.OR.
+     &       ANY(INDXDWKC.NE.EXPECTED))
+     &      STOP 'INCONSISTENT DWK COMPONENT MAP'
+         IF (SIZE(VX1PARAC,1).NE.MSMAX.OR.
+     &       SIZE(VX1PARAC,2).NE.MSMAX.OR.
+     &       SIZE(VX1PARAC,3).NE.INDX.OR.
+     &       ANY(SHAPE(VX1PERPC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VX2PARAC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VX2PERPC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VQ1PARAC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VQ1PERPC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VQ2PARAC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VQ2PERPC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VQ3PARAC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VQ3PERPC).NE.SHAPE(VX1PARAC)))
+     &      STOP 'INCONSISTENT DWK COMPONENT WORKSPACE'
+         RETURN
+      ENDIF
+
+      ALLOCATE (INDXDWKC(NSPECIES,5))
+      INDXDWKC = EXPECTED
+
       ALLOCATE ( VX1PARAC(MSMAX,MSMAX,INDX), VX1PERPC(MSMAX,MSMAX,INDX),
      &           VX2PARAC(MSMAX,MSMAX,INDX), VX2PERPC(MSMAX,MSMAX,INDX),
      &           VQ1PARAC(MSMAX,MSMAX,INDX), VQ1PERPC(MSMAX,MSMAX,INDX),
      &           VQ2PARAC(MSMAX,MSMAX,INDX), VQ2PERPC(MSMAX,MSMAX,INDX),
      &           VQ3PARAC(MSMAX,MSMAX,INDX), VQ3PERPC(MSMAX,MSMAX,INDX))
+      VX1PARAC = 0.
+      VX1PERPC = 0.
+      VX2PARAC = 0.
+      VX2PERPC = 0.
+      VQ1PARAC = 0.
+      VQ1PERPC = 0.
+      VQ2PARAC = 0.
+      VQ2PERPC = 0.
+      VQ3PARAC = 0.
+      VQ3PERPC = 0.
       END SUBROUTINE ALLOCATEDWKCOMPMAT
       
       SUBROUTINE DEALLOCATEDWKCOMPMAT
