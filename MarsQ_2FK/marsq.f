@@ -4059,6 +4059,7 @@ C
       INERT2    = .TRUE.
       INERT3    = .TRUE.
       ODWKCOM   = .FALSE.
+      OKI0FAC   = .FALSE.
       ISLSODE   = .TRUE.
 C
       DCONTI = .FALSE.
