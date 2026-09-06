@@ -8,6 +8,7 @@
 FFLAGS = -OPT:Olimit=0 -m64
 
 PROG =	 marsq.x
+BUILD_DIR ?= ../build
 DIR_LSODE = /lsode
 SRCS_LSODE = daxpy.f   dcopy.f  dewset.f  dgbsl.f  dgesl.f \
              dprepj.f  dsolsy.f  dstode.f  dvnorm.f  iumach.f  lsode.f   xerrwd.f \
@@ -61,14 +62,48 @@ F95FLAGS = -O1 -r8 -openmp
 
 all: $(PROG)
 
+.PHONY: gnu gnu-debug ifx nvhpc clean-objects test test-runtime check
+.NOTPARALLEL: gnu gnu-debug ifx nvhpc
+
+gnu:
+	python3 ../tools/build_with_provenance.py --profile gnu \
+		--build-dir $(BUILD_DIR)
+
+gnu-debug:
+	python3 ../tools/build_with_provenance.py --profile gnu-debug \
+		--build-dir $(BUILD_DIR)
+
+# Source the Intel oneAPI environment before invoking this target.
+ifx:
+	python3 ../tools/build_with_provenance.py --profile ifx \
+		--build-dir $(BUILD_DIR)
+
+# Put the NVIDIA HPC SDK compiler and HPC-X MPI wrapper on PATH first.
+nvhpc:
+	python3 ../tools/build_with_provenance.py --profile nvhpc \
+		--build-dir $(BUILD_DIR)
+
 $(PROG): $(OBJS)
 	$(F95) $(F95FLAGS) -o $@ $(OBJS) $(LIBS) $(INCDIR)
 
 clean:
 	rm -f $(PROG) *.o *.mod *.d  \lsode\*.o \lsode\*.mod 
 
+# The legacy dependency graph writes compiler-specific modules and objects into
+# the source tree.  Remove only those intermediates before changing compiler;
+# keep the historical tracked executable untouched.
+clean-objects:
+	rm -f *.o *.mod *.d lsode/*.o lsode/*.mod
+
 test:
-	echo $(OBJS) 
+	python -B -m unittest discover -s ../tests -p 'test_*.py'
+
+test-runtime:
+	test -n "$(MARS_EXE)"
+	MARS_EXE="$(MARS_EXE)" python -B -m unittest discover \
+		-s ../tests -p 'test_*.py'
+
+check: test
 
 tar:
 	gtar zcvf ../$(PROG).tar.gz $(SRCS) $(INCS) $(MODS) makefile README
@@ -80,5 +115,3 @@ tar:
 
 .f.o:
 	$(F95) $(F95FLAGS) -c $<
-
-
