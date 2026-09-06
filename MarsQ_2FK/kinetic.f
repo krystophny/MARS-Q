@@ -8653,12 +8653,14 @@ C=======================================================================
       USE DIMENSIM
       USE GLOBALM
       USE KINETICM
+      USE FEEDBACKM, ONLY: KTREST
       IMPLICIT NONE
       INCLUDE 'specmat.inc'
       INCLUDE 'compam.inc'
       INCLUDE 'comioc.inc'
 
       COMPLEX*16 AL0SAVE
+      INTEGER    J,KTRESTSAVE
 
 C     IPERTURB=1 SETS KPBKEY=0 SO THE KINETIC PRESSURE DOES NOT ALTER
 C     THE FLUID RESPONSE.  THE NTV ENERGY CONTRACTION STILL REQUIRES
@@ -8667,11 +8669,37 @@ C     BUILD THAT PASSIVE OPERATOR WITH KJP DISABLED: THE EXPENSIVE
 C     RESPONSE COEFFICIENTS COME FROM THE VALIDATED PCOEF CACHE.  WHEN
 C     THE FIELD WAS IMPORTED, THE CALLER RESTORES THE VALIDATED B/X
 C     ARRAYS AFTER THIS ROUTINE RETURNS.
+C     FEEDCTRL temporarily sets T/TM=1 for the discarded carrier solve.
+C     The normal LINEAR pass brackets KJP with the saved equilibrium arrays,
+C     but this passive KJPKEY=0 pass also consumes T/TM throughout PLASMALIN
+C     and KCOEFFI.  Expose the saved equilibrium F(s) for this whole pass;
+C     otherwise the reciprocal pressure-to-displacement blocks are built on
+C     the vacuum toroidal field even though the KJP coefficients used by the
+C     torque contraction were built on the equilibrium field.
       AL0SAVE = AL0
       AL0 = ALNORM
       KJPKEY = 0
       KPBKEY = 1
+      KTRESTSAVE = KTREST
+      IF (KTRESTSAVE.NE.0) THEN
+         DO J=1,NRP1
+            T(J)  = TSAVE(J)
+         ENDDO
+         DO J=1,NR
+            TM(J) = TMSAVE(J)
+         ENDDO
+         KTREST = 0
+      ENDIF
       CALL LINEAR(ASUBM,BSUBM,CSUBM,DSUBM,ESUBM,FSUBM,GSUBM,HSUBM)
+      IF (KTRESTSAVE.NE.0) THEN
+         DO J=1,NRP1
+            T(J)  = 1.0
+         ENDDO
+         DO J=1,NR
+            TM(J) = 1.0
+         ENDDO
+         KTREST = KTRESTSAVE
+      ENDIF
       AL0 = AL0SAVE
 
       RETURN

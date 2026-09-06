@@ -77,11 +77,15 @@ supported with `INCKIN>0`, `IPERTURB>0`, and `KNTV=20/21`, or for the Shaing
 `KNTV=10/11` diagnostic.  `INCFEED=4` may be used as a vacuum-only carrier:
 when the supplied equilibrium has a non-constant toroidal field function,
 also set `KEEPTFUN=1` in `&FEEDBACK`.  `FEEDCTRL` still uses `T=TM=1` while
-assembling the discarded feedback carrier, but the fixed MARS-K path restores
-the supplied `F(s)=R B_phi` only around the nested kinetic `KJP` call.  This
-keeps the fluid/feedback carrier bit-identical to the historical
-`KEEPTFUN=0` path while preventing the kinetic operator from silently using
-the vacuum field.  The default remains `KEEPTFUN=0` for backward compatibility.
+assembling the discarded feedback carrier.  The fixed MARS-K path restores
+the supplied `F(s)=R B_phi` around both kinetic windows: the nested `KJP` call
+and the later passive `KJPKEY=0,KPBKEY=1` `LINEAR` pass that constructs the
+reciprocal pressure-to-displacement blocks.  The latter must use the same
+equilibrium field as the KJP coefficients; otherwise the torque contraction
+mixes equilibrium kinetic coefficients with a vacuum-field passive operator.
+The fluid/feedback carrier remains bit-identical to the historical
+`KEEPTFUN=0` path, and the default remains `KEEPTFUN=0` for backward
+compatibility.
 
 In this mode the external import explicitly enables the NTV output path and skips unrelated
 `FEEDOUT` feedback diagnostics before installing the supplied perturbation, so

@@ -324,6 +324,23 @@ class SourceContractTests(unittest.TestCase):
         self.assertLess(window.index("T(JKT)  = TSAVE(JKT)"), window.index("CALL KJP"))
         self.assertLess(window.index("CALL KJP"), window.index("T(JKT)  = 1.0"))
 
+    def test_keeptfun_restores_equilibrium_for_passive_operator(self) -> None:
+        """The KNTV passive matrix must use the same F(s) as KJP."""
+        prepare = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE PREPAREKINETICENERGYMAT") : KINETIC_SOURCE.index(
+                "SUBROUTINE ENERGYMAT"
+            )
+        ]
+        self.assertIn("USE FEEDBACKM, ONLY: KTREST", prepare)
+        self.assertIn("KTRESTSAVE = KTREST", prepare)
+        self.assertIn("T(J)  = TSAVE(J)", prepare)
+        self.assertIn("TM(J) = TMSAVE(J)", prepare)
+        self.assertIn("KTREST = 0", prepare)
+        self.assertIn("KJPKEY = 0", prepare)
+        self.assertLess(prepare.index("T(J)  = TSAVE(J)"), prepare.index("CALL LINEAR"))
+        self.assertLess(prepare.index("CALL LINEAR"), prepare.rindex("T(J)  = 1.0"))
+        self.assertIn("KTREST = KTRESTSAVE", prepare)
+
     def test_kinetic_equilibrium_filter_is_explicitly_selectable(self) -> None:
         """KSMOOTHB exposes the edge-spectrum diagnostic without changing defaults."""
         globalm = (ROOT / "MarsQ_2FK" / "globalm.f").read_text()
