@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib.util
 import cmath
 import math
+import json
 import os
 import re
 from pathlib import Path
@@ -59,7 +60,58 @@ def executable() -> Path | None:
             raise AssertionError(f"MARS_EXE does not exist: {path}")
         return path
     if DEFAULT_MARS_EXE.is_file() and os.access(DEFAULT_MARS_EXE, os.X_OK):
+        stale = default_build_staleness()
+        if stale is not None:
+            raise unittest.SkipTest(stale)
         return DEFAULT_MARS_EXE.resolve()
+    return None
+
+
+def default_build_staleness(record: Path | None = None) -> str | None:
+    """Why the in-tree build must not answer for this checkout, or ``None``.
+
+    A build directory outlives the branch it was made on. The one that
+    prompted this check was honestly labelled -- branch, commit, dirty flag and
+    diff digest all recorded -- and was simply from a commit that predates a
+    validation the tests now assert. Nothing read that label, so the mismatch
+    surfaced as a content assertion about a missing message, which points at
+    the source rather than at the binary and costs whoever reads it an hour.
+
+    So the label is read. A default build from a commit this checkout does not
+    contain, or from a modified worktree, is refused with the reason, and the
+    tier re-enables itself as soon as the build is redone. An explicit
+    ``MARS_EXE`` never reaches here: choosing a binary by hand is the caller's
+    decision to make.
+    """
+    if record is None:
+        record = DEFAULT_MARS_EXE.with_suffix(
+            DEFAULT_MARS_EXE.suffix + ".provenance.json"
+        )
+    if not record.is_file():
+        return (
+            f"the in-tree build has no provenance beside it ({record.name}); "
+            "rebuild it, or set MARS_EXE to choose a binary deliberately"
+        )
+    source = json.loads(record.read_text()).get("source", {})
+    commit = source.get("commit")
+    if not commit:
+        return f"{record.name} records no source commit for the in-tree build"
+    contained = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", commit, "HEAD"],
+        cwd=ROOT, capture_output=True,
+    )
+    if contained.returncode != 0:
+        return (
+            f"the in-tree build is from {commit[:12]}, which this checkout does "
+            f"not contain (branch {source.get('branch')!r}); rebuild it with "
+            "tools/build_with_provenance.py, or set MARS_EXE"
+        )
+    if source.get("dirty"):
+        return (
+            f"the in-tree build is from a modified worktree at {commit[:12]} "
+            f"(diff {str(source.get('diff_head_sha256'))[:12]}); rebuild it "
+            "from a clean tree, or set MARS_EXE"
+        )
     return None
 
 
@@ -1262,3 +1314,70 @@ class PrecessionResonanceFactorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DefaultBuildProvenanceTests(unittest.TestCase):
+    """The in-tree build may only answer for the checkout it was built from.
+
+    Git ancestry is the oracle here, and it is external to this module: a
+    commit either is or is not contained in the current checkout, and the test
+    uses the repository's own history rather than a recorded expectation.
+    """
+
+    def write(self, **source):
+        directory = tempfile.mkdtemp(prefix="mars-provenance-")
+        record = Path(directory, "marsq-gnu.x.provenance.json")
+        record.write_text(json.dumps({"source": source}))
+        self.addCleanup(shutil.rmtree, directory)
+        return record
+
+    def head(self) -> str:
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT,
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+    def test_a_build_from_this_checkout_is_accepted(self):
+        self.assertIsNone(
+            default_build_staleness(
+                self.write(commit=self.head(), branch="here", dirty=False)
+            )
+        )
+
+    def test_a_build_from_a_commit_this_checkout_lacks_is_refused(self):
+        """The case that cost an hour: a binary from a divergent branch."""
+        absent = "0" * 40
+        reason = default_build_staleness(
+            self.write(commit=absent, branch="somewhere-else", dirty=False)
+        )
+        self.assertIsNotNone(reason)
+        self.assertIn("does not contain", reason)
+        self.assertIn(absent[:12], reason)
+        self.assertIn("somewhere-else", reason)
+
+    def test_a_build_from_a_modified_worktree_is_refused(self):
+        reason = default_build_staleness(
+            self.write(commit=self.head(), branch="here", dirty=True,
+                       diff_head_sha256="a" * 64)
+        )
+        self.assertIsNotNone(reason)
+        self.assertIn("modified worktree", reason)
+        self.assertIn("a" * 12, reason)
+
+    def test_a_build_with_no_provenance_beside_it_is_refused(self):
+        directory = tempfile.mkdtemp(prefix="mars-provenance-")
+        self.addCleanup(shutil.rmtree, directory)
+        reason = default_build_staleness(Path(directory, "absent.json"))
+        self.assertIsNotNone(reason)
+        self.assertIn("no provenance", reason)
+
+    def test_a_provenance_without_a_commit_is_refused(self):
+        reason = default_build_staleness(self.write(branch="here", dirty=False))
+        self.assertIsNotNone(reason)
+        self.assertIn("no source commit", reason)
+
+    def test_the_in_tree_build_this_suite_is_using_is_current(self):
+        """Not a restatement: this fails when the build directory goes stale."""
+        if not DEFAULT_MARS_EXE.is_file():
+            self.skipTest("no in-tree build to check")
+        self.assertIsNone(default_build_staleness())

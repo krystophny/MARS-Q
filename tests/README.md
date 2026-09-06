@@ -38,11 +38,13 @@ executable tests need a built MARS, which is resolved in this order:
    hard error rather than a silent fallback, so the explicit workflow below
    still fails loudly on a typo.
 2. otherwise the in-tree default build `build/marsq-gnu.x`, relative to the
-   repository root, when it exists and is executable.
-3. otherwise the executable tests skip.
+   repository root, when it exists, is executable, and its provenance says it
+   was built from a commit this checkout contains, with a clean worktree.
+3. otherwise the executable tests skip, naming which of those it was.
 
-So a working tree that has been built runs the runtime tier by default; only a
-tree with no build at all falls back to the source-contract tier alone.
+So a working tree that has been built from itself runs the runtime tier by
+default; a tree with no build, or with one left behind by another branch, falls
+back to the source-contract tier and says so.
 
 Point the runtime tier at a different executable with:
 
@@ -50,12 +52,17 @@ Point the runtime tier at a different executable with:
 make -C MarsQ_2FK test-runtime MARS_EXE="$PWD/build/marsq-ifx.x"
 ```
 
-The default build is whatever was last written to `build/`, and nothing binds
-it to the checked-out source.  A runtime failure that the source-contract tests
-do not corroborate is therefore a stale-executable suspect first: compare
-`build/marsq-gnu.x.provenance.json` (`source.commit`, `source.dirty`) against
-`git rev-parse HEAD` before reading it as a code defect, and rebuild with
-`python3 tools/build_with_provenance.py --profile gnu` if they disagree.
+The default build is whatever was last written to `build/`, and a build
+directory outlives the branch it was made on.  That comparison is no longer
+left to the reader: the runtime tier reads
+`build/marsq-gnu.x.provenance.json` and refuses a default build whose
+`source.commit` is not an ancestor of `HEAD`, or that was made from a modified
+worktree, skipping with the recorded commit and branch in the message.  Rebuild
+with `python3 tools/build_with_provenance.py --profile gnu` and the tier
+re-enables itself.
+
+An explicit `MARS_EXE` is never subject to that check: choosing a binary by
+hand is the caller's decision.
 
 The long MAST-U and ITER system runs use external/private fixtures and are
 recorded in the consuming project rather than copied into this public source
