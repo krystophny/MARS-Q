@@ -10,6 +10,7 @@ import importlib.util
 import cmath
 import math
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -27,6 +28,7 @@ ANISOTROPIC_SOURCE = (ROOT / "MarsQ_2FK" / "anisotropic.f").read_text()
 TORQUE_SOURCE = (ROOT / "MarsQ_2FK" / "torque.f").read_text()
 PAMS_SOURCE = (ROOT / "MarsQ_2FK" / "pams.f").read_text()
 NEWRUN = (ROOT / "MarsQ_2FK" / "newrun.inc").read_text()
+GLOBALM_SOURCE = (ROOT / "MarsQ_2FK" / "globalm.f").read_text()
 MAKEFILE = (ROOT / "MarsQ_2FK" / "makefile").read_text()
 CHEASE_MAKEFILE = (ROOT / "CheaseMerge" / "makefile").read_text()
 BUILD_SPEC = importlib.util.spec_from_file_location(
@@ -1143,6 +1145,105 @@ class ExecutableInputTests(unittest.TestCase):
         result = run_with_input(run_input)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("KDWKREAD=1 REQUIRES KPERTREAD=1", result.stdout)
+
+
+def ki0_writer_body() -> str:
+    """The text of WRITE_KI0_FACTOR, from its header to its terminating END."""
+    start = KINETIC_SOURCE.index("SUBROUTINE WRITE_KI0_FACTOR")
+    body = KINETIC_SOURCE[start:]
+    # "      END" also prefixes "      ENDIF", so match the subprogram
+    # terminator on its own line.
+    return body[: body.index("\n      END\n")]
+
+
+class PrecessionResonanceFactorTests(unittest.TestCase):
+    """The KI0 diagnostic export must be opt-in and off the solve path.
+
+    `KI0` computes `VI0`, the complex precession-resonance energy factor, and
+    before this diagnostic the only way to see it was a `KCHECK` branch that is
+    compiled off and prints a single surface to stdout. That is not a dataset,
+    so the factor could not be compared against an independent reconstruction.
+    """
+
+    def test_flag_is_declared_defaulted_off_and_in_the_namelist(self) -> None:
+        # Declared beside the other output logicals, so it is one of them.
+        self.assertIn("ODWKCOM,OKI0FAC", GLOBALM_SOURCE)
+        # Readable from the deck.
+        self.assertIn("DPRINT,ODWKCOM,OKI0FAC", NEWRUN)
+        # Off unless the deck asks, so an ordinary run is untouched.
+        self.assertIn("OKI0FAC   = .FALSE.", MARS_SOURCE)
+        self.assertIn("C OKI0FAC = .TRUE.:", NEWRUN)
+
+    def test_writer_returns_before_doing_anything_when_the_flag_is_off(self) -> None:
+        body = ki0_writer_body()
+        guard = body.index("IF (.NOT. OKI0FAC) RETURN")
+        # Nothing may open, write to or inquire about a file before the guard.
+        for forbidden in ("OPEN(", "WRITE(FID", "INQUIRE("):
+            position = body.find(forbidden)
+            self.assertTrue(
+                position == -1 or position > guard,
+                f"{forbidden} appears before the OKI0FAC guard",
+            )
+
+    def test_export_cannot_change_the_solve(self) -> None:
+        """The writer may read shared state but must assign none of it."""
+        statement = re.compile(r"^([A-Z0-9_]+)\s*(\([^)]*\))?\s*=[^=]")
+        assigned = set()
+        for line in ki0_writer_body().splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith(("C", "!", "&")):
+                continue
+            for keyword in ("WRITE", "OPEN", "CLOSE", "INQUIRE", "IF", "CALL",
+                            "DO", "FLUSH", "RETURN", "END", "USE"):
+                if stripped.startswith(keyword):
+                    break
+            else:
+                match = statement.match(stripped)
+                if match:
+                    assigned.add(match.group(1))
+        # Only the routine's own locals may be written.
+        self.assertTrue(
+            assigned <= {"FID", "OMEGAN", "EXISTS", "KP", "K"},
+            f"the KI0 export assigns to shared state: {sorted(assigned)}",
+        )
+
+    def test_masked_and_integrated_surfaces_are_both_recorded(self) -> None:
+        """A reader must be able to tell a masked surface from a missing one."""
+        self.assertEqual(
+            KINETIC_SOURCE.count("CALL WRITE_KI0_FACTOR("), 2,
+            "expected one call on the rational-surface mask and one after the "
+            "integration",
+        )
+        self.assertIn("CALL WRITE_KI0_FACTOR(JS,KGRID,SLAMD0)", KINETIC_SOURCE)
+        self.assertIn("CALL WRITE_KI0_FACTOR(JS,KGRID,LAM0)", KINETIC_SOURCE)
+
+    def test_records_are_self_identifying(self) -> None:
+        """KI0 runs under OpenMP, so the file is not in surface order."""
+        body = ki0_writer_body()
+        self.assertIn("C$OMP CRITICAL(WRITE_KI0_FACTOR_FILE)", body)
+        self.assertIn("C$OMP END CRITICAL(WRITE_KI0_FACTOR_FILE)", body)
+        self.assertIn("WRITE(FID,130) JS,KGRID,KP", body)
+
+    def test_the_deck_sets_the_flag(self) -> None:
+        """Namelist wiring, against a built executable.
+
+        MARS echoes the parsed namelist, so a flag that reached the code reads
+        back as true. The run itself then fails for want of an equilibrium,
+        which is not what this checks.
+        """
+        result = run_with_input(minimal_input(outopt="OKI0FAC=.TRUE."))
+        self.assertIn("OKI0FAC=T", result.stdout.replace(" ", ""))
+
+    def test_the_flag_is_false_unless_the_deck_asks(self) -> None:
+        result = run_with_input(minimal_input())
+        self.assertIn("OKI0FAC=F", result.stdout.replace(" ", ""))
+
+    def test_a_misspelt_flag_does_not_pass_silently(self) -> None:
+        """Guards the two above: they would also pass on an ignored name."""
+        result = run_with_input(minimal_input(outopt="OKI0FACX=.TRUE."))
+        self.assertIn("OKI0FAC=F", result.stdout.replace(" ", ""))
+        self.assertNotEqual(result.returncode, 0)
+
 
 
 if __name__ == "__main__":
