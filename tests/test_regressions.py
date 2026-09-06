@@ -1145,5 +1145,71 @@ class ExecutableInputTests(unittest.TestCase):
         self.assertIn("KDWKREAD=1 REQUIRES KPERTREAD=1", result.stdout)
 
 
+class EquilibriumProfileBoundaryTest(unittest.TestCase):
+    """The species profile arrays must be defined on every radial index.
+
+    `PROFEQ.OUT` printed a non-reproducible final row: one archived TC24 run
+    wrote `NaN` in column 15 where twenty-three others wrote zero. The cause is
+    that `OMEGASE(NRP1)` had no edge assignment, so the boundary element was
+    read before it was ever written.
+
+    The oracle is the block's own structure, not the patch: the interior loop
+    fills `2..NR`, the axis block fills `1`, and every array that block handles
+    is given an explicit `NRP1` value. `OMEGASI` and `DLNRHO` always had one.
+    Any array that appears in the interior loop and in the axis fix-up must also
+    appear in the edge fix-up, or its boundary element is undefined.
+    """
+
+    def setUp(self) -> None:
+        start = MARS_SOURCE.index("C     COMPUTE ADDITIONAL EQUILIBRIUM PROFILES")
+        end = MARS_SOURCE.index("      DO J=2,NR", MARS_SOURCE.index("DOMEGASI(J)") - 400)
+        self.block = MARS_SOURCE[start:end]
+        axis = self.block.index("      J = 1\n")
+        edge = self.block.index("      J = NRP1\n")
+        self.assertLess(axis, edge, "axis fix-up must precede the edge fix-up")
+        self.axis_fixup = self.block[axis:edge]
+        self.edge_fixup = self.block[edge:]
+
+    def assigned(self, text: str) -> set[str]:
+        names = set()
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("C"):
+                continue
+            head, _, _ = stripped.partition("=")
+            name, _, rest = head.partition("(")
+            if rest:
+                names.add(name.strip())
+        return names
+
+    def test_every_axis_corrected_profile_is_also_edge_corrected(self) -> None:
+        axis = self.assigned(self.axis_fixup)
+        edge = self.assigned(self.edge_fixup)
+        self.assertIn("OMEGASI", axis)
+        self.assertIn("DLNRHO", axis)
+        missing = sorted(axis - edge)
+        self.assertEqual(
+            missing,
+            [],
+            f"profile arrays corrected at the axis but not at the edge: {missing}; "
+            "their NRP1 element is an uninitialized read",
+        )
+
+    def test_omegase_boundary_element_is_written(self) -> None:
+        """The specific element that PROFEQ.OUT column 15 exposes."""
+        self.assertIn("OMEGASE", self.assigned(self.edge_fixup))
+
+    def test_the_boundary_element_is_consumed(self) -> None:
+        """Guard against the fix being dropped as cosmetic.
+
+        `OMEGASE(NRP1)` is not write-only: it is printed, and it is read by the
+        half-mesh derivative at `J=NR` and by the diamagnetic shift over the
+        full index range.
+        """
+        self.assertIn("DOMEGASEM(J)  = (OMEGASE(J+1)-OMEGASE(J))/H1", MARS_SOURCE)
+        self.assertIn("SHIFTBC(I)=SHIFTC(I)-RNTOR*OMEGASE(I)*CI*zobe", MARS_SOURCE)
+
+
+
 if __name__ == "__main__":
     unittest.main()
