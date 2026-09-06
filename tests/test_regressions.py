@@ -7,6 +7,7 @@ black-box input-validation tests against a built MARS executable.
 from __future__ import annotations
 
 import importlib.util
+import math
 import os
 from pathlib import Path
 import shutil
@@ -266,6 +267,24 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("CALL READ_SURFACE_QUANTITIES (IS+1,1)", calculator)
         self.assertIn("DWK CACHE/FIELD/OPPARA/OPPERP/PARA/PERP MAXIMA", calculator)
         self.assertIn("INVALID ZERO DWK CONTRACTION INPUT", calculator)
+
+    def test_direct_dwk_check_compares_like_density_normalizations(self) -> None:
+        """The independent and component paths must both retain the DWK density."""
+        direct = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE CALCDWKDIRECTCHECK") :
+            KINETIC_SOURCE.index("END SUBROUTINE CALCDWKDIRECTCHECK")
+        ]
+        self.assertIn("DIRECT=DIRECT*PI*HCHI", direct)
+        self.assertNotIn("DIRECT=DIRECT*PI*HCHI/PI2", direct)
+
+        n_chi = 257
+        integrand = complex(1.25, -0.75)
+        historical_density = sum([integrand] * n_chi) * math.pi * (
+            2.0 * math.pi / n_chi
+        )
+        component_density = 2.0 * math.pi**2 * integrand
+        self.assertAlmostEqual(historical_density.real, component_density.real)
+        self.assertAlmostEqual(historical_density.imag, component_density.imag)
 
     def test_frequency_scratch_is_thread_private(self) -> None:
         """KBTIME's per-surface RUU2 must not race across OpenMP workers."""
