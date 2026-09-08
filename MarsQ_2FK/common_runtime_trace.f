@@ -88,6 +88,11 @@ C$OMP CRITICAL(ELL_TRACE_WRITE)
          WRITE(FID,'(A,ES24.16)') '# rho_pol = ',RADIAL
          WRITE(FID,'(A)') '# radial_coordinate = CS/CSM=rho_pol; join s_tor externally'
          WRITE(FID,'(A)') '# position_coordinates = Boozer(chi,phi,tau)'
+         WRITE(FID,'(A)') '# orbit_span = half_bounce'
+         WRITE(FID,'(A)') '# start_point = lower_turning_point'
+         WRITE(FID,'(A)') '# end_point = upper_turning_point'
+         WRITE(FID,'(A)') '# endpoint_bounce_angle = pi'
+         WRITE(FID,'(A)') '# time_orientation = increasing_native_RTK'
          WRITE(FID,'(A)') '# phase_gauge = chi=RCHIK(1), phi=RPHIK(1)=0, tau=RTK(1)=0'
          WRITE(FID,'(A)') '# tau = native MARS normalized bounce-time coordinate'
          WRITE(FID,'(A)') '# endpoint_flag: -1 lower add-back, 0 interior, +1 upper add-back'
