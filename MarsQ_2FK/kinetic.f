@@ -4307,6 +4307,13 @@ C        COMPUTE G-FACTORS
 C        COMPUTE H-FACTORS
          CALL KH(JS,KGRID,0)
 
+C        DEFAULT-OFF COMMON ORBIT PACKET.  This is called only after the
+C        native trapped orbit geometry, bounce time, G and H factors have
+C        all been built for this lambda.  The writer itself selects the
+C        requested (JS,KGRID,ELL) row from ELL_TRACE.REQUEST and is read-only
+C        with respect to the production arrays.
+         CALL WRITEKJPCOMMONTRACE(JS,JS_MAT,KGRID,LAM)
+
          IF (IFOWT.EQ.1) THEN
             CALL KI(JS,JS_MAT,KGRID,0,2,J,1,1)
             CALL KI(JS,JS_MAT,KGRID,0,3,J,1,1)
