@@ -140,16 +140,17 @@ C           KH endpoint coefficients, copied term-for-term from KH.
      &             EXP(CI*(RM(K,2)*CHIU+RNTOR*RPHIK(NCHI2+2))) *
      &             2.D0*COS(RLM(L)*PI)/SQRT(-HPU)
 
-            GENDP = (FLG+FUG)*4.D0*SQRT(DIFFERCHI(CHIU,CHIL))/RCHIHK
-            HENDX1 = (FLX1+FUX1)*PHASE0
-            HENDX2 = (FLX2+FUX2)*PHASE0
-            HENDQ1 = (FLQ1+FUQ1)*PHASE0
-            HENDQ2 = (FLQ2+FUQ2)*PHASE0
-            HENDQ3 = (FLQ3+FUQ3)*PHASE0
-            HENDDP = (FLDP+FUDP)*PHASE0
+            GENDP = FLG*4.D0*SQRT(DIFFERCHI(CHIU,CHIL))/RCHIHK
+            HENDX1 = FLX1*PHASE0
+            HENDX2 = FLX2*PHASE0
+            HENDQ1 = FLQ1*PHASE0
+            HENDQ2 = FLQ2*PHASE0
+            HENDQ3 = FLQ3*PHASE0
+            HENDDP = FLDP*PHASE0
 
-C           Lower endpoint add-back row.  The endpoint values are placed in
-C           the same columns as the corresponding interior integrands.
+C           Lower endpoint add-back row.  Emit only the lower coefficient;
+C           the upper coefficient is emitted in the separate upper row below.
+C           This makes the row sum equal the one native (FLG+FUG) add-back.
             CALL WRITEKJPCOMMONROW(FID,JS,JS_MAT,KGRID,0,K,1,RLAM,
      &       RM(K,2),RLM(L),RCHIK(1),RPHIK(1),RTK(1),0.D0,
      &       OMEGAB*RTK(1),RADIAL,RHK(1),B0K/RHK(1),RJBK(1),ZERO,ZERO,
@@ -194,7 +195,15 @@ C           the same columns as the corresponding interior integrands.
      &          GNORM,HNORM,0)
             ENDDO
 
-C           Upper endpoint add-back row.
+C           Upper endpoint add-back row.  Emit only the upper coefficient so
+C           the two endpoint rows are not a duplicated complete add-back.
+            GENDP = FUG*4.D0*SQRT(DIFFERCHI(CHIU,CHIL))/RCHIHK
+            HENDX1 = FUX1*PHASE0
+            HENDX2 = FUX2*PHASE0
+            HENDQ1 = FUQ1*PHASE0
+            HENDQ2 = FUQ2*PHASE0
+            HENDQ3 = FUQ3*PHASE0
+            HENDDP = FUDP*PHASE0
             CALL WRITEKJPCOMMONROW(FID,JS,JS_MAT,KGRID,0,K,NCHI2+2,
      &       RLAM,RM(K,2),RLM(L),RCHIK(NCHI2+2),
      &       RPHIK(NCHI2+2),RTK(NCHI2+2),1.D0,
