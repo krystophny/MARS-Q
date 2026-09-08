@@ -152,7 +152,7 @@ C           Lower endpoint add-back row.  The endpoint values are placed in
 C           the same columns as the corresponding interior integrands.
             CALL WRITEKJPCOMMONROW(FID,JS,JS_MAT,KGRID,0,K,1,RLAM,
      &       RM(K,2),RLM(L),RCHIK(1),RPHIK(1),RTK(1),0.D0,
-     &       OMEGAB*RTK(1),RHK(1),B0K/RHK(1),RJBK(1),ZERO,ZERO,
+     &       OMEGAB*RTK(1),RADIAL,RHK(1),B0K/RHK(1),RJBK(1),ZERO,ZERO,
      &       GENDP,GENDP,ZERO,HENDX1,HENDX2,HENDQ1,HENDQ2,HENDQ3,HENDDP,
      &       GNORM,HNORM,-1)
 
@@ -189,7 +189,7 @@ C           the same columns as the corresponding interior integrands.
                HDP=PH*HP7-CTMPL*FLDP-CTMPU*FUDP
                CALL WRITEKJPCOMMONROW(FID,JS,JS_MAT,KGRID,0,K,J,RLAM,
      &          RM(K,2),RLM(L),RCHIK(J),RPHIK(J),RTK(J),
-     &          RTK(J)/TAUEND,OMEGAB*RTK(J),RHK(J),B0K/RHK(J),RJBK(J),
+     &          RTK(J)/TAUEND,OMEGAB*RTK(J),RADIAL,RHK(J),B0K/RHK(J),RJBK(J),
      &          PG,GPARA,GPERP,GDPHI,PH,HX1,HX2,HQ1,HQ2,HQ3,HDP,
      &          GNORM,HNORM,0)
             ENDDO
@@ -198,7 +198,7 @@ C           Upper endpoint add-back row.
             CALL WRITEKJPCOMMONROW(FID,JS,JS_MAT,KGRID,0,K,NCHI2+2,
      &       RLAM,RM(K,2),RLM(L),RCHIK(NCHI2+2),
      &       RPHIK(NCHI2+2),RTK(NCHI2+2),1.D0,
-     &       OMEGAB*RTK(NCHI2+2),RHK(NCHI2+2),B0K/RHK(NCHI2+2),
+     &       OMEGAB*RTK(NCHI2+2),RADIAL,RHK(NCHI2+2),B0K/RHK(NCHI2+2),
      &       RJBK(NCHI2+2),ZERO,ZERO,GENDP,GENDP,ZERO,HENDX1,HENDX2,
      &       HENDQ1,HENDQ2,HENDQ3,HENDDP,GNORM,HNORM,1)
          ENDDO
@@ -211,24 +211,26 @@ C$OMP END CRITICAL(ELL_TRACE_WRITE)
 
 C=======================================================================
 C One row writer keeps the schema and complex-pair ordering in one place.
-C Six integer fields precede thirteen real fields and eleven complex pairs.
+C Six integer fields precede twelve scalar fields and eleven complex pairs;
+C the two normalization scalars make thirty-six real fields in total.
 C=======================================================================
       SUBROUTINE WRITEKJPCOMMONROW(FID,JS,JS_MAT,KGRID,KPARTICLE,
      & MIDX,JIDX,RLAM,MVAL,ELL,CHI,PHI,TAU,TAUFRACTION,BOUNCE_ANGLE,
-     & RHVAL,BVAL,JBVAL,PG,GPARA,GPERP,GDPHI,PH,HX1,HX2,HQ1,HQ2,HQ3,HDP,
+     & RADIAL,RHVAL,BVAL,JBVAL,PG,GPARA,GPERP,GDPHI,PH,HX1,HX2,HQ1,HQ2,
+     & HQ3,HDP,
      & GNORM,HNORM,ENDPOINT)
 
       IMPLICIT NONE
       INTEGER FID,JS,JS_MAT,KGRID,KPARTICLE,MIDX,JIDX,ENDPOINT
       REAL*8 RLAM,MVAL,ELL,CHI,PHI,TAU,TAUFRACTION,BOUNCE_ANGLE,
-     &       RHVAL,BVAL,JBVAL,GNORM,HNORM
+     &       RADIAL,RHVAL,BVAL,JBVAL,GNORM,HNORM
       COMPLEX*16 PG,GPARA,GPERP,GDPHI,PH,HX1,HX2,HQ1,HQ2,HQ3,HDP
       WRITE(FID,1000) JS,JS_MAT,KGRID,KPARTICLE,MIDX,JIDX,
-     & RLAM,MVAL,ELL,CHI,PHI,TAU,TAUFRACTION,BOUNCE_ANGLE,RHVAL,BVAL,
+     & RLAM,MVAL,ELL,CHI,PHI,TAU,TAUFRACTION,BOUNCE_ANGLE,RADIAL,RHVAL,BVAL,
      & JBVAL,REAL(PG),AIMAG(PG),REAL(GPARA),AIMAG(GPARA),
      & REAL(GPERP),AIMAG(GPERP),REAL(GDPHI),AIMAG(GDPHI),REAL(PH),
      & AIMAG(PH),REAL(HX1),AIMAG(HX1),REAL(HX2),AIMAG(HX2),REAL(HQ1),
      & AIMAG(HQ1),REAL(HQ2),AIMAG(HQ2),REAL(HQ3),AIMAG(HQ3),REAL(HDP),
      & AIMAG(HDP),GNORM,HNORM,ENDPOINT
- 1000 FORMAT(6I8,35(1X,E24.16),1X,I3)
+ 1000 FORMAT(6I8,36(1X,E24.16),1X,I3)
       END SUBROUTINE WRITEKJPCOMMONROW

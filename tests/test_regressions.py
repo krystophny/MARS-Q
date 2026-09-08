@@ -23,6 +23,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 MARS_SOURCE = (ROOT / "MarsQ_2FK" / "marsq.f").read_text()
 KINETIC_SOURCE = (ROOT / "MarsQ_2FK" / "kinetic.f").read_text()
+COMMON_TRACE_SOURCE = (ROOT / "MarsQ_2FK" / "common_runtime_trace.f").read_text()
 KINETIC_MODULE = (ROOT / "MarsQ_2FK" / "kineticm.f").read_text()
 ANISOTROPIC_SOURCE = (ROOT / "MarsQ_2FK" / "anisotropic.f").read_text()
 TORQUE_SOURCE = (ROOT / "MarsQ_2FK" / "torque.f").read_text()
@@ -1306,6 +1307,33 @@ class EquilibriumProfileBoundaryTest(unittest.TestCase):
         """
         self.assertIn("DOMEGASEM(J)  = (OMEGASE(J+1)-OMEGASE(J))/H1", MARS_SOURCE)
         self.assertIn("SHIFTBC(I)=SHIFTC(I)-RNTOR*OMEGASE(I)*CI*zobe", MARS_SOURCE)
+
+
+class CommonRuntimeTraceSchemaTest(unittest.TestCase):
+    """The common packet header must describe the row writer exactly."""
+
+    def test_declared_columns_match_the_formatter(self) -> None:
+        # Keep this independent of the implementation's local variable names:
+        # the output header is the behavioral contract consumed downstream.
+        fields = """js js_mat kgrid kparticle m_index sample_index lambda m ell
+            chi phi tau tau_fraction bounce_angle rho_pol b0_over_b b_norm jb
+            gphase_re gphase_im gpara_re gpara_im gperp_re gperp_im
+            gdphi_re gdphi_im hphase_re hphase_im hx1_re hx1_im hx2_re hx2_im
+            hq1_re hq1_im hq2_re hq2_im hq3_re hq3_im hdp_re hdp_im
+            g_normalization h_normalization endpoint_flag""".split()
+        self.assertEqual(len(fields), 43)
+        self.assertEqual(fields[:6], ["js", "js_mat", "kgrid", "kparticle", "m_index", "sample_index"])
+        self.assertEqual(fields[-1], "endpoint_flag")
+        self.assertIn("'# columns: js js_mat kgrid kparticle m_index sample_index lambda m ell '", COMMON_TRACE_SOURCE)
+        self.assertIn("'chi phi tau tau_fraction bounce_angle rho_pol b0_over_b b_norm jb '", COMMON_TRACE_SOURCE)
+        self.assertIn("FORMAT(6I8,36(1X,E24.16),1X,I3)", COMMON_TRACE_SOURCE)
+
+    def test_radial_coordinate_is_passed_to_every_row(self) -> None:
+        self.assertEqual(COMMON_TRACE_SOURCE.count("OMEGAB*RTK(1),RADIAL,"), 1)
+        self.assertEqual(COMMON_TRACE_SOURCE.count("OMEGAB*RTK(J),RADIAL,"), 1)
+        self.assertEqual(
+            COMMON_TRACE_SOURCE.count("OMEGAB*RTK(NCHI2+2),RADIAL,"), 1
+        )
 
 
 
