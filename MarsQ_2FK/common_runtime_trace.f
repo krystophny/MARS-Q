@@ -88,6 +88,7 @@ C$OMP CRITICAL(ELL_TRACE_WRITE)
          WRITE(FID,'(A,ES24.16)') '# rho_pol = ',RADIAL
          WRITE(FID,'(A)') '# radial_coordinate = CS/CSM=rho_pol; join s_tor externally'
          WRITE(FID,'(A)') '# position_coordinates = Boozer(chi,phi,tau)'
+         WRITE(FID,'(A)') '# orbit_class = trapped'
          WRITE(FID,'(A)') '# orbit_span = half_bounce'
          WRITE(FID,'(A)') '# start_point = lower_turning_point'
          WRITE(FID,'(A)') '# end_point = upper_turning_point'
