@@ -249,6 +249,35 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("FORMAT(16I8,14(1X,E24.16))", writer)
         self.assertLess(1 + 2 * 141, 141**2)
 
+    def test_leg_trace_reconstructs_native_trapped_cosine_factors(self) -> None:
+        """The two emitted legs must restore KG/KH's folded terms."""
+        writer = COMMON_TRACE_SOURCE[
+            COMMON_TRACE_SOURCE.index("SUBROUTINE WRITEKJPLEGTRACE") :
+            COMMON_TRACE_SOURCE.index("END SUBROUTINE WRITEKJPLEGROW")
+        ]
+        self.assertIn("# schema: iter-tc24-mars-leg-resolved-kg-kh-v1", writer)
+        self.assertIn("orbit_id", writer)
+        self.assertIn("cell_id", writer)
+        self.assertIn("k_value m_value", writer)
+        self.assertIn("LEGLOOP: DO LEG=-1,1,2", writer)
+        self.assertIn("GLEG=EXP(CI*(PGPHASE+LEG*THETA))/2.D0", writer)
+        self.assertIn("HLEG=EXP(CI*(PHPHASE+LEG*THETA))", writer)
+        coefficient = KINETIC_SOURCE[
+            KINETIC_SOURCE.index("SUBROUTINE KJPCOEFF") :
+            KINETIC_SOURCE.index("SUBROUTINE KJPFILL")
+        ]
+        self.assertLess(
+            coefficient.index("CALL WRITEKJPLEGTRACE"),
+            coefficient.index("CALL KJPFILL (JS,JS_MAT,KGRID,J,LAMH,0,1)"),
+        )
+
+        phase = 0.37
+        theta = -1.21
+        g_legs = [0.5 * cmath.exp(1j * (phase + leg * theta)) for leg in (-1, 1)]
+        h_legs = [cmath.exp(1j * (phase + leg * theta)) for leg in (-1, 1)]
+        self.assertAlmostEqual(sum(g_legs), cmath.exp(1j * phase) * math.cos(theta))
+        self.assertAlmostEqual(sum(h_legs), 2.0 * cmath.exp(1j * phase) * math.cos(theta))
+
     def test_pitch_mesh_fails_before_allocated_extent_is_exceeded(self) -> None:
         self.assertIn("INVALID PITCH MESH", MARS_SOURCE)
         self.assertIn("NLAMK-NLAMIN-1.LE.0", MARS_SOURCE)

@@ -413,3 +413,282 @@ C=======================================================================
      & ORIENTSTATE,ORIENTVPAR,ENDPOINT
  1000 FORMAT(6I8,41(1X,E24.16),1X,I3)
       END SUBROUTINE WRITEKJPCOMMONROW
+
+C=======================================================================
+C DEFAULT-OFF LEG-RESOLVED KG/KH SOURCE PACKET.
+C
+C KG and KH currently fold the two trapped velocity legs into cos(theta).
+C This packet writes the two pre-fold complex legs at the same native
+C quadrature cells, including the analytic endpoint add-backs.  The row
+C carries the source surface/orbit identifiers and the native K/M/ell
+C indices; no correspondence, phase, radial, or field quantity is inferred.
+C It is intentionally upstream of KJPFILL and the DWK cache.  The existing
+C cache schema has already summed lambda/cell/leg contributions, so this
+C producer packet is the exact first source boundary for a future cache
+C extension; it does not pretend to provide a downstream consumer.
+C=======================================================================
+      SUBROUTINE WRITEKJPLEGTRACE(JS,JS_MAT,KGRID,RLAM)
+
+      USE RCOMDM
+      USE DIMENSIM
+      USE GLOBALM
+      USE KINETICM
+      USE ToolBox
+      IMPLICIT NONE
+      INCLUDE 'compam.inc'
+
+      INTEGER JS,JS_MAT,KGRID,J,K,L,M,FID,LEG,ENDPOINT
+      INTEGER ORBITID,CELLID
+      REAL*8 RLAM,OMEGAE,DPSIS,RADIAL,GNORM,HNORM,PHASE0,
+     &       ARG,SQRTARG,THETA,PGPHASE,PHPHASE,CTMPL,CTMPU,
+     &       GP1,GP2,GP3,HP1,HP6,HP2,HP3,HP4,HP5,HP7,
+     &       HCHIFACTOR,VPSTATE,ORIENTSTATE,ORIENTVPAR
+      COMPLEX*16 FLG,FUG,FLX1,FLX2,FLQ1,FLQ2,FLQ3,FLDP,
+     &       FUX1,FUX2,FUQ1,FUQ2,FUQ3,FUDP,GLEG,HLEG,
+     &       GPARA,GPERP,GDPHI,HX1,HX2,HQ1,HQ2,HQ3,HDP,ZERO,CALPHA
+      LOGICAL OTRACE,OEXIST
+      CHARACTER*128 PATH
+      REAL*8 DIFFERCHI,DIFPI
+
+      IF (KGRID.NE.1.AND.KGRID.NE.2) RETURN
+      CALL KELLTRACESELECT(JS,KGRID,OTRACE)
+      IF (.NOT.OTRACE) RETURN
+      IF (IFOWT.NE.0) RETURN
+      IF (.NOT.ALLOCATED(RCHIK).OR..NOT.ALLOCATED(RPHIK).OR.
+     &    .NOT.ALLOCATED(RTK).OR..NOT.ALLOCATED(RHK).OR.
+     &    .NOT.ALLOCATED(RJBK)) RETURN
+      IF (RLAM.LE.0.D0) RETURN
+
+      IF (KGRID.EQ.1) THEN
+         OMEGAE=ROT(JS)
+         DPSIS=DPSIDS(JS)
+         RADIAL=CS(JS)
+      ELSE
+         OMEGAE=ROTM(JS)
+         DPSIS=DPSIDSM(JS)
+         RADIAL=CSM(JS)
+      ENDIF
+      IF (DPSIS.EQ.0.D0) RETURN
+      IF (RTK(NCHI2+2).LE.0.D0) RETURN
+
+      GNORM=RCHIHK/4.D0/PI
+      HNORM=RCHIHK/4.D0*OMEGAB/PI
+      PHASE0=4.D0*SQRT(DIFFERCHI(CHIU,CHIL))/RCHIHK
+      ZERO=DCMPLX(0.D0,0.D0)
+      CALPHA=CI/(OMEGA-RNTOR*OMEGAE)
+      IF (IPERTURB.NE.0) CALPHA=ZERO
+      IF (V2XKEY.EQ.1 .OR. V2XKEY.EQ.3) CALPHA=ZERO
+      ORBITID=2*JS+KGRID
+
+      WRITE(PATH,'("ELL_TRACE_JS",I4.4,"_G",I1,"_LEGS.OUT")')
+     &      JS,KGRID
+C$OMP CRITICAL(ELL_TRACE_WRITE)
+      INQUIRE(FILE=PATH,EXIST=OEXIST)
+      FID=ASSIGNFREEFILEUNIT()
+      OPEN(FID,FILE=PATH,STATUS='UNKNOWN',POSITION='APPEND',
+     &     ACTION='WRITE')
+      IF (.NOT.OEXIST) THEN
+         WRITE(FID,'(A)') '# schema: iter-tc24-mars-leg-resolved-kg-kh-v1'
+         WRITE(FID,'(A)') '# source: KG/KH trapped KPARTICLE=0 before cosine fold'
+         WRITE(FID,'(A)') '# orbit_id = 2*js+kgrid; lambda remains source-bound'
+         WRITE(FID,'(A)') '# cell_id = native RCHIK/RTK sample index'
+         WRITE(FID,'(A)') '# leg = -1, +1; sum of both legs restores native cosine terms'
+         WRITE(FID,'(A)') '# endpoint = -1 lower add-back, 0 interior, +1 upper add-back'
+         WRITE(FID,'(A)') '# downstream_cache = not yet carried; KJPFILL is first boundary'
+         WRITE(FID,'(A)') '# fields: js js_mat kgrid kparticle orbit_id cell_id k m sample_index leg endpoint '
+     &      //'lambda k_value m_value ell_value chi phi tau tau_fraction theta rho_pol '
+     &      //'rho_h b0_over_b b_norm jb g_norm h_norm dpsids hchi vpar_state '
+     &      //'orientation_state orientation_vpar gpara_re gpara_im gperp_re '
+     &      //'gperp_im gdphi_re gdphi_im hx1_re hx1_im hx2_re hx2_im hq1_re '
+     &      //'hq1_im hq2_re hq2_im hq3_re hq3_im hdp_re hdp_im'
+      ENDIF
+
+      DO L=1,MLMAX
+         IF (NINT(RLM(L)).NE.KNTVELL) CYCLE
+         DO K=1,MSMAX
+         DO M=1,MSMAX
+            FLG=RJBK(1)/2.D0*SQRT(RLAM)/SQRT(HPL)*
+     &          EXP(-CI*RM(K,2)*CHIL)
+            FUG=RJBK(NCHI2+2)/2.D0*SQRT(RLAM)/SQRT(-HPU)*
+     &          EXP(CI*(-RNTOR*RPHIK(NCHI2+2)-RM(K,2)*CHIU))*
+     &          COS(RLM(L)*PI)
+            JLOOP: DO J=1,NCHI2+2
+               IF (J.EQ.1) THEN
+                  ENDPOINT=-1
+               ELSEIF (J.EQ.NCHI2+2) THEN
+                  ENDPOINT=1
+               ELSE
+                  ENDPOINT=0
+               ENDIF
+               CELLID=J
+               IF (RJBK(J).NE.0.D0) THEN
+                  HCHIFACTOR=DPSIS/RJBK(J)
+               ELSE
+                  HCHIFACTOR=0.D0
+               ENDIF
+               VPSTATE=0.D0
+               ORIENTSTATE=0.D0
+               ORIENTVPAR=0.D0
+
+               IF (ENDPOINT.NE.0) THEN
+                  THETA=RLM(L)*OMEGAB*RTK(J)
+                  LEGLOOP: DO LEG=-1,1,2
+                  IF (ENDPOINT.LT.0) THEN
+                     GPARA=ZERO
+                     GPERP=FLG*4.D0*SQRT(DIFFERCHI(CHIU,CHIL))/
+     &                  RCHIHK/2.D0
+                     GDPHI=GPERP
+                     HX1=(RX1BK(1)-RX1RK(1)*CALPHA)*SQRT(RLAM)*
+     &                  EXP(CI*RM(M,2)*CHIL)*2.D0/SQRT(HPL)*PHASE0/2.D0
+                     HX2=RX2K(1)*SQRT(RLAM)*EXP(CI*RM(M,2)*CHIL)*
+     &                  2.D0/SQRT(HPL)*PHASE0/2.D0
+                     HQ1=RQ1K(1)*RLAM*SQRT(RLAM)*
+     &                  EXP(CI*RM(M,2)*CHIL)*2.D0/SQRT(HPL)*PHASE0/2.D0
+                     HQ2=RQ2K(1)*RLAM*SQRT(RLAM)*
+     &                  EXP(CI*RM(M,2)*CHIL)*2.D0/SQRT(HPL)*PHASE0/2.D0
+                     HQ3=RQ3K*RLAM*SQRT(RLAM)*
+     &                  EXP(CI*RM(M,2)*CHIL)*2.D0/SQRT(HPL)*PHASE0/2.D0
+                     HDP=RJBK(1)/DPSIS*SQRT(RLAM)*
+     &                  EXP(CI*RM(M,2)*CHIL)*2.D0/SQRT(HPL)*PHASE0/2.D0
+                  ELSE
+                     GPARA=ZERO
+                     GPERP=FUG*4.D0*SQRT(DIFFERCHI(CHIU,CHIL))/
+     &                  RCHIHK/2.D0
+                     GDPHI=GPERP
+                     HX1=(RX1BK(NCHI2+2)-RX1RK(NCHI2+2)*CALPHA)*SQRT(RLAM)*
+     &                  EXP(CI*(RM(M,2)*CHIU+RNTOR*RPHIK(NCHI2+2)))*
+     &                  2.D0*COS(RLM(L)*PI)/SQRT(-HPU)*PHASE0/2.D0
+                     HX2=RX2K(NCHI2+2)*SQRT(RLAM)*
+     &                  EXP(CI*(RM(M,2)*CHIU+RNTOR*RPHIK(NCHI2+2)))*
+     &                  2.D0*COS(RLM(L)*PI)/SQRT(-HPU)*PHASE0/2.D0
+                     HQ1=RQ1K(NCHI2+2)*RLAM*SQRT(RLAM)*
+     &                  EXP(CI*(RM(M,2)*CHIU+RNTOR*RPHIK(NCHI2+2)))*
+     &                  2.D0*COS(RLM(L)*PI)/SQRT(-HPU)*PHASE0/2.D0
+                     HQ2=RQ2K(NCHI2+2)*RLAM*SQRT(RLAM)*
+     &                  EXP(CI*(RM(M,2)*CHIU+RNTOR*RPHIK(NCHI2+2)))*
+     &                  2.D0*COS(RLM(L)*PI)/SQRT(-HPU)*PHASE0/2.D0
+                     HQ3=RQ3K*RLAM*SQRT(RLAM)*
+     &                  EXP(CI*(RM(M,2)*CHIU+RNTOR*RPHIK(NCHI2+2)))*
+     &                  2.D0*COS(RLM(L)*PI)/SQRT(-HPU)*PHASE0/2.D0
+                     HDP=RJBK(NCHI2+2)/DPSIS*SQRT(RLAM)*
+     &                  EXP(CI*(RM(M,2)*CHIU+RNTOR*RPHIK(NCHI2+2)))*
+     &                  2.D0*COS(RLM(L)*PI)/SQRT(-HPU)*PHASE0/2.D0
+                  ENDIF
+                  CALL WRITEKJPLEGROW(FID,JS,JS_MAT,KGRID,ORBITID,CELLID,
+     &               K,M,RM(K,2),RM(M,2),RLM(L),RLAM,RCHIK(J),RPHIK(J),RTK(J),
+     &               RTK(J)/RTK(NCHI2+2),THETA,J,LEG,ENDPOINT,GPARA,GPERP,
+     &               GDPHI,HX1,HX2,
+     &               HQ1,HQ2,HQ3,HDP,GNORM,HNORM,RADIAL,RHK(J),B0K/RHK(J),
+     &               RJBK(J),DPSIS,HCHIFACTOR,VPSTATE,ORIENTSTATE,
+     &               ORIENTVPAR)
+                  ENDDO LEGLOOP
+                  CYCLE JLOOP
+               ENDIF
+
+               ARG=1.D0-RLAM/RHK(J)
+               IF (ARG.LE.0.D0) CYCLE JLOOP
+               SQRTARG=SQRT(ARG)
+               THETA=RLM(L)*OMEGAB*RTK(J)
+               PGPHASE=-RNTOR*RPHIK(J)-RM(K,2)*RCHIK(J)
+               PHPHASE=RNTOR*RPHIK(J)+RM(M,2)*RCHIK(J)
+               GP1=RJBK(J)*SQRTARG
+               GP2=0.5D0*RJBK(J)*RLAM/RHK(J)/SQRTARG
+               GP3=0.5D0*RJBK(J)/SQRTARG
+               CTMPL=1.D0/SQRT(DIFPI(RCHIK(J)-CHIL))
+               CTMPU=1.D0/SQRT(DIFPI(CHIU-RCHIK(J)))
+               HP1=((1.D0-RLAM/RHK(J))*RX1PK(J)+
+     &              (2.D0-RLAM/RHK(J))*RX1BK(J))/SQRTARG
+               HP6=(2.D0-RLAM/RHK(J))*RX1RK(J)/SQRTARG
+               HP2=(2.D0-RLAM/RHK(J))*RX2K(J)/SQRTARG
+               HP3=RLAM*RQ1K(J)/SQRTARG
+               HP4=RLAM*RQ2K(J)/SQRTARG
+               HP5=RLAM*RQ3K/SQRTARG
+               HP7=RJBK(J)/DPSIS/SQRTARG
+               FLX1=(RX1BK(1)-RX1RK(1)*CALPHA)*SQRT(RLAM)*EXP(CI*RM(M,2)*CHIL)*
+     &              2.D0/SQRT(HPL)
+               FLX2=RX2K(1)*SQRT(RLAM)*EXP(CI*RM(M,2)*CHIL)*
+     &              2.D0/SQRT(HPL)
+               FLQ1=RQ1K(1)*RLAM*SQRT(RLAM)*EXP(CI*RM(M,2)*CHIL)*
+     &              2.D0/SQRT(HPL)
+               FLQ2=RQ2K(1)*RLAM*SQRT(RLAM)*EXP(CI*RM(M,2)*CHIL)*
+     &              2.D0/SQRT(HPL)
+               FLQ3=RQ3K*RLAM*SQRT(RLAM)*EXP(CI*RM(M,2)*CHIL)*
+     &              2.D0/SQRT(HPL)
+               FLDP=RJBK(1)/DPSIS*SQRT(RLAM)*EXP(CI*RM(M,2)*CHIL)*
+     &              2.D0/SQRT(HPL)
+               FUX1=RX1BK(NCHI2+2)*SQRT(RLAM)*
+     &              EXP(CI*(RM(M,2)*CHIU+RNTOR*RPHIK(NCHI2+2)))*
+     &              2.D0*COS(RLM(L)*PI)/SQRT(-HPU)
+               FUX2=RX2K(NCHI2+2)*SQRT(RLAM)*
+     &              EXP(CI*(RM(M,2)*CHIU+RNTOR*RPHIK(NCHI2+2)))*
+     &              2.D0*COS(RLM(L)*PI)/SQRT(-HPU)
+               FUQ1=RQ1K(NCHI2+2)*RLAM*SQRT(RLAM)*
+     &              EXP(CI*(RM(M,2)*CHIU+RNTOR*RPHIK(NCHI2+2)))*
+     &              2.D0*COS(RLM(L)*PI)/SQRT(-HPU)
+               FUQ2=RQ2K(NCHI2+2)*RLAM*SQRT(RLAM)*
+     &              EXP(CI*(RM(M,2)*CHIU+RNTOR*RPHIK(NCHI2+2)))*
+     &              2.D0*COS(RLM(L)*PI)/SQRT(-HPU)
+               FUQ3=RQ3K*RLAM*SQRT(RLAM)*
+     &              EXP(CI*(RM(M,2)*CHIU+RNTOR*RPHIK(NCHI2+2)))*
+     &              2.D0*COS(RLM(L)*PI)/SQRT(-HPU)
+               FUDP=RJBK(NCHI2+2)/DPSIS*SQRT(RLAM)*
+     &              EXP(CI*(RM(M,2)*CHIU+RNTOR*RPHIK(NCHI2+2)))*
+     &              2.D0*COS(RLM(L)*PI)/SQRT(-HPU)
+               DO LEG=-1,1,2
+                  GLEG=EXP(CI*(PGPHASE+LEG*THETA))/2.D0
+                  HLEG=EXP(CI*(PHPHASE+LEG*THETA))
+                  GPARA=GP1*GLEG
+                  GPERP=GP2*GLEG-
+     &               (CTMPL*FLG+CTMPU*FUG)/2.D0
+                  GDPHI=GP3*GLEG-
+     &               (CTMPL*FLG+CTMPU*FUG)/2.D0
+                  HX1=HLEG*(HP1-HP6*CALPHA)-
+     &               (CTMPL*FLX1+CTMPU*FUX1)/2.D0
+                  HX2=HLEG*HP2-(CTMPL*FLX2+CTMPU*FUX2)/2.D0
+                  HQ1=HLEG*HP3-(CTMPL*FLQ1+CTMPU*FUQ1)/2.D0
+                  HQ2=HLEG*HP4-(CTMPL*FLQ2+CTMPU*FUQ2)/2.D0
+                  HQ3=HLEG*HP5-(CTMPL*FLQ3+CTMPU*FUQ3)/2.D0
+                  HDP=HLEG*HP7-(CTMPL*FLDP+CTMPU*FUDP)/2.D0
+                  VPSTATE=SQRTARG
+                  IF (HCHIFACTOR.EQ.0.D0) THEN
+                     ORIENTSTATE=0.D0
+                     ORIENTVPAR=0.D0
+                  ELSE
+                     ORIENTSTATE=1.D0
+                     ORIENTVPAR=SIGN(1.D0,HCHIFACTOR)
+                  ENDIF
+                  CALL WRITEKJPLEGROW(FID,JS,JS_MAT,KGRID,ORBITID,CELLID,
+     &               K,M,RM(K,2),RM(M,2),RLM(L),RLAM,RCHIK(J),RPHIK(J),RTK(J),
+     &               RTK(J)/RTK(NCHI2+2),THETA,J,LEG,ENDPOINT,GPARA,GPERP,
+     &               GDPHI,HX1,HX2,HQ1,HQ2,HQ3,HDP,GNORM,HNORM,RADIAL,
+     &               RHK(J),B0K/RHK(J),RJBK(J),DPSIS,HCHIFACTOR,VPSTATE,
+     &               ORIENTSTATE,ORIENTVPAR)
+               ENDDO
+            ENDDO JLOOP
+         ENDDO
+         ENDDO
+      ENDDO
+      CLOSE(FID)
+C$OMP END CRITICAL(ELL_TRACE_WRITE)
+      RETURN
+      END SUBROUTINE WRITEKJPLEGTRACE
+
+      SUBROUTINE WRITEKJPLEGROW(FID,JS,JS_MAT,KGRID,ORBITID,CELLID,K,M,KVAL,
+     & MVAL,ELL,RLAM,CHI,PHI,TAU,TAUFRACTION,THETA,J,LEG,ENDPOINT,GPARA,GPERP,
+     & GDPHI,HX1,HX2,HQ1,HQ2,HQ3,HDP,GNORM,HNORM,RADIAL,RHVAL,BVAL,JBVAL,
+     & DPSIS,HCHIFACTOR,VPSTATE,ORIENTSTATE,ORIENTVPAR)
+      IMPLICIT NONE
+      INTEGER FID,JS,JS_MAT,KGRID,ORBITID,CELLID,K,M,J,LEG,ENDPOINT
+      REAL*8 KVAL,MVAL,ELL,RLAM,CHI,PHI,TAU,TAUFRACTION,THETA,GNORM,HNORM,
+     &       RADIAL,RHVAL,BVAL,JBVAL,DPSIS,HCHIFACTOR,VPSTATE,ORIENTSTATE,
+     &       ORIENTVPAR
+      COMPLEX*16 GPARA,GPERP,GDPHI,HX1,HX2,HQ1,HQ2,HQ3,HDP
+      WRITE(FID,1000) JS,JS_MAT,KGRID,0,ORBITID,CELLID,K,M,J,LEG,ENDPOINT,
+     & RLAM,KVAL,MVAL,ELL,CHI,PHI,TAU,TAUFRACTION,THETA,RADIAL,RHVAL,BVAL,JBVAL,
+     & GNORM,HNORM,DPSIS,HCHIFACTOR,VPSTATE,ORIENTSTATE,ORIENTVPAR,
+     & REAL(GPARA),AIMAG(GPARA),REAL(GPERP),AIMAG(GPERP),REAL(GDPHI),
+     & AIMAG(GDPHI),REAL(HX1),AIMAG(HX1),REAL(HX2),AIMAG(HX2),REAL(HQ1),
+     & AIMAG(HQ1),REAL(HQ2),AIMAG(HQ2),REAL(HQ3),AIMAG(HQ3),REAL(HDP),
+     & AIMAG(HDP)
+ 1000 FORMAT(11I8,38(1X,E24.16))
+      END SUBROUTINE WRITEKJPLEGROW

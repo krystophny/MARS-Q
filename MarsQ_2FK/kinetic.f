@@ -4307,6 +4307,11 @@ C        COMPUTE G-FACTORS
 C        COMPUTE H-FACTORS
          CALL KH(JS,KGRID,0)
 
+C        Keep the two velocity legs before KG/KH fold them into cosines.
+C        This is a default-off source trace; the native cache and torque
+C        arrays remain unchanged.
+         CALL WRITEKJPLEGTRACE(JS,JS_MAT,KGRID,LAM)
+
 C        DEFAULT-OFF COMMON ORBIT PACKETS.  These are called only after the
 C        native trapped orbit geometry, bounce time, G and H factors have
 C        all been built for this lambda.  The writers themselves select the
