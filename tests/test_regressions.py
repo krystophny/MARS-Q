@@ -23,6 +23,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 MARS_SOURCE = (ROOT / "MarsQ_2FK" / "marsq.f").read_text()
 KINETIC_SOURCE = (ROOT / "MarsQ_2FK" / "kinetic.f").read_text()
+COMMON_TRACE_SOURCE = (ROOT / "MarsQ_2FK" / "common_runtime_trace.f").read_text()
 KINETIC_MODULE = (ROOT / "MarsQ_2FK" / "kineticm.f").read_text()
 ANISOTROPIC_SOURCE = (ROOT / "MarsQ_2FK" / "anisotropic.f").read_text()
 TORQUE_SOURCE = (ROOT / "MarsQ_2FK" / "torque.f").read_text()
@@ -1243,6 +1244,104 @@ class PrecessionResonanceFactorTests(unittest.TestCase):
         result = run_with_input(minimal_input(outopt="OKI0FACX=.TRUE."))
         self.assertIn("OKI0FAC=F", result.stdout.replace(" ", ""))
         self.assertNotEqual(result.returncode, 0)
+class EquilibriumProfileBoundaryTest(unittest.TestCase):
+    """The species profile arrays must be defined on every radial index.
+
+    `PROFEQ.OUT` printed a non-reproducible final row: one archived TC24 run
+    wrote `NaN` in column 15 where twenty-three others wrote zero. The cause is
+    that `OMEGASE(NRP1)` had no edge assignment, so the boundary element was
+    read before it was ever written.
+
+    The oracle is the block's own structure, not the patch: the interior loop
+    fills `2..NR`, the axis block fills `1`, and every array that block handles
+    is given an explicit `NRP1` value. `OMEGASI` and `DLNRHO` always had one.
+    Any array that appears in the interior loop and in the axis fix-up must also
+    appear in the edge fix-up, or its boundary element is undefined.
+    """
+
+    def setUp(self) -> None:
+        start = MARS_SOURCE.index("C     COMPUTE ADDITIONAL EQUILIBRIUM PROFILES")
+        end = MARS_SOURCE.index("      DO J=2,NR", MARS_SOURCE.index("DOMEGASI(J)") - 400)
+        self.block = MARS_SOURCE[start:end]
+        axis = self.block.index("      J = 1\n")
+        edge = self.block.index("      J = NRP1\n")
+        self.assertLess(axis, edge, "axis fix-up must precede the edge fix-up")
+        self.axis_fixup = self.block[axis:edge]
+        self.edge_fixup = self.block[edge:]
+
+    def assigned(self, text: str) -> set[str]:
+        names = set()
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("C"):
+                continue
+            head, _, _ = stripped.partition("=")
+            name, _, rest = head.partition("(")
+            if rest:
+                names.add(name.strip())
+        return names
+
+    def test_every_axis_corrected_profile_is_also_edge_corrected(self) -> None:
+        axis = self.assigned(self.axis_fixup)
+        edge = self.assigned(self.edge_fixup)
+        self.assertIn("OMEGASI", axis)
+        self.assertIn("DLNRHO", axis)
+        missing = sorted(axis - edge)
+        self.assertEqual(
+            missing,
+            [],
+            f"profile arrays corrected at the axis but not at the edge: {missing}; "
+            "their NRP1 element is an uninitialized read",
+        )
+
+    def test_omegase_boundary_element_is_written(self) -> None:
+        """The specific element that PROFEQ.OUT column 15 exposes."""
+        self.assertIn("OMEGASE", self.assigned(self.edge_fixup))
+
+    def test_the_boundary_element_is_consumed(self) -> None:
+        """Guard against the fix being dropped as cosmetic.
+
+        `OMEGASE(NRP1)` is not write-only: it is printed, and it is read by the
+        half-mesh derivative at `J=NR` and by the diamagnetic shift over the
+        full index range.
+        """
+        self.assertIn("DOMEGASEM(J)  = (OMEGASE(J+1)-OMEGASE(J))/H1", MARS_SOURCE)
+        self.assertIn("SHIFTBC(I)=SHIFTC(I)-RNTOR*OMEGASE(I)*CI*zobe", MARS_SOURCE)
+
+
+class CommonRuntimeTraceSchemaTest(unittest.TestCase):
+    """The common packet header must describe the row writer exactly."""
+
+    def test_declared_columns_match_the_formatter(self) -> None:
+        # Keep this independent of the implementation's local variable names:
+        # the output header is the behavioral contract consumed downstream.
+        fields = """js js_mat kgrid kparticle m_index sample_index lambda m ell
+            chi phi tau tau_fraction bounce_angle rho_pol b0_over_b b_norm jb
+            gphase_re gphase_im gpara_re gpara_im gperp_re gperp_im
+            gdphi_re gdphi_im hphase_re hphase_im hx1_re hx1_im hx2_re hx2_im
+            hq1_re hq1_im hq2_re hq2_im hq3_re hq3_im hdp_re hdp_im
+            g_normalization h_normalization dpsids hchi vpar_state
+            orientation_state orientation_vpar endpoint_flag""".split()
+        self.assertEqual(len(fields), 48)
+        self.assertEqual(fields[:6], ["js", "js_mat", "kgrid", "kparticle", "m_index", "sample_index"])
+        self.assertEqual(fields[-1], "endpoint_flag")
+        self.assertIn("'# columns: js js_mat kgrid kparticle m_index sample_index lambda m ell '", COMMON_TRACE_SOURCE)
+        self.assertIn("'chi phi tau tau_fraction bounce_angle rho_pol b0_over_b b_norm jb '", COMMON_TRACE_SOURCE)
+        self.assertIn("'g_normalization h_normalization dpsids hchi vpar_state '", COMMON_TRACE_SOURCE)
+        self.assertIn("FORMAT(6I8,41(1X,E24.16),1X,I3)", COMMON_TRACE_SOURCE)
+
+    def test_orientation_contract_is_source_bound(self) -> None:
+        self.assertIn("'# schema: iter-tc24-mars-common-orbit-trace-v2'", COMMON_TRACE_SOURCE)
+        self.assertIn("HCHIFACTOR = DPSIS/RJBK(J)", COMMON_TRACE_SOURCE)
+        self.assertIn("ORIENTVPAR = SIGN(1.D0,VPSTATE*HCHIFACTOR)", COMMON_TRACE_SOURCE)
+        self.assertIn("ORIENTVPAR = 0.D0", COMMON_TRACE_SOURCE)
+
+    def test_radial_coordinate_is_passed_to_every_row(self) -> None:
+        self.assertEqual(COMMON_TRACE_SOURCE.count("OMEGAB*RTK(1),RADIAL,"), 1)
+        self.assertEqual(COMMON_TRACE_SOURCE.count("OMEGAB*RTK(J),RADIAL,"), 1)
+        self.assertEqual(
+            COMMON_TRACE_SOURCE.count("OMEGAB*RTK(NCHI2+2),RADIAL,"), 1
+        )
 
 
 
