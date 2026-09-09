@@ -1320,13 +1320,21 @@ class CommonRuntimeTraceSchemaTest(unittest.TestCase):
             gphase_re gphase_im gpara_re gpara_im gperp_re gperp_im
             gdphi_re gdphi_im hphase_re hphase_im hx1_re hx1_im hx2_re hx2_im
             hq1_re hq1_im hq2_re hq2_im hq3_re hq3_im hdp_re hdp_im
-            g_normalization h_normalization endpoint_flag""".split()
-        self.assertEqual(len(fields), 43)
+            g_normalization h_normalization dpsids hchi vpar_state
+            orientation_state orientation_vpar endpoint_flag""".split()
+        self.assertEqual(len(fields), 48)
         self.assertEqual(fields[:6], ["js", "js_mat", "kgrid", "kparticle", "m_index", "sample_index"])
         self.assertEqual(fields[-1], "endpoint_flag")
         self.assertIn("'# columns: js js_mat kgrid kparticle m_index sample_index lambda m ell '", COMMON_TRACE_SOURCE)
         self.assertIn("'chi phi tau tau_fraction bounce_angle rho_pol b0_over_b b_norm jb '", COMMON_TRACE_SOURCE)
-        self.assertIn("FORMAT(6I8,36(1X,E24.16),1X,I3)", COMMON_TRACE_SOURCE)
+        self.assertIn("'g_normalization h_normalization dpsids hchi vpar_state '", COMMON_TRACE_SOURCE)
+        self.assertIn("FORMAT(6I8,41(1X,E24.16),1X,I3)", COMMON_TRACE_SOURCE)
+
+    def test_orientation_contract_is_source_bound(self) -> None:
+        self.assertIn("'# schema: iter-tc24-mars-common-orbit-trace-v2'", COMMON_TRACE_SOURCE)
+        self.assertIn("HCHIFACTOR = DPSIS/RJBK(J)", COMMON_TRACE_SOURCE)
+        self.assertIn("ORIENTVPAR = SIGN(1.D0,VPSTATE*HCHIFACTOR)", COMMON_TRACE_SOURCE)
+        self.assertIn("ORIENTVPAR = 0.D0", COMMON_TRACE_SOURCE)
 
     def test_radial_coordinate_is_passed_to_every_row(self) -> None:
         self.assertEqual(COMMON_TRACE_SOURCE.count("OMEGAB*RTK(1),RADIAL,"), 1)

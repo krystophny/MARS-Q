@@ -13,7 +13,9 @@ C two endpoint rows carry the analytic singular add-backs.  Summing the rows
 C and applying the recorded G/H normalisations reproduces the native factor
 C formulas.  RCHIK/RPHIK/RTK are MARS's ordered trapped half-bounce chart.
 C `rho_pol` is CS (full mesh) or CSM (half mesh); a physical s_tor map is not
-C invented here and must be joined from the accepted radial map.
+C invented here and must be joined from the accepted radial map.  Schema v2
+C additionally exports the chart factor hchi=B.grad(chi)/B and the physical
+C one-sided parallel orientation.  This is diagnostic metadata only.
 C=======================================================================
       SUBROUTINE WRITEKJPCOMMONTRACE(JS,JS_MAT,KGRID,RLAM)
 
@@ -29,7 +31,8 @@ C=======================================================================
       REAL*8 RLAM,OMEGAE,DPSIS,RADIAL,TAUEND,GNORM,HNORM,
      &       ARG,SQRTARG,PGPHASE,PHPHASE,GP1,GP2,GP3,
      &       HP1,HP6,HP2,HP3,HP4,HP5,HP7,CTMPL,CTMPU,
-     &       PHASE0,DIFFERCHI,DIFPI
+     &       PHASE0,DIFFERCHI,DIFPI,HCHIFACTOR,VPSTATE,
+     &       ORIENTSTATE,ORIENTVPAR
       COMPLEX*16 PG,PH,FLG,FUG,FLX1,FUX1,FLX2,FUX2,
      &       FLQ1,FUQ1,FLQ2,FUQ2,FLQ3,FUQ3,FLDP,FUDP,
      &       GPARA,GPERP,GDPHI,HX1,HX2,HQ1,HQ2,HQ3,HDP,ZERO,
@@ -80,7 +83,7 @@ C$OMP CRITICAL(ELL_TRACE_WRITE)
       OPEN(FID,FILE=PATH,STATUS='UNKNOWN',POSITION='APPEND',
      &     ACTION='WRITE')
       IF (.NOT.OEXIST) THEN
-         WRITE(FID,'(A)') '# schema: iter-tc24-mars-common-orbit-trace-v1'
+         WRITE(FID,'(A)') '# schema: iter-tc24-mars-common-orbit-trace-v2'
          WRITE(FID,'(A)') '# source: KJPCOEFF trapped KPARTICLE=0'
          WRITE(FID,'(A,I8)') '# js = ',JS
          WRITE(FID,'(A,I8)') '# js_mat = ',JS_MAT
@@ -97,12 +100,17 @@ C$OMP CRITICAL(ELL_TRACE_WRITE)
          WRITE(FID,'(A)') '# phase_gauge = chi=RCHIK(1), phi=RPHIK(1)=0, tau=RTK(1)=0'
          WRITE(FID,'(A)') '# tau = native MARS normalized bounce-time coordinate'
          WRITE(FID,'(A)') '# endpoint_flag: -1 lower add-back, 0 interior, +1 upper add-back'
+         WRITE(FID,'(A)') '# state_velocity_convention = vpar_state = sign(hchi)*(v_parallel/v)'
+         WRITE(FID,'(A)') '# chart_factor = hchi = B_dot_grad_chi/B = dpsids/jb'
+         WRITE(FID,'(A)') '# orientation_convention = sign(v_parallel) = sign(vpar_state*hchi)'
+         WRITE(FID,'(A)') '# orientation_zero = 0 when vpar_state or hchi is zero'
          WRITE(FID,'(A)') '# columns: js js_mat kgrid kparticle m_index sample_index lambda m ell '
      &      //'chi phi tau tau_fraction bounce_angle rho_pol b0_over_b b_norm jb '
      &      //'gphase_re gphase_im gpara_re gpara_im gperp_re gperp_im '
      &      //'gdphi_re gdphi_im hphase_re hphase_im hx1_re hx1_im hx2_re hx2_im '
      &      //'hq1_re hq1_im hq2_re hq2_im hq3_re hq3_im hdp_re hdp_im '
-     &      //'g_normalization h_normalization endpoint_flag'
+     &      //'g_normalization h_normalization dpsids hchi vpar_state '
+     &      //'orientation_state orientation_vpar endpoint_flag'
       ENDIF
 
       DO L=1,MLMAX
@@ -157,11 +165,19 @@ C           KH endpoint coefficients, copied term-for-term from KH.
 C           Lower endpoint add-back row.  Emit only the lower coefficient;
 C           the upper coefficient is emitted in the separate upper row below.
 C           This makes the row sum equal the one native (FLG+FUG) add-back.
+            IF (RJBK(1).NE.0.D0) THEN
+               HCHIFACTOR = DPSIS/RJBK(1)
+            ELSE
+               HCHIFACTOR = 0.D0
+            ENDIF
+            VPSTATE = 0.D0
+            ORIENTSTATE = 0.D0
+            ORIENTVPAR = 0.D0
             CALL WRITEKJPCOMMONROW(FID,JS,JS_MAT,KGRID,0,K,1,RLAM,
      &       RM(K,2),RLM(L),RCHIK(1),RPHIK(1),RTK(1),0.D0,
      &       OMEGAB*RTK(1),RADIAL,RHK(1),B0K/RHK(1),RJBK(1),ZERO,ZERO,
      &       GENDP,GENDP,ZERO,HENDX1,HENDX2,HENDQ1,HENDQ2,HENDQ3,HENDDP,
-     &       GNORM,HNORM,-1)
+     &       GNORM,HNORM,DPSIS,HCHIFACTOR,VPSTATE,ORIENTSTATE,ORIENTVPAR,-1)
 
             DO J=2,NCHI2+1
                ARG=1.D0-RLAM/RHK(J)
@@ -194,11 +210,24 @@ C           This makes the row sum equal the one native (FLG+FUG) add-back.
                HQ2=PH*HP4-CTMPL*FLQ2-CTMPU*FUQ2
                HQ3=PH*HP5-CTMPL*FLQ3-CTMPU*FUQ3
                HDP=PH*HP7-CTMPL*FLDP-CTMPU*FUDP
+               IF (RJBK(J).NE.0.D0) THEN
+                  HCHIFACTOR = DPSIS/RJBK(J)
+               ELSE
+                  HCHIFACTOR = 0.D0
+               ENDIF
+               VPSTATE = SQRTARG
+               IF (VPSTATE.EQ.0.D0 .OR. HCHIFACTOR.EQ.0.D0) THEN
+                  ORIENTSTATE = 0.D0
+                  ORIENTVPAR = 0.D0
+               ELSE
+                  ORIENTSTATE = SIGN(1.D0,VPSTATE)
+                  ORIENTVPAR = SIGN(1.D0,VPSTATE*HCHIFACTOR)
+               ENDIF
                CALL WRITEKJPCOMMONROW(FID,JS,JS_MAT,KGRID,0,K,J,RLAM,
      &          RM(K,2),RLM(L),RCHIK(J),RPHIK(J),RTK(J),
      &          RTK(J)/TAUEND,OMEGAB*RTK(J),RADIAL,RHK(J),B0K/RHK(J),RJBK(J),
      &          PG,GPARA,GPERP,GDPHI,PH,HX1,HX2,HQ1,HQ2,HQ3,HDP,
-     &          GNORM,HNORM,0)
+     &          GNORM,HNORM,DPSIS,HCHIFACTOR,VPSTATE,ORIENTSTATE,ORIENTVPAR,0)
             ENDDO
 
 C           Upper endpoint add-back row.  Emit only the upper coefficient so
@@ -210,12 +239,21 @@ C           the two endpoint rows are not a duplicated complete add-back.
             HENDQ2 = FUQ2*PHASE0
             HENDQ3 = FUQ3*PHASE0
             HENDDP = FUDP*PHASE0
+            IF (RJBK(NCHI2+2).NE.0.D0) THEN
+               HCHIFACTOR = DPSIS/RJBK(NCHI2+2)
+            ELSE
+               HCHIFACTOR = 0.D0
+            ENDIF
+            VPSTATE = 0.D0
+            ORIENTSTATE = 0.D0
+            ORIENTVPAR = 0.D0
             CALL WRITEKJPCOMMONROW(FID,JS,JS_MAT,KGRID,0,K,NCHI2+2,
      &       RLAM,RM(K,2),RLM(L),RCHIK(NCHI2+2),
      &       RPHIK(NCHI2+2),RTK(NCHI2+2),1.D0,
      &       OMEGAB*RTK(NCHI2+2),RADIAL,RHK(NCHI2+2),B0K/RHK(NCHI2+2),
      &       RJBK(NCHI2+2),ZERO,ZERO,GENDP,GENDP,ZERO,HENDX1,HENDX2,
-     &       HENDQ1,HENDQ2,HENDQ3,HENDDP,GNORM,HNORM,1)
+     &       HENDQ1,HENDQ2,HENDQ3,HENDDP,GNORM,HNORM,DPSIS,HCHIFACTOR,
+     &       VPSTATE,ORIENTSTATE,ORIENTVPAR,1)
          ENDDO
       ENDDO
       CLOSE(FID)
@@ -227,18 +265,21 @@ C$OMP END CRITICAL(ELL_TRACE_WRITE)
 C=======================================================================
 C One row writer keeps the schema and complex-pair ordering in one place.
 C Six integer fields precede twelve scalar fields and eleven complex pairs;
-C the two normalization scalars make thirty-six real fields in total.
+C the two normalization scalars and five orientation fields make forty-one
+C real fields in total.
 C=======================================================================
       SUBROUTINE WRITEKJPCOMMONROW(FID,JS,JS_MAT,KGRID,KPARTICLE,
      & MIDX,JIDX,RLAM,MVAL,ELL,CHI,PHI,TAU,TAUFRACTION,BOUNCE_ANGLE,
      & RADIAL,RHVAL,BVAL,JBVAL,PG,GPARA,GPERP,GDPHI,PH,HX1,HX2,HQ1,HQ2,
      & HQ3,HDP,
-     & GNORM,HNORM,ENDPOINT)
+     & GNORM,HNORM,DPSIS,HCHIFACTOR,VPSTATE,ORIENTSTATE,ORIENTVPAR,
+     & ENDPOINT)
 
       IMPLICIT NONE
       INTEGER FID,JS,JS_MAT,KGRID,KPARTICLE,MIDX,JIDX,ENDPOINT
       REAL*8 RLAM,MVAL,ELL,CHI,PHI,TAU,TAUFRACTION,BOUNCE_ANGLE,
-     &       RADIAL,RHVAL,BVAL,JBVAL,GNORM,HNORM
+     &       RADIAL,RHVAL,BVAL,JBVAL,GNORM,HNORM,DPSIS,HCHIFACTOR,
+     &       VPSTATE,ORIENTSTATE,ORIENTVPAR
       COMPLEX*16 PG,GPARA,GPERP,GDPHI,PH,HX1,HX2,HQ1,HQ2,HQ3,HDP
       WRITE(FID,1000) JS,JS_MAT,KGRID,KPARTICLE,MIDX,JIDX,
      & RLAM,MVAL,ELL,CHI,PHI,TAU,TAUFRACTION,BOUNCE_ANGLE,RADIAL,RHVAL,BVAL,
@@ -246,6 +287,7 @@ C=======================================================================
      & REAL(GPERP),AIMAG(GPERP),REAL(GDPHI),AIMAG(GDPHI),REAL(PH),
      & AIMAG(PH),REAL(HX1),AIMAG(HX1),REAL(HX2),AIMAG(HX2),REAL(HQ1),
      & AIMAG(HQ1),REAL(HQ2),AIMAG(HQ2),REAL(HQ3),AIMAG(HQ3),REAL(HDP),
-     & AIMAG(HDP),GNORM,HNORM,ENDPOINT
- 1000 FORMAT(6I8,36(1X,E24.16),1X,I3)
+     & AIMAG(HDP),GNORM,HNORM,DPSIS,HCHIFACTOR,VPSTATE,
+     & ORIENTSTATE,ORIENTVPAR,ENDPOINT
+ 1000 FORMAT(6I8,41(1X,E24.16),1X,I3)
       END SUBROUTINE WRITEKJPCOMMONROW

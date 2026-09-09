@@ -20,7 +20,14 @@ applied after the quadrature sum.
 
 The chart fields are MARS-native: `chi=RCHIK`, `phi=RPHIK`, and `tau=RTK` on
 the ordered half-bounce.  `rho_pol` is `CS` on the full mesh or `CSM` on the
-half mesh.  No `s_tor` or cylindrical `(R,Z)` value is fabricated; a common
+half mesh.  Schema v2 additionally emits `dpsids`, `hchi`, the normalized
+signed state `vpar_state`, `orientation_state`, and physical
+`orientation_vpar`.  The source identity is
+`hchi = B.grad(chi)/B = DPSIDS/(J*B) = dpsids/jb`; on the native increasing-
+`chi` leg, `vpar_state = sign(hchi)*(v_parallel/v)` and
+`orientation_vpar = sign(vpar_state*hchi)`.  Exact turning-point rows carry
+zero state/orientation; their open-leg limits are represented by interior
+rows.  No `s_tor` or cylindrical `(R,Z)` value is fabricated; a common
 comparison must join the accepted radial/physical map and retain its hash.
 
 This packet is a producer audit, not a torque correction.  It does not include
