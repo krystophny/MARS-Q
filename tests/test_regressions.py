@@ -1157,6 +1157,13 @@ def ki0_writer_body() -> str:
     return body[: body.index("\n      END\n")]
 
 
+def ki0_endpoint_writer_body() -> str:
+    """The complete default-off KI0 endpoint writer."""
+    start = KINETIC_SOURCE.index("SUBROUTINE WRITE_KI0_ENDPOINTS")
+    body = KINETIC_SOURCE[start:]
+    return body[: body.index("\n      END\n")]
+
+
 class PrecessionResonanceFactorTests(unittest.TestCase):
     """The KI0 diagnostic export must be opt-in and off the solve path.
 
@@ -1244,6 +1251,131 @@ class PrecessionResonanceFactorTests(unittest.TestCase):
         result = run_with_input(minimal_input(outopt="OKI0FACX=.TRUE."))
         self.assertIn("OKI0FAC=F", result.stdout.replace(" ", ""))
         self.assertNotEqual(result.returncode, 0)
+
+    def test_ki0_endpoint_export_is_at_the_exact_spline_state(self) -> None:
+        """The endpoint row must precede the spline without intervening work."""
+        expected = """CALL WRITE_KI0_ENDPOINTS(JS,KGRID,LAMM(1),
+     &                         LAMM(2*NLAMK0(JS,KGRID)))
+      CALL SPLINE1D(DRIFTNG,LAMNG,2*(NN-1),ZOMEGADT(JS,:,KGRID),LAMM,"""
+        self.assertIn(expected, KINETIC_SOURCE)
+
+    def test_ki0_endpoint_rows_are_keyed_and_replay_complete(self) -> None:
+        body = ki0_endpoint_writer_body()
+        guard = body.index("IF (.NOT. OKI0FAC) RETURN")
+        for forbidden in ("OPEN(", "WRITE(FID", "INQUIRE("):
+            self.assertGreater(body.index(forbidden), guard)
+        self.assertIn("WRITE(FID,130) JS,KGRID,KP,NLAMK0(JS,KGRID)", body)
+        self.assertIn("PSPECIES_NTD(KP),LAMLO,ZOMEGADT(JS,1,KGRID),LAMHI,", body)
+        self.assertIn("ZOMEGADT(JS,2*NLAMK0(JS,KGRID),KGRID)", body)
+        self.assertIn("ZRATIO = ESPECIES_Z(KP)/ESPECIES_Z(1)", body)
+        self.assertIn("FORMAT(4(1X,I6),7(1X,E24.16))", body)
+        self.assertIn("C$OMP CRITICAL(WRITE_KI0_FACTOR_FILE)", body)
+        self.assertIn("C$OMP END CRITICAL(WRITE_KI0_FACTOR_FILE)", body)
+
+    def test_ki0_endpoint_export_cannot_change_shared_state(self) -> None:
+        statement = re.compile(r"^([A-Z0-9_]+)\s*(\([^)]*\))?\s*=[^=]")
+        assigned = set()
+        for line in ki0_endpoint_writer_body().splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith(("C", "!", "&")):
+                continue
+            for keyword in ("WRITE", "OPEN", "CLOSE", "INQUIRE", "IF", "CALL",
+                            "DO", "FLUSH", "RETURN", "END", "USE"):
+                if stripped.startswith(keyword):
+                    break
+            else:
+                match = statement.match(stripped)
+                if match:
+                    assigned.add(match.group(1))
+        self.assertTrue(
+            assigned <= {"FID", "EXISTS", "KP", "ZRATIO"},
+            f"the KI0 endpoint export assigns shared state: {sorted(assigned)}",
+        )
+
+    def test_ki0_endpoint_writer_executes_default_off_and_concurrently(self) -> None:
+        """Execute the production writer with controlled spline input arrays."""
+        compiler = shutil.which("gfortran")
+        if compiler is None:
+            self.skipTest("gfortran is unavailable")
+        writer = "      " + ki0_endpoint_writer_body() + "\n      END\n"
+        stubs = """
+module globalm
+  implicit none
+  logical :: OKI0FAC = .false.
+  integer :: ISWEEP = 1, NSWEEP = 1
+  real(8) :: B0K = 2.5d0
+end module globalm
+module kineticm
+  implicit none
+  integer :: NSPECIES = 2
+  real(8) :: PSPECIES_NTD(2) = [1.0d0, -0.5d0]
+  real(8) :: ESPECIES_Z(2) = [1.0d0, -1.0d0]
+end module kineticm
+module anisotropicm
+  implicit none
+  integer :: NLAMK0(2,1)
+  real(8) :: ZOMEGADT(2,6,1)
+end module anisotropicm
+module ToolBox
+  implicit none
+contains
+  integer function ASSIGNFREEFILEUNIT()
+    ASSIGNFREEFILEUNIT = 51
+  end function ASSIGNFREEFILEUNIT
+end module ToolBox
+program exercise_writer
+  use globalm
+  use anisotropicm
+  implicit none
+  integer :: js
+  logical :: exists
+  NLAMK0(:,1) = 3
+  ZOMEGADT = 0.0d0
+  ZOMEGADT(1,1,1) = -1.25d0
+  ZOMEGADT(1,6,1) = 3.5d0
+  ZOMEGADT(2,1,1) = -2.25d0
+  ZOMEGADT(2,6,1) = 4.5d0
+  call WRITE_KI0_ENDPOINTS(1,1,11.0d0,21.0d0)
+  inquire(file='KI0_ENDPOINT.OUT', exist=exists)
+  if (exists) error stop 10
+  OKI0FAC = .true.
+!$omp parallel do default(shared) private(js)
+  do js=1,2
+    call WRITE_KI0_ENDPOINTS(js,1,10.0d0+js,20.0d0+js)
+  end do
+!$omp end parallel do
+end program exercise_writer
+"""
+        with tempfile.TemporaryDirectory(prefix="mars-ki0-endpoint-") as tmp:
+            root = Path(tmp)
+            (root / "stubs.f90").write_text(textwrap.dedent(stubs))
+            (root / "writer.f").write_text(writer)
+            exe = root / "exercise-writer"
+            compiled = subprocess.run(
+                [compiler, "-fopenmp", "-ffixed-line-length-none",
+                 "stubs.f90", "writer.f", "-o", str(exe)],
+                cwd=root, check=False, capture_output=True, text=True,
+            )
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+            subprocess.run(
+                [str(exe)], cwd=root, check=True, capture_output=True,
+                text=True, env={**os.environ, "OMP_NUM_THREADS": "2"},
+            )
+            lines = [
+                line for line in (root / "KI0_ENDPOINT.OUT").read_text().splitlines()
+                if not line.startswith("%")
+            ]
+        self.assertEqual(len(lines), 4)
+        rows = [line.split() for line in lines]
+        self.assertTrue(all(len(row) == 11 for row in rows))
+        observed = {(int(row[0]), int(row[2])): tuple(map(float, row[7:11]))
+                    for row in rows}
+        self.assertEqual(set(observed), {(1, 1), (1, 2), (2, 1), (2, 2)})
+        for species in (1, 2):
+            self.assertEqual(observed[(1, species)], (11.0, -1.25, 21.0, 3.5))
+            self.assertEqual(observed[(2, species)], (12.0, -2.25, 22.0, 4.5))
+
+
 class EquilibriumProfileBoundaryTest(unittest.TestCase):
     """The species profile arrays must be defined on every radial index.
 
