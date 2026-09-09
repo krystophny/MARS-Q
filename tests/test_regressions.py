@@ -203,6 +203,43 @@ class SourceContractTests(unittest.TestCase):
         )
         self.assertAlmostEqual(traced_integral, independent_oracle)
 
+    def test_action_energy_trace_covers_the_unscaled_small_rtmp_cell(self) -> None:
+        """The trace quotient remains complete when drift normalization vanishes."""
+        kia_start = ANISOTROPIC_SOURCE.index("SUBROUTINE KIA_TRAP(")
+        kia = ANISOTROPIC_SOURCE[
+            kia_start :
+            ANISOTROPIC_SOURCE.index("END SUBROUTINE KIA_TRAP", kia_start)
+        ]
+        branch = kia.index("IF (ABS(RTMP).LT.REPS) THEN")
+        branch_end = kia.index(
+            "\n      ENDIF\n\nC     Emit both resonance normalizations", branch
+        )
+        energy_trace = kia.index("CALL WRITEELLACTIONENERGY", branch)
+        self.assertLess(branch_end, energy_trace)
+        self.assertIn("RTMP3 = 0.", kia[:branch])
+
+        # Independent algebraic oracle for the two native normalization
+        # branches.  A nonzero RTMP scales source and denominator together;
+        # the RTMP-small branch records their unscaled, continuous quotient.
+        sources = (complex(2.5, -0.75), complex(-1.25, 3.0))
+        denominators = (complex(0.4, 0.07), complex(-1.8, 0.15))
+        weights = (0.125, 0.375)
+        unscaled = sum(
+            weight * source / denominator
+            for weight, source, denominator in zip(
+                weights, sources, denominators, strict=True
+            )
+        )
+        for rtmp in (-2.0e-7, 3.0e-7):
+            normalized = sum(
+                weight * (source / rtmp) / (denominator / rtmp)
+                for weight, source, denominator in zip(
+                    weights, sources, denominators, strict=True
+                )
+            )
+            self.assertAlmostEqual(normalized.real, unscaled.real)
+            self.assertAlmostEqual(normalized.imag, unscaled.imag)
+
     def test_kjp_factor_trace_reconstructs_native_outer_products(self) -> None:
         """Bounded factors must retain every local channel before accumulation."""
         fill_start = KINETIC_SOURCE.index("SUBROUTINE KJPFILL(")
