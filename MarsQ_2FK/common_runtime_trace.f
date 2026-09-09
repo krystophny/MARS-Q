@@ -413,3 +413,138 @@ C=======================================================================
      & ORIENTSTATE,ORIENTVPAR,ENDPOINT
  1000 FORMAT(6I8,41(1X,E24.16),1X,I3)
       END SUBROUTINE WRITEKJPCOMMONROW
+
+C=======================================================================
+C DEFAULT-OFF TYPED RESPONSE JOIN PACKET.
+C
+C The native response is assembled in three different routines.  KIA_TRAP
+C owns the energy quotient and logarithmic pitch subtraction; KJPFILL owns
+C the pressure-source cell after all species and factor terms have been
+C accumulated; KI0 owns the separate drift-zero response.  This stream keeps
+C those boundaries explicit and uses the KJPFILL call ordinal shared with the
+C factor trace.  It is provenance only: no production array is modified.
+C=======================================================================
+      SUBROUTINE WRITEELLTRACERESPONSE(JS,JS_MAT,KGRID,KP,KOPT,KDPHI,L,
+     & KPITCH,KPARTICLE,ICASE,KTERM,RLAM,ZZLAMB,ZVIFREG,SUBTRACE,ZVIF)
+
+      USE KINETICM
+      USE ToolBox
+      IMPLICIT NONE
+
+      INTEGER JS,JS_MAT,KGRID,KP,KOPT,KDPHI,L,KPITCH,KPARTICLE,
+     & ICASE,KTERM,FID
+      REAL*8 RLAM,ZZLAMB
+      COMPLEX*16 ZVIFREG(4),SUBTRACE(4),ZVIF(4)
+      LOGICAL EXISTS
+      CHARACTER*128 PATH
+      INTEGER K
+
+      WRITE(PATH,'("ELL_TRACE_JS",I4.4,"_G",I1,"_RESPONSE.OUT")')
+     & JS,KGRID
+C$OMP CRITICAL(ELL_TRACE_RESPONSE_WRITE)
+      INQUIRE(FILE=PATH,EXIST=EXISTS)
+      FID=ASSIGNFREEFILEUNIT()
+      OPEN(FID,FILE=PATH,STATUS='UNKNOWN',POSITION='APPEND',
+     &     ACTION='WRITE')
+      IF (.NOT.EXISTS) THEN
+         WRITE(FID,'(A)') '% SCHEMA 1'
+         WRITE(FID,'(A)') '% KIA JS JSMAT G KP KOPT KDPHI L PITCH PARTICLE ICASE TERM'
+         WRITE(FID,'(A)') '% KIA fields: ELL LAMBDA SLAM0 then REGULAR(4) SUBTRACTION(4) TOTAL(4) complex pairs'
+      ENDIF
+      WRITE(FID,1000) 'KIA',JS,JS_MAT,KGRID,KP,KOPT,KDPHI,L,KPITCH,
+     & KPARTICLE,ICASE,KTERM,RLAM,ZZLAMB,SLAM0(L,KP),
+     & (DREAL(ZVIFREG(K)),DIMAG(ZVIFREG(K)),K=1,4),
+     & (DREAL(SUBTRACE(K)),DIMAG(SUBTRACE(K)),K=1,4),
+     & (DREAL(ZVIF(K)),DIMAG(ZVIF(K)),K=1,4)
+      CLOSE(FID)
+C$OMP END CRITICAL(ELL_TRACE_RESPONSE_WRITE)
+ 1000 FORMAT(A3,11I8,27(1X,E24.16))
+      RETURN
+      END SUBROUTINE WRITEELLTRACERESPONSE
+
+C=======================================================================
+C Emit one pre-accumulation KJPFILL matrix cell.  The factor trace carries
+C the individual regular/subtraction/add-back terms; this row carries their
+C actual local KJPFILL result, preserving the execution boundary and the
+C shared call ordinal for an independent omission/double-counting check.
+C=======================================================================
+      SUBROUTINE WRITEKJPFILLCELL(JS,JS_MAT,KGRID,KCALL,KPITCH,
+     & KPARTICLE,ICASE,K,M,RLAM,RLAMH,X1PARA,X1PERP,X1DPHI,X2PARA,
+     & X2PERP,X2DPHI,Q1PARA,Q1PERP,Q1DPHI,Q2PARA,Q2PERP,Q2DPHI,
+     & Q3PARA,Q3PERP,Q3DPHI,DPPARA,DPPERP,DPDPHI)
+
+      USE KINETICM
+      USE ToolBox
+      IMPLICIT NONE
+
+      INTEGER JS,JS_MAT,KGRID,KCALL,KPITCH,KPARTICLE,ICASE,K,M,FID
+      REAL*8 RLAM,RLAMH
+      COMPLEX*16 X1PARA,X1PERP,X1DPHI,X2PARA,X2PERP,X2DPHI,
+     & Q1PARA,Q1PERP,Q1DPHI,Q2PARA,Q2PERP,Q2DPHI,Q3PARA,Q3PERP,
+     & Q3DPHI,DPPARA,DPPERP,DPDPHI
+      LOGICAL EXISTS
+      CHARACTER*128 PATH
+
+      WRITE(PATH,'("ELL_TRACE_JS",I4.4,"_G",I1,"_RESPONSE.OUT")')
+     & JS,KGRID
+C$OMP CRITICAL(ELL_TRACE_RESPONSE_WRITE)
+      INQUIRE(FILE=PATH,EXIST=EXISTS)
+      FID=ASSIGNFREEFILEUNIT()
+      OPEN(FID,FILE=PATH,STATUS='UNKNOWN',POSITION='APPEND',
+     &     ACTION='WRITE')
+      IF (.NOT.EXISTS) THEN
+         WRITE(FID,'(A)') '% SCHEMA 1'
+         WRITE(FID,'(A)') '% KJP JS JSMAT G CALL PITCH PARTICLE ICASE K M'
+         WRITE(FID,'(A)') '% KJP fields: LAMBDA LAMBDA_WEIGHT then 18 local complex channels'
+      ENDIF
+      WRITE(FID,1000) 'KJP',JS,JS_MAT,KGRID,KCALL,KPITCH,KPARTICLE,
+     & ICASE,K,M,RLAM,RLAMH,X1PARA,X1PERP,X1DPHI,X2PARA,X2PERP,
+     & X2DPHI,Q1PARA,Q1PERP,Q1DPHI,Q2PARA,Q2PERP,Q2DPHI,Q3PARA,
+     & Q3PERP,Q3DPHI,DPPARA,DPPERP,DPDPHI
+      CLOSE(FID)
+C$OMP END CRITICAL(ELL_TRACE_RESPONSE_WRITE)
+ 1000 FORMAT(A3,9I8,38(1X,E24.16))
+      RETURN
+      END SUBROUTINE WRITEKJPFILLCELL
+
+C=======================================================================
+C KI0's dense lambda integral and its two drift-zero terms are separate
+C native channels.  Preserve both the candidate and the actually applied
+C drift-zero term: NUMSIG=3 prints that term but deliberately does not add it
+C to VI0.  The final identity is therefore checkable without guessing.
+C=======================================================================
+      SUBROUTINE WRITEELLTRACEKI0(JS,KGRID,KP,APPLIED,SLAMD0,DPRM,WFUN,
+     & BASE,LANDAU,DRIFT,DRIFTCAND,FINAL)
+
+      USE ToolBox
+      IMPLICIT NONE
+
+      INTEGER JS,KGRID,KP,APPLIED,FID,K
+      REAL*8 SLAMD0,DPRM,WFUN
+      COMPLEX*16 BASE(4),LANDAU(4),DRIFT(4),DRIFTCAND(4),FINAL(4)
+      LOGICAL EXISTS
+      CHARACTER*128 PATH
+
+      WRITE(PATH,'("ELL_TRACE_JS",I4.4,"_G",I1,"_RESPONSE.OUT")')
+     & JS,KGRID
+C$OMP CRITICAL(ELL_TRACE_RESPONSE_WRITE)
+      INQUIRE(FILE=PATH,EXIST=EXISTS)
+      FID=ASSIGNFREEFILEUNIT()
+      OPEN(FID,FILE=PATH,STATUS='UNKNOWN',POSITION='APPEND',
+     &     ACTION='WRITE')
+      IF (.NOT.EXISTS) THEN
+         WRITE(FID,'(A)') '% SCHEMA 1'
+         WRITE(FID,'(A)') '% KI0 JS G KP APPLIED SLAMD0 DPRM WFUN'
+         WRITE(FID,'(A)') '% KI0 fields: BASE(4) LANDAU(4) DRIFT(4) DRIFT_CANDIDATE(4) FINAL(4) complex pairs'
+      ENDIF
+      WRITE(FID,1000) 'KI0',JS,KGRID,KP,APPLIED,SLAMD0,DPRM,WFUN,
+     & (DREAL(BASE(K)),DIMAG(BASE(K)),K=1,4),
+     & (DREAL(LANDAU(K)),DIMAG(LANDAU(K)),K=1,4),
+     & (DREAL(DRIFT(K)),DIMAG(DRIFT(K)),K=1,4),
+     & (DREAL(DRIFTCAND(K)),DIMAG(DRIFTCAND(K)),K=1,4),
+     & (DREAL(FINAL(K)),DIMAG(FINAL(K)),K=1,4)
+      CLOSE(FID)
+C$OMP END CRITICAL(ELL_TRACE_RESPONSE_WRITE)
+ 1000 FORMAT(A3,4I8,43(1X,E24.16))
+      RETURN
+      END SUBROUTINE WRITEELLTRACEKI0

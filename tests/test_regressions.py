@@ -240,6 +240,62 @@ class SourceContractTests(unittest.TestCase):
             self.assertAlmostEqual(normalized.real, unscaled.real)
             self.assertAlmostEqual(normalized.imag, unscaled.imag)
 
+    def test_response_join_keeps_subtraction_kjp_and_ki0_channels_typed(self) -> None:
+        """The producer packet must expose every additive response boundary."""
+        kia_start = ANISOTROPIC_SOURCE.index("SUBROUTINE KIA_TRAP(")
+        kia = ANISOTROPIC_SOURCE[
+            kia_start : ANISOTROPIC_SOURCE.index(
+                "END SUBROUTINE KIA_TRAP", kia_start
+            )
+        ]
+        self.assertIn("ZVIFREG = ZVIF", kia)
+        self.assertIn("SUBTRACE(1)=-LOG", kia)
+        self.assertIn("SUBTRACE(4)=-LOG", kia)
+        self.assertLess(kia.index("ZVIFREG = ZVIF"),
+                        kia.index("CALL WRITEELLTRACERESPONSE"))
+        self.assertLess(kia.index("DO K=1,NEPK-1"),
+                        kia.index("CALL WRITEELLTRACERESPONSE"))
+
+        fill_start = KINETIC_SOURCE.index("SUBROUTINE KJPFILL(")
+        fill = KINETIC_SOURCE[
+            fill_start : KINETIC_SOURCE.index("END\n\nC=======", fill_start)
+        ]
+        self.assertIn("LAM,LAMH,KCALL", fill)
+        self.assertLess(fill.index("CALL WRITEKJPFILLCELL"),
+                        fill.index("VX1PARA(K,M,JS_MAT)=VX1PARA"))
+
+        ki0_start = KINETIC_SOURCE.index("SUBROUTINE KI0(")
+        ki0 = KINETIC_SOURCE[
+            ki0_start : KINETIC_SOURCE.index("END\n\nC=======", ki0_start)
+        ]
+        for field in ("VVI0BASE", "VVI0LANDAU", "VVI0DRIFT",
+                      "VVI0DRIFTCAND", "WRITEELLTRACEKI0"):
+            self.assertIn(field, ki0)
+        self.assertIn("DRIFTAPPLIED(KP)=1", ki0)
+
+        # Independent additive oracle: regular response, one logarithmic
+        # subtraction, and the actually-applied KI0 drift-zero term must each
+        # occur exactly once.  The candidate is deliberately not counted when
+        # NUMSIG=3 only prints it, which catches both omission and double-add.
+        regular = complex(1.25, -0.5)
+        subtraction = complex(-0.375, 0.125)
+        ki0_base = complex(0.75, 0.25)
+        landau = complex(-0.2, 0.6)
+        drift_candidate = complex(0.4, -0.3)
+        drift_actual = 0j
+        expected_cell = regular + subtraction
+        expected_ki0 = ki0_base + landau + drift_actual
+        self.assertEqual(expected_cell, complex(0.875, -0.375))
+        self.assertEqual(expected_ki0, complex(0.55, 0.85))
+        self.assertNotEqual(regular + 2 * subtraction, expected_cell)
+        self.assertNotEqual(ki0_base + landau + drift_candidate, expected_ki0)
+
+        response = COMMON_TRACE_SOURCE
+        self.assertIn("% KIA fields: ELL LAMBDA SLAM0", response)
+        self.assertIn("% KJP fields: LAMBDA LAMBDA_WEIGHT", response)
+        self.assertIn("% KI0 fields: BASE(4) LANDAU(4) DRIFT(4)", response)
+        self.assertIn("DRIFT_CANDIDATE(4)", response)
+
     def test_kjp_factor_trace_reconstructs_native_outer_products(self) -> None:
         """Bounded factors must retain every local channel before accumulation."""
         fill_start = KINETIC_SOURCE.index("SUBROUTINE KJPFILL(")
