@@ -25,7 +25,7 @@ SRCS =   ./lsode/*.f    \
          adaptivem.f anisotropicm.f pams.f reorbitm.f  \
          mpienv.f ToolBox.f90 marsq.f smlpck.f feedback.f printatoh.f \
          splines.f KineticExtendAnalysis.f90  \
-         common_runtime_trace.f \
+         trapped_orbit_reflection.f90 common_runtime_trace.f \
          kinetic.f anisotropic.f adaptive.f reorbit.f \
          ntv_lib.f ntv_pre.f common_ntv.f ntv.f torque.f \
          output_t7.f fftdriver.f fftroutines.f fftoutpt.f abortrun.f

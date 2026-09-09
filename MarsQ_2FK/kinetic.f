@@ -4307,11 +4307,12 @@ C        COMPUTE G-FACTORS
 C        COMPUTE H-FACTORS
          CALL KH(JS,KGRID,0)
 
-C        DEFAULT-OFF COMMON ORBIT PACKET.  This is called only after the
+C        DEFAULT-OFF COMMON ORBIT PACKETS.  These are called only after the
 C        native trapped orbit geometry, bounce time, G and H factors have
-C        all been built for this lambda.  The writer itself selects the
-C        requested (JS,KGRID,ELL) row from ELL_TRACE.REQUEST and is read-only
+C        all been built for this lambda.  The writers themselves select the
+C        requested (JS,KGRID,ELL) row from ELL_TRACE.REQUEST and are read-only
 C        with respect to the production arrays.
+         CALL WRITEKJPTRAPPEDORBIT(JS,JS_MAT,KGRID,LAM)
          CALL WRITEKJPCOMMONTRACE(JS,JS_MAT,KGRID,LAM)
 
          IF (IFOWT.EQ.1) THEN

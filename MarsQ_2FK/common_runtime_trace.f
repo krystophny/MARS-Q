@@ -1,4 +1,126 @@
 C=======================================================================
+C DEFAULT-OFF ORDERED TRAPPED FULL-BOUNCE GEOMETRY PACKET.
+C
+C KBTIME and KPHI produce one lower-to-upper zero-orbit-width leg.  The
+C return leg retraces those source-native positions in reverse while physical
+C time keeps increasing.  This writer emits that exact discrete reflection.
+C It does not infer a finite-orbit toroidal position or split the KG/KH cosine
+C into leg-resolved complex amplitudes.
+C=======================================================================
+      SUBROUTINE WRITEKJPTRAPPEDORBIT(JS,JS_MAT,KGRID,RLAM)
+
+      USE RCOMDM
+      USE DIMENSIM
+      USE GLOBALM
+      USE KINETICM
+      USE ToolBox
+      IMPLICIT NONE
+
+      INTEGER JS,JS_MAT,KGRID,J,IOUT,NHALF,FID,JHALF,LEG,
+     &        ENDPOINT,ENDPOINTOWNER,PERIODICCLOSURE,KSTATUS
+      REAL*8 RLAM,DPSIS,RADIAL,TAUEND,HCHIFACTOR,VPABS,
+     &       CHI,PHI,TAU,TAUFRACTION,BOUNCEANGLE,BOUNCEPHASE,
+     &       VPSTATE,DTAUMEASURE,ORIENTSTATE,ORIENTVPAR
+      REAL*8 HCHIHALF(NCHIT+2),VPABSHALF(NCHIT+2)
+      LOGICAL OTRACE,OEXIST,OFAILED
+      CHARACTER*128 PATH
+
+      IF (KGRID.NE.1.AND.KGRID.NE.2) RETURN
+      CALL KELLTRACESELECT(JS,KGRID,OTRACE)
+      IF (.NOT.OTRACE) RETURN
+C     The reflected geometry is exact only for the zero-FOW KJPCOEFF lane.
+      IF (IFOWT.NE.0) RETURN
+      IF (.NOT.ALLOCATED(RCHIK).OR..NOT.ALLOCATED(RPHIK).OR.
+     &    .NOT.ALLOCATED(RTK).OR..NOT.ALLOCATED(RHK).OR.
+     &    .NOT.ALLOCATED(RJBK)) RETURN
+
+      IF (KGRID.EQ.1) THEN
+         DPSIS = DPSIDS(JS)
+         RADIAL = CS(JS)
+      ELSE
+         DPSIS = DPSIDSM(JS)
+         RADIAL = CSM(JS)
+      ENDIF
+      IF (DPSIS.EQ.0.D0.OR.RLAM.LE.0.D0) RETURN
+
+      NHALF = NCHI2+2
+      IF (NHALF.LT.2) RETURN
+      TAUEND = RTK(NHALF)
+      IF (TAUEND.LE.0.D0) RETURN
+      IF (ABS(OMEGAB*TAUEND-PI).GT.
+     &    1.D-12*MAX(1.D0,ABS(OMEGAB*TAUEND),PI)) RETURN
+      DO J=2,NHALF
+         IF (RTK(J).LT.RTK(J-1)) RETURN
+      ENDDO
+
+      DO J=1,NHALF
+         IF (RJBK(J).NE.0.D0) THEN
+            HCHIHALF(J) = DPSIS/RJBK(J)
+         ELSE
+            HCHIHALF(J) = 0.D0
+         ENDIF
+         VPABSHALF(J) = 0.D0
+         IF (J.GT.1.AND.J.LT.NHALF) THEN
+            VPABS = 1.D0-RLAM/RHK(J)
+            IF (VPABS.GT.0.D0) VPABSHALF(J) = SQRT(VPABS)
+         ENDIF
+      ENDDO
+
+      WRITE(PATH,'("ELL_TRACE_JS",I4.4,"_G",I1,"_ORBIT.OUT")')
+     &      JS,KGRID
+C$OMP CRITICAL(ELL_TRACE_WRITE)
+      INQUIRE(FILE=PATH,EXIST=OEXIST)
+      FID=ASSIGNFREEFILEUNIT()
+      OPEN(FID,FILE=PATH,STATUS='UNKNOWN',POSITION='APPEND',
+     &     ACTION='WRITE')
+      IF (.NOT.OEXIST) THEN
+         WRITE(FID,'(A)') '# schema: iter-tc24-mars-trapped-full-orbit-v1'
+         WRITE(FID,'(A)') '# source: KJPCOEFF trapped KPARTICLE=0 IFOWT=0'
+         WRITE(FID,'(A,I8)') '# js = ',JS
+         WRITE(FID,'(A,I8)') '# js_mat = ',JS_MAT
+         WRITE(FID,'(A,I8)') '# kgrid = ',KGRID
+         WRITE(FID,'(A,ES24.16)') '# rho_pol = ',RADIAL
+         WRITE(FID,'(A)') '# orbit_span = full_bounce_reflected_native_zero_fow'
+         WRITE(FID,'(A)') '# start_end_point = lower_turning_point'
+         WRITE(FID,'(A)') '# intermediate_turning_point = upper_turning_point'
+         WRITE(FID,'(A)') '# endpoint_policy = own_initial_lower_and_upper_once; final_lower_is_closure'
+         WRITE(FID,'(A)') '# time_orientation = increasing_native_RTK_on_both_legs'
+         WRITE(FID,'(A)') '# position_return = exact_reverse_of_native_RCHIK_RPHIK_samples'
+         WRITE(FID,'(A)') '# delta_tau_measure = positive_native_RTK_cell_measure; first_row_zero'
+         WRITE(FID,'(A)') '# complex_amplitude = unavailable_not_inferred_from_folded_KG_KH_cosine'
+         WRITE(FID,'(A)') '# columns: js js_mat kgrid kparticle sample_index half_sample_index leg '
+     &      //'lambda ell chi phi tau tau_fraction bounce_angle bounce_phase rho_pol '
+     &      //'b0_over_b b_norm jb dpsids hchi vpar_state delta_tau_measure '
+     &      //'orientation_state orientation_vpar endpoint_flag endpoint_owner '
+     &      //'periodic_closure'
+      ENDIF
+
+      OFAILED = .FALSE.
+      DO IOUT=1,2*NHALF-1
+         CALL KTRAPPEDFULLPOINT(NHALF,IOUT,DBLE(KNTVELL),TAUEND,
+     &      OMEGAB,RCHIK,RPHIK,RTK,HCHIHALF,VPABSHALF,JHALF,LEG,
+     &      CHI,PHI,TAU,TAUFRACTION,BOUNCEANGLE,BOUNCEPHASE,
+     &      HCHIFACTOR,VPSTATE,DTAUMEASURE,ORIENTSTATE,ORIENTVPAR,
+     &      ENDPOINT,ENDPOINTOWNER,PERIODICCLOSURE,KSTATUS)
+         IF (KSTATUS.NE.0) THEN
+            OFAILED = .TRUE.
+            EXIT
+         ENDIF
+         WRITE(FID,1000) JS,JS_MAT,KGRID,0,IOUT,JHALF,LEG,
+     &      RLAM,DBLE(KNTVELL),CHI,PHI,TAU,TAUFRACTION,BOUNCEANGLE,
+     &      BOUNCEPHASE,RADIAL,RHK(JHALF),B0K/RHK(JHALF),RJBK(JHALF),
+     &      DPSIS,HCHIFACTOR,VPSTATE,DTAUMEASURE,ORIENTSTATE,
+     &      ORIENTVPAR,ENDPOINT,ENDPOINTOWNER,PERIODICCLOSURE
+      ENDDO
+      CLOSE(FID)
+C$OMP END CRITICAL(ELL_TRACE_WRITE)
+      IF (OFAILED) RETURN
+
+      RETURN
+ 1000 FORMAT(7I8,18(1X,E24.16),3(1X,I3))
+      END SUBROUTINE WRITEKJPTRAPPEDORBIT
+
+C=======================================================================
 C DEFAULT-OFF COMMON ORBIT RESPONSE PACKET.
 C
 C This writer exposes the native trapped KJPCOEFF integrands at the exact

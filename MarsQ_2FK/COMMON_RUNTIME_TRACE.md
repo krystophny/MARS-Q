@@ -30,6 +30,23 @@ zero state/orientation; their open-leg limits are represented by interior
 rows.  No `s_tor` or cylindrical `(R,Z)` value is fabricated; a common
 comparison must join the accepted radial/physical map and retain its hash.
 
+The same request also writes `ELL_TRACE_JS####_G{1,2}_ORBIT.OUT` in the
+accepted zero-FOW trapped lane.  This is an ordered source-native full bounce:
+the first leg is the exact `RCHIK/RPHIK/RTK` lower-to-upper sequence, and the
+second leg reverses the open samples while time and `ell*bounce_angle`
+continue to `2*RTK(end)` and `2*pi*ell`.  The upper turning point is emitted
+and owned once.  The last lower-turn row is explicitly an unowned periodic
+closure of the owned initial row.  `delta_tau_measure` is the positive
+native-`RTK` measure of the preceding cell and sums to `2*RTK(end)`.
+`vpar_state` and both orientation fields change sign on the reflected leg.
+
+This exact reflection does not provide a finite-orbit toroidal position or a
+leg-resolved complex amplitude.  Native `KG` and `KH` have already combined
+the two velocity signs into `cos(ell*OMEGAB*RTK)` on the half bounce, so their
+individual complex leg amplitudes cannot be recovered algebraically from the
+folded factor.  Those remain required external/source extensions before a
+common physical phase or work map can consume this geometry record.
+
 This packet is a producer audit, not a torque correction.  It does not include
 the energy-integrated `I_ell` drive, resonance coarea/Jacobian, pressure
 recovery, radial folding, toroidal covector, or final work assembly.  Those
