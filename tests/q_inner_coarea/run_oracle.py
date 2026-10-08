@@ -109,7 +109,10 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('parent',type=Path);parser.add_argument('fixed',type=Path)
     parser.add_argument('output',type=Path)
-    args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=False)
+    args=parser.parse_args()
+    args.parent=args.parent.resolve();args.fixed=args.fixed.resolve()
+    args.output=args.output.resolve()
+    args.output.mkdir(parents=True,exist_ok=False)
     rows=[]
     for name,source in [('parent',args.parent),('fixed',args.fixed)]:
         build=args.output/name;fixture(source,build)
