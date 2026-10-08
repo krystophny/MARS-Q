@@ -11882,18 +11882,28 @@ C
 C
             DO 2 J2=1,IP-1
 C
+            IF (NSTTP .EQ. 4) THEN
+               CID0(J2)=FCCCC0(CID0(IP),CID0(IP+1),CID0(IP+2),
+     ,              CID0(IP+3),PSIISO(IP),PSIISO(IP+1),PSIISO(IP+2),
+     ,              PSIISO(IP+3),PSIISO(J2))
+            ELSE
             CID0(J2) = FCCCC0(ZCID0,CID0(IP),CID0(IP+1),CID0(IP+2),
      ,                        SPSIM,PSIISO(IP),PSIISO(IP+1),
      ,                        PSIISO(IP+2),PSIISO(J2))
+            ENDIF
             CIDR(J2) = FCCCC0(CIDR(IP),CIDR(IP+1),CIDR(IP+2),CIDR(IP+3),
      ,                        PSIISO(IP),PSIISO(IP+1),PSIISO(IP+2),
      ,                        PSIISO(IP+3),PSIISO(J2))
             CIDQ(J2) = FCCCC0(CIDQ(IP),CIDQ(IP+1),CIDQ(IP+2),CIDQ(IP+3),
      ,                        PSIISO(IP),PSIISO(IP+1),PSIISO(IP+2),
      ,                        PSIISO(IP+3),PSIISO(J2))
+            IF (NSTTP .EQ. 4) THEN
+               CID2(J2)=1./CIDQ(J2)
+            ELSE
             CID2(J2) = FCCCC0(ZCID2,CID2(IP),CID2(IP+1),CID2(IP+2),
      ,                        SPSIM,PSIISO(IP),PSIISO(IP+1),
      ,                        PSIISO(IP+2),PSIISO(J2))
+            ENDIF
 C
     2       CONTINUE
 C
