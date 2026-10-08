@@ -25147,11 +25147,17 @@ C
 C
          INCLUDE 'DECLAR.inc'
          DIMENSION
-     R   A(N*MP)
+     R   A(*)
+         REAL ORIGINAL_TOP(M)
 C
 C     INITIALIZE
 C
-         M1  = MP - 1
+         NSING = 0
+         IF (N.LT.0 .OR. M.LT.1 .OR. MP.LT.M) THEN
+            NSING = -1
+            RETURN
+         ENDIF
+         IF (N.EQ.0) RETURN
          IKD = 0
          AD  = ABS(A(1)) * EPS
 C
@@ -25162,7 +25168,7 @@ C
 C
 C     TEST FOR ZERO PIVOT
 C
-            IF (ABS(DIAG) .LT. AD) THEN
+            IF (DIAG.EQ.0. .OR. ABS(DIAG).LT.AD) THEN
                NSING = -1
                RETURN
             ENDIF
@@ -25181,15 +25187,18 @@ C
 C
 C     SETS THE ROW OF THE TRANSPOSED LEFT HAND SIDE MATRIX LT
 C
+C     SAVE THE ORIGINAL ROW AND NORMALIZE BEFORE UPDATING.
+C     EACH TRIANGULAR UPDATE NOW WRITES CONTIGUOUS MEMORY.
             DO 3 JJB=2,LOPBND
-               ITOP    = IKD + JJB
-               TOP     = A(ITOP)
+               ITOP = IKD + JJB
+               ORIGINAL_TOP(JJB) = A(ITOP)
                A(ITOP) = A(ITOP) / DIAG
-C
-C     GAUSS RECTANGULAR RULE GOING DOWNWARDS
-C
-               CALL SAXPY(JJB-1,-TOP,A(IKD+2),1,A(ITOP+M1),M1)
    3        CONTINUE
+            DO 5 JCOLUMN=1,LOPBND-1
+               ITOP = IKD + JCOLUMN*MP + 1
+               CALL SAXPY(LOPBND-JCOLUMN,-A(IKD+JCOLUMN+1),
+     R                    ORIGINAL_TOP(JCOLUMN+1),1,A(ITOP),1)
+   5        CONTINUE
          IKD = IKD + MP
    4     CONTINUE
 C
@@ -25198,8 +25207,10 @@ C
          IKD = (N - 1) * MP + 1
          IJ  = IKD - MP
 C
-         IF (ABS(A(IKD)) .LT. ABS(A(IJ))*EPS) THEN
+         IF (A(IKD).EQ.0.) THEN
             NSING = -1
+         ELSE IF (N.GT.1) THEN
+            IF (ABS(A(IKD)).LT.ABS(A(IJ))*EPS) NSING = -1
          ENDIF
 C
          RETURN
