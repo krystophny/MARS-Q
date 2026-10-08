@@ -12,7 +12,7 @@ def main():
     selector=5 if args.variant=='public'else 4
     for name,kappa in [('circular',1.),('shaped',1.7)]:
         folder=args.output/name;folder.mkdir()
-        lines=['0.1','0','0','513']
+        lines=['0.1','0','0','513 1 1' if args.variant=='mars' else '513']
         for i in range(513):
             t=2*math.pi*i/512
             lines.append(f'{1+.1*math.cos(t):.16e} {kappa*.1*math.sin(t):.16e}')
@@ -35,7 +35,9 @@ def main():
 '''
         if args.variant=='public':
             deck+=' COCOS_IN=2, COCOS_OUT=2, SIGNB0XP=-1, SIGNIPXP=1,\n TENSBND=0., TENSPROF=0., NFUNRHO=0, NVERBOSE=2,\n &END\n***\n*** Generated prescribed-q circular/shaped control\n***\n***\n'
-        else:deck+=' &END\n &NEWRUN\n /\n'
+        else:
+            deck+=' &END\n &NEWRUN\n /\n'
+            deck='***\n*** Generated prescribed-q circular/shaped control\n***\n***\n'+deck
         (folder/'chease_namelist').write_text(deck)
     print('Prepared circular and elongated prescribed-q inputs; no solver executed.')
 

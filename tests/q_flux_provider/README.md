@@ -41,6 +41,21 @@ python tests/q_flux_provider/check_full_profile.py /tmp/mars-q-parent/CheaseMerg
   F² tests qualify magnitudes; they do not independently qualify the global
   signed-field convention for negative-q equilibria.
 
+The MARS generator uses the native `NBPS,NWBPS,NDATA` wall header and the
+four title records consumed before its namelist. Public CHEASE has its own
+single-count boundary header. Check generated inputs through whole native
+BNDINP/IODISK before running either MARS equilibrium:
+
+```sh
+python tests/q_flux_provider/check_input_parser.py --source CheaseMerge --output /tmp/mars-q-input-oracle
+```
+
+This builds a diagnostic executable that stops immediately after IODISK returns,
+before any PDE solve. It checks circular/elongated geometry, pressure, rho knots,
+prescribed-q selector4 and forward-source selector1 with their exact RFUN values.
+Missing wall-header fields and missing title records must fail. This input test
+qualifies parsing; it does not establish full nonlinear convergence.
+
 The generator supplies complete circular and elongated elliptical native inputs:
 
 ```sh
