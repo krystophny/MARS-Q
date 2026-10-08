@@ -27972,7 +27972,7 @@ C     IMPLICIT NONE
       dimension GSO_CONTEXT(8)
       GSO_CONTEXT = (/R0,RZ0,RMAG,RZMAG,SPSIM,R0EXP,B0EXP,RELAX/)
       call record_system(NS,NT,N4NSNT,NBAND,NPBAND,A,GSO_CONTEXT)
-      call record_chart(NS,NT,NBPS,CS,CT,TETBPS(1,1),
+      call record_chart(NS,NT,NBPS,CSIG,CT,TETBPS(1,1),
      & RRBPS(1,1),RZBPS(1,1),D2RBPS(1,1),D2ZBPS(1,1))
       end
       subroutine GS_CAPTURE_RHS
