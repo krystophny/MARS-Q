@@ -3088,6 +3088,12 @@ C
 C
 C---*----*----*----*----*----*----*----*----*----*----*----*----*----*
 C
+C     The trapezoidal rule samples sigma=0; SETUPA divides by sigma.
+         IF (NSGAUS.EQ.1) THEN
+            WRITE(0,*) 'NSGAUS=1 is undefined at the magnetic axis; ',
+     &                 'choose an interior Gaussian rule'
+            STOP 1
+         ENDIF
          CALL RESETI(MPLA1,16,0)
          CALL RESETI(MPLA2,16,0)
          CALL RESETI(MPLA3,16,0)
