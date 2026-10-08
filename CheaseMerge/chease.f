@@ -16153,6 +16153,14 @@ C
          IF (NPROFZ .EQ. 0) THEN
 C
             CALL PPRIME(KN,PPSI,ZPPRIM)
+            IF (NSTTP.EQ.4) THEN
+               CALL QFLUXSOURCE(KN,PPSI,ZFUNC,ZTMF)
+               DO JQ=1,KN
+                  PJIPHI(JQ)=-PR(JQ)*ZPPRIM(JQ)-ZFUNC(JQ)/PR(JQ)
+               ENDDO
+               RETURN
+            ENDIF
+
             CALL PRFUNC(KN,PPSI,ZFUNC,0)
 CYQL2018
             IF (NSTTP.EQ.4) CALL PRFUNC(KN,PPSI,ZFUNCD,1)
@@ -16454,27 +16462,10 @@ CYQL2018: ADD NSTTP=4 OPTION, WHERE (P',Q) IS SPECIFIED AS INPUT IN EXPEQ
          ELSE IF (NSTTP .EQ. 4) THEN   
 
             CALL PRFUNC(KN,PSIISO,CIPR,0)
- 
             DO J6=1,KN
-               ZS(J6)  = SQRT(1 - PSIISO(J6) / SPSIM)
+               ZS(J6)=SQRT(1.-PSIISO(J6)/SPSIM)
             ENDDO
-            CALL SPLINE(ZS,CID2,KN,D2CID2,ZWORK,ZWORK1)
-            CALL PRFUNC(KN,PSIISO,ZWORK,1)
-
-            DO J6=1,KN
-C              ZX=D(CID2)/D(ZS)
-               IF (J6.LT.KN) THEN
-                  ZH = ZS(J6+1)-ZS(J6)
-                  ZX = (CID2(J6+1)-CID2(J6))/ZH -
-     &                 (D2CID2(J6)/3.+D2CID2(J6+1)/6.)*ZH
-               ELSE 
-                  ZH = ZS(J6)-ZS(J6-1)
-                  ZX = (CID2(J6)-CID2(J6-1))/ZH + 
-     &                 (D2CID2(J6-1)/6.+D2CID2(J6)/3.)*ZH
-               ENDIF
-               TTP(J6)=-2.*CPI*CPI*CIPR(J6)/SPSIM*CID2(J6)/ZS(J6)*(
-     &                 CIPR(J6)*ZX + CID2(J6)*ZWORK(J6) )
-            ENDDO
+            CALL QFLUXSOURCE(KN,PSIISO,TTP,ZTEMP)
 
 C           WRITE(*,*) 'YQL2018-4: ZS TTP NSTTP,SPSIM=',NSTTP,SPSIM
 C           DO J6=1,KN
@@ -16493,6 +16484,11 @@ C
 C
          CALL SPLINE(PSIISO,TTP,KN,D2TTP,ZWORK,ZWORK1)
 C
+         IF (NSTTP.EQ.4.AND.NPROFZ.EQ.0) THEN
+            DO JQ=1,KN
+               TMF(JQ)=SQRT(ZTEMP(JQ))
+            ENDDO
+         ELSE
          IF (NTMF0.EQ.0) THEN
 C
             TMF(KN) = 0.5
@@ -16582,6 +16578,8 @@ CLIU       T**2/2. INSTEAD WE USE ANALYTICAL FORMULA FOR T HERE
          ENDDO  
          ENDIF
 C
+         ENDIF
+
          CALL SPLINE(ZS,TMF,KN,D2TMF,ZWORK,ZWORK1)
          CALL SPLINE(ZS,TTP,KN,D2TTP,ZWORK,ZWORK1)
 
@@ -27558,3 +27556,56 @@ C     IMPLICIT NONE
 !     
       RETURN
       END
+
+         SUBROUTINE QFLUXSOURCE(KN,PP,PFF,PF2)
+         USE, INTRINSIC :: IEEE_ARITHMETIC, ONLY: IEEE_IS_FINITE
+         INCLUDE 'DECLAR.inc'
+         INCLUDE 'COMDIM.inc'
+         INCLUDE 'COMNUM.inc'
+         INCLUDE 'COMESH.inc'
+         INCLUDE 'COMPHY.inc'
+         INCLUDE 'COMSOL.inc'
+         INCLUDE 'COMSUR.inc'
+         DIMENSION PP(KN),PFF(KN),PF2(KN),ZX(2*NPISO),
+     +     ZY(2*NPISO),ZD2(2*NPISO),ZA(2*NPISO),ZB(2*NPISO),
+     +     ZP(2*NPISO),ZQ(2*NPISO)
+         IF (NISO.LT.4.OR.NISO.GT.2*NPISO) STOP 'q source knot count'
+         IF (.NOT.IEEE_IS_FINITE(SPSIM)) STOP 'q source invalid axis'
+         IF (SPSIM.EQ.0.) STOP 'q source zero axis'
+         DO J=1,NISO
+            ZX(J)=CSIPR(J)**2
+            ZP(J)=SPSIM*(1.-ZX(J))
+         ENDDO
+         CALL PRFUNC(NISO,ZP,ZQ,0)
+         DO J=1,NISO
+            IF (.NOT.IEEE_IS_FINITE(ZQ(J))) STOP 'q source invalid q'
+            IF (.NOT.IEEE_IS_FINITE(CID2(J))) STOP 'q source coarea'
+            ZY(J)=(2.*CPI*ZQ(J)*CID2(J))**2
+            IF (.NOT.IEEE_IS_FINITE(ZY(J))) STOP 'q source F2 overflow'
+            IF (J.GT.1) THEN
+               IF (ZX(J).LE.ZX(J-1)) STOP 'q source knot order'
+            ENDIF
+         ENDDO
+         CALL SPLINE(ZX,ZY,NISO,ZD2,ZA,ZB)
+         DO J=1,KN
+            IF (.NOT.IEEE_IS_FINITE(PP(J))) STOP 'q source query'
+            X=1.-PP(J)/SPSIM
+            I=1
+            DO K=2,NISO-1
+               IF (X.GE.ZX(K)) I=K
+            ENDDO
+            H=ZX(I+1)-ZX(I)
+            A=(ZX(I+1)-X)/H
+            B=(X-ZX(I))/H
+            PF2(J)=A*ZY(I)+B*ZY(I+1)+
+     +         ((A**3-A)*ZD2(I)+(B**3-B)*ZD2(I+1))*H**2/6.
+            DY=(ZY(I+1)-ZY(I))/H+
+     +         ((1.-3.*A*A)*ZD2(I)+(3.*B*B-1.)*ZD2(I+1))*H/6.
+            PFF(J)=-DY/(2.*SPSIM)
+            IF (.NOT.IEEE_IS_FINITE(PF2(J))) STOP 'q source F2 invalid'
+            IF (PF2(J).LE.0.) STOP 'q source F2 nonpositive'
+            IF (.NOT.IEEE_IS_FINITE(PFF(J))) STOP 'q source FF invalid'
+         ENDDO
+         RETURN
+         END
+
