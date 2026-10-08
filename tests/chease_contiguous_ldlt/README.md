@@ -19,3 +19,7 @@ The loop saves the original pivot row, normalizes it, and visits the triangular
 update by contiguous destination rows instead of stride MP-1. Every entry gets
 the same product at every pivot. The scratch row is O(M). Singular NaN inputs
 are outside this test's contract; finite factors are compared exactly.
+
+Trailing32-pivot updates now use128-entry cache tiles in original pivot order.
+The near-threshold oracle covers accepted/rejected pivots across the panel
+boundary. Default precision/build conventions are unchanged; no dependency.

@@ -1,3 +1,196 @@
+C Copyright 2026 ITP plasma group
+C SPDX-License-Identifier: Apache-2.0
+C Active-variable permutation only: native assembly and reconstruction
+C remain
+C unchanged. Eliminate the folded angular bulk before the three center
+C DOFs.
+         MODULE folded_band
+         USE, INTRINSIC :: iso_fortran_env, ONLY: int64
+         IMPLICIT NONE
+         PRIVATE
+         INTEGER, PARAMETER :: RKIND=KIND(1D0)
+         PUBLIC :: folded_factor, folded_solve, folded_reset,
+     R   folded_active
+         LOGICAL, SAVE :: folded_active = .FALSE.
+         INTEGER, ALLOCATABLE, SAVE :: index_map(:)
+         REAL(RKIND), ALLOCATABLE, SAVE :: bulk(:,:), coupling(:,:),
+     R   response(:,:)
+         REAL(RKIND), SAVE :: schur(3,3)
+         INTEGER, SAVE :: nbulk=0, width=0
+         CONTAINS
+         SUBROUTINE folded_reset()
+         folded_active = .FALSE.
+         nbulk = 0
+         width = 0
+         IF (ALLOCATED(index_map)) DEALLOCATE(index_map)
+         IF (ALLOCATED(bulk)) DEALLOCATE(bulk)
+         IF (ALLOCATED(coupling)) DEALLOCATE(coupling)
+         IF (ALLOCATED(response)) DEALLOCATE(response)
+         END SUBROUTINE
+         
+         SUBROUTINE folded_factor(a, ns, nt, n, m, mp, node_map, eps,
+     R   info)
+         INTEGER, INTENT(IN) :: ns, nt, n, m, mp, node_map(:)
+         REAL(RKIND), INTENT(IN) :: a(*), eps
+         INTEGER, INTENT(OUT) :: info
+         INTEGER :: block_size, angle, radial, component, old, new, i,
+     R   j
+         INTEGER :: ii, jj, lo, hi, k, rank, status
+         INTEGER(int64) :: offset
+         REAL(RKIND) :: h(3,3), value, svalue
+         CALL folded_reset()
+         info = -2
+         IF (ns < 3 .OR. nt < 4 .OR. MOD(nt,2) /= 0) RETURN
+         IF (INT(n,int64) /= 4_int64*(INT(ns,int64)+1)*INT(nt,int64))
+     R   RETURN
+         IF (mp < m) RETURN
+         IF (SIZE(node_map) < (ns+1)*nt) RETURN
+         block_size = 4*ns-2
+         nbulk = block_size*nt
+         width = 8*ns+4
+         ALLOCATE(index_map(n), bulk(width,nbulk), coupling(nbulk,3),
+     R   response(nbulk,3), STAT=status)
+         IF (status /= 0) THEN
+         CALL folded_reset()
+         RETURN
+         ENDIF
+         index_map = 0
+         bulk = 0._RKIND
+         coupling = 0._RKIND
+         h = 0._RKIND
+         DO angle=1,nt
+C The native center-ring permutation already folds the periodic cycle.
+         rank = node_map(angle)-1
+         IF (rank < 0 .OR. rank >= nt) RETURN
+         DO radial=1,ns
+         IF (node_map(radial*nt+angle) < 1) RETURN
+         IF (node_map(radial*nt+angle) > n/4) RETURN
+         old = 4*(node_map(radial*nt+angle)-1)
+         IF (old < 0 .OR. old+4 > n) RETURN
+         IF (radial < ns) THEN
+         DO component=1,4
+         new = rank*block_size+4*(radial-1)+component
+         index_map(old+component) = new
+         END DO
+         ELSE
+         new = rank*block_size+4*(ns-1)
+         index_map(old+2) = new+1
+         index_map(old+4) = new+2
+         ENDIF
+         END DO
+         END DO
+         DO k=1,3
+         index_map(4*nt-3+k) = -k
+         END DO
+C Require a bijection; a malformed node map must fail before
+C factorization.
+         BLOCK
+         INTEGER :: seen(nbulk)
+         seen = 0
+         DO i=1,n
+         IF (index_map(i) > 0) seen(index_map(i)) =
+     R   seen(index_map(i))+1
+         END DO
+         IF (ANY(seen /= 1)) RETURN
+         END BLOCK
+         DO i=1,n
+         offset = INT(i-1,int64)*INT(mp,int64)
+         ii = index_map(i)
+         IF (ii == 0 .AND. a(offset+1) /= 1._RKIND) RETURN
+         DO j=i,MIN(n,i+m-1)
+         value = a(offset+j-i+1)
+         IF (value == 0._RKIND) CYCLE
+         jj = index_map(j)
+         IF (ii == 0 .OR. jj == 0) THEN
+C LIMITA installs unit inactive equations with no active coupling.
+         IF (i /= j .OR. value /= 1._RKIND) RETURN
+         ELSE IF (ii > 0 .AND. jj > 0) THEN
+         lo = MIN(ii,jj)
+         hi = MAX(ii,jj)
+         IF (hi-lo+1 > width) RETURN
+         bulk(hi-lo+1,lo) = value
+         ELSE IF (ii < 0 .AND. jj < 0) THEN
+         h(-ii,-jj) = value
+         h(-jj,-ii) = value
+         ELSE IF (ii > 0) THEN
+         coupling(ii,-jj) = value
+         ELSE
+         coupling(jj,-ii) = value
+         ENDIF
+         END DO
+         END DO
+         info = 0
+         CALL ALDLT(bulk,eps,nbulk,width,width,info)
+         IF (info /= 0) RETURN
+         response = coupling
+         DO k=1,3
+         CALL solve_bulk(response(:,k))
+         END DO
+         schur = 0._RKIND
+         DO i=1,3
+         DO j=i,3
+         svalue = h(i,j)-DOT_PRODUCT(coupling(:,i),response(:,j))
+         schur(j-i+1,i) = svalue
+         END DO
+         END DO
+         info = 0
+         CALL ALDLT(schur,eps,3,3,3,info)
+         IF (info /= 0) RETURN
+         folded_active = .TRUE.
+         END SUBROUTINE
+         
+         SUBROUTINE solve_bulk(x)
+         REAL(RKIND), INTENT(INOUT) :: x(:)
+         CALL LYV(bulk,x,nbulk,nbulk,width,width)
+         CALL DWY(bulk,x,nbulk,nbulk,width,width)
+         CALL LTXW(bulk,x,nbulk,nbulk,width,width)
+         END SUBROUTINE
+         
+         SUBROUTINE folded_solve(b, info)
+         REAL(RKIND), INTENT(INOUT) :: b(:)
+         INTEGER, INTENT(OUT) :: info
+         REAL(RKIND), ALLOCATABLE :: y(:)
+         REAL(RKIND) :: center(3)
+         INTEGER :: i, k, status
+         info = -2
+         IF (.NOT. folded_active) RETURN
+         IF (SIZE(b) < SIZE(index_map)) RETURN
+         ALLOCATE(y(nbulk), STAT=status)
+         IF (status /= 0) RETURN
+         y = 0._RKIND
+         center = 0._RKIND
+         DO i=1,SIZE(index_map)
+         k = index_map(i)
+         IF (k > 0) THEN
+         y(k) = b(i)
+         ELSE IF (k < 0) THEN
+         center(-k) = b(i)
+         ELSE IF (b(i) /= 0._RKIND) THEN
+C LIMITB must have zeroed every inactive native equation.
+         RETURN
+         ENDIF
+         END DO
+         CALL solve_bulk(y)
+         DO k=1,3
+         center(k) = center(k)-DOT_PRODUCT(coupling(:,k),y)
+         END DO
+         CALL LYV(schur,center,3,3,3,3)
+         CALL DWY(schur,center,3,3,3,3)
+         CALL LTXW(schur,center,3,3,3,3)
+         y = y-MATMUL(response,center)
+         DO i=1,SIZE(index_map)
+         k = index_map(i)
+         IF (k > 0) THEN
+         b(i) = y(k)
+         ELSE IF (k < 0) THEN
+         b(i) = center(-k)
+         ELSE
+         b(i) = 0._RKIND
+         ENDIF
+         END DO
+         info = 0
+         END SUBROUTINE
+         END MODULE folded_band
 C*DECK CHEASE
          PROGRAM CHEASE
 C
@@ -3315,19 +3508,48 @@ C
 ***********************************************************************
 C
 C
+         USE folded_band, ONLY: folded_factor,folded_reset
          INCLUDE 'DECLAR.inc'
          INCLUDE 'COMDIM.inc'
          INCLUDE 'COMBLA.inc'
          INCLUDE 'COMNUM.inc'
+         INCLUDE 'COMINT.inc'
+         INTEGER ORDER_STATUS
+         CHARACTER*16 BAND_ORDER
+         REAL(KIND(1D0)) START_CPU,END_CPU
 C
 C---*----*----*----*----*----*----*----*----*----*----*----*----*----*
 C
 C
+         CALL folded_reset()
          CALL SETUPA
+         CALL GET_ENVIRONMENT_VARIABLE('CHEASE_BAND_ORDER',BAND_ORDER,
+     R   STATUS=ORDER_STATUS)
+         CALL CPU_TIME(START_CPU)
+         ISGN=0
+         IF (ORDER_STATUS == 1 .OR. (ORDER_STATUS == 0 .AND.
+     R   (TRIM(BAND_ORDER) == '' .OR. TRIM(BAND_ORDER) == 'native')))
+     R   THEN
+         BAND_ORDER='native'
          CALL ALDLT(A,RC1M14,N4NSNT,NBAND,NPBAND,ISGN)
-C
-         IF (ISGN .EQ. -1) STOP 'ISGN=-1'
-C
+         ELSE IF (ORDER_STATUS == 0 .AND. TRIM(BAND_ORDER) == 'folded')
+     R   THEN
+         IF (NS >= 3 .AND. NT >= 4 .AND. MOD(NT,2) == 0 .AND.
+     R   8*NS+4 < NBAND) THEN
+         CALL folded_factor(A,NS,NT,N4NSNT,NBAND,NPBAND,
+     R   NUPDWN(1:NSTMAX),RC1M14,ISGN)
+         ELSE
+         BAND_ORDER='native'
+         CALL ALDLT(A,RC1M14,N4NSNT,NBAND,NPBAND,ISGN)
+         ENDIF
+         ELSE
+         WRITE(0,*) 'CHEASE_BAND_ORDER must be native or folded'
+         ISGN=-2
+         ENDIF
+         CALL CPU_TIME(END_CPU)
+         WRITE(*,*) 'CHEASE band order ',TRIM(BAND_ORDER),
+     R   ' factor CPU seconds ',END_CPU-START_CPU
+         IF (ISGN /= 0) STOP 1
          RETURN
          END
 C*DECK C2S06
@@ -7745,6 +7967,7 @@ C
 *                                                                     *
 ***********************************************************************
 C
+         USE folded_band, ONLY: folded_solve,folded_active
          INCLUDE 'DECLAR.inc'
          INCLUDE 'COMDIM.inc'
          INCLUDE 'COMBLA.inc'
@@ -7756,6 +7979,11 @@ C
 *                                                                     *
 ***********************************************************************
 C
+         IF (folded_active) THEN
+            CALL folded_solve(B(1:N4NSNT),ISGN)
+            IF (ISGN.NE.0) STOP 1
+            RETURN
+         ENDIF
          CALL LYV(A,B,N4NSNT,NP4NST,NBAND,NPBAND)
 C
 ***********************************************************************
@@ -25131,90 +25359,89 @@ C
 C*DECK MR01
 C*CALL PROCESS
          SUBROUTINE ALDLT(A,EPS,N,M,MP,NSING)
-C        ------------------------------------
-C
-C     DECOMPOSE A=L*D*LT                                             
-C                                                                    
-C     VERSION 1C           13.9.74     RALF GRUBER    CRPP LAUSANNE  
-C                                                                    
-C     A IS A BAND MATRIX WITH HALF WIDTH M AND LENGTH N              
-C     L CONTAINS 1 IN THE DIAGONAL                                   
-C     AS OUTPUT D REPLACES THE DIAGONAL OF A AND                     
-C     LT WITHOUT ITS DIAGONAL THE REST OF A                          
-C     ALL CALCULATIONS ARE PERFORMED IN A                            
-C     NSING = -1 WHEN A IS SINGULAR                                  
-C
-C
-         INCLUDE 'DECLAR.inc'
-         DIMENSION
-     R   A(*)
-         REAL ORIGINAL_TOP(M)
-C
-C     INITIALIZE
-C
-         NSING = 0
-         IF (N.LT.0 .OR. M.LT.1 .OR. MP.LT.M) THEN
-            NSING = -1
-            RETURN
-         ENDIF
-         IF (N.EQ.0) RETURN
-         IKD = 0
-         AD  = ABS(A(1)) * EPS
-C
-C     SCAN OVER THE WHOLE LENGTH OF A
-C
-         DO  4  JIB=2,N
-            DIAG=A(IKD+1)
-C
-C     TEST FOR ZERO PIVOT
-C
-            IF (DIAG.EQ.0. .OR. ABS(DIAG).LT.AD) THEN
-               NSING = -1
-               RETURN
-            ENDIF
-C
-C     RESTRICTION OF LOOP FOR NOT EXCEEDING BAND MATRIX
-C
-            LOPBND = M
-            I1     = N - JIB + 2
-C
-            IF (I1 .LT. M) LOPBND = I1
-C
-C     DIAGONAL ELEMENT BEFORE GAUSS ELIMINATION
-C
-            IJ = IKD + MP + 1
-            AD = ABS(A(IJ)) * EPS
-C
-C     SETS THE ROW OF THE TRANSPOSED LEFT HAND SIDE MATRIX LT
-C
-C     SAVE THE ORIGINAL ROW AND NORMALIZE BEFORE UPDATING.
-C     EACH TRIANGULAR UPDATE NOW WRITES CONTIGUOUS MEMORY.
-            DO 3 JJB=2,LOPBND
-               ITOP = IKD + JJB
-               ORIGINAL_TOP(JJB) = A(ITOP)
-               A(ITOP) = A(ITOP) / DIAG
-   3        CONTINUE
-            DO 5 JCOLUMN=1,LOPBND-1
-               ITOP = IKD + JCOLUMN*MP + 1
-               CALL SAXPY(LOPBND-JCOLUMN,-A(IKD+JCOLUMN+1),
-     R                    ORIGINAL_TOP(JCOLUMN+1),1,A(ITOP),1)
-   5        CONTINUE
-         IKD = IKD + MP
-   4     CONTINUE
-C
-C     LAST DIAGONAL ELEMENT
-C
-         IKD = (N - 1) * MP + 1
-         IJ  = IKD - MP
-C
-         IF (A(IKD).EQ.0.) THEN
-            NSING = -1
-         ELSE IF (N.GT.1) THEN
-            IF (ABS(A(IKD)).LT.ABS(A(IJ))*EPS) NSING = -1
-         ENDIF
-C
+         IMPLICIT NONE
+         INTEGER, INTENT(IN) :: N,M,MP
+         REAL(KIND(1D0)), INTENT(IN) :: EPS
+         REAL(KIND(1D0)), INTENT(INOUT) :: A(*)
+         INTEGER, INTENT(OUT) :: NSING
+         INTEGER, PARAMETER :: PANEL_SIZE=32, TILE_SIZE=128
+         REAL(KIND(1D0)) :: ORIGINAL_ROWS(M+16,PANEL_SIZE),
+     R   TILE(TILE_SIZE)
+         REAL(KIND(1D0)) :: DIAG, AD, NEXT_DIAG, SCALE
+         INTEGER :: FIRST,LAST,K,COLUMN,ROW,J,JBASE,NTILE,LENGTH
+         INTEGER :: IKD,ITOP,OLD_OFFSET,LOPBND,LOWER
+C Same unpivoted LDLT and upper-row band storage as the native routine.
+C Normalize a small panel and update its remaining rows immediately.
+C Accumulate the trailing updates in cache-sized contiguous tiles,
+C applying
+C each pivot in its original order before storing the tile once.
+         NSING=0
+         IF (N < 0 .OR. M < 1 .OR. MP < M) THEN
+         NSING=-1
          RETURN
-         END
+         ENDIF
+         IF (N == 0) RETURN
+         AD=ABS(A(1))*EPS
+         DO FIRST=1,N-1,PANEL_SIZE
+         LAST=MIN(N-1,FIRST+PANEL_SIZE-1)
+         DO K=FIRST,LAST
+         IKD=(K-1)*MP
+         DIAG=A(IKD+1)
+         IF (DIAG == 0D0 .OR. ABS(DIAG) < AD) THEN
+         NSING=-1
+         RETURN
+         ENDIF
+C Preserve the legacy threshold: original next diagonal immediately
+C before this pivot's update, including earlier deferred panel terms.
+         NEXT_DIAG=A(IKD+MP+1)
+         IF (K == LAST) THEN
+         LOWER=MAX(FIRST,K+2-M)
+         DO COLUMN=LOWER,K-1
+         OLD_OFFSET=(COLUMN-1)*MP
+         SCALE=-A(OLD_OFFSET+K+2-COLUMN)
+         IF (SCALE /= 0D0) NEXT_DIAG=NEXT_DIAG+
+     R   SCALE*ORIGINAL_ROWS(K+2-COLUMN,COLUMN-FIRST+1)
+         ENDDO
+         ENDIF
+         AD=ABS(NEXT_DIAG)*EPS
+         LOPBND=MIN(M,N-K+1)
+         DO J=2,LOPBND
+         ORIGINAL_ROWS(J,K-FIRST+1)=A(IKD+J)
+         A(IKD+J)=A(IKD+J)/DIAG
+         ENDDO
+         DO ROW=K+1,MIN(LAST,K+M-1)
+         SCALE=-A(IKD+ROW-K+1)
+         ITOP=(ROW-1)*MP+1
+         LENGTH=MIN(N,K+M-1)-ROW+1
+         CALL
+     R   SAXPY(LENGTH,SCALE,ORIGINAL_ROWS(ROW-K+1,K-FIRST+1),1,A(ITOP),1)
+         ENDDO
+         ENDDO
+         DO ROW=LAST+1,MIN(N,LAST+M-1)
+         ITOP=(ROW-1)*MP+1
+         DO JBASE=ROW,MIN(N,LAST+M-1),TILE_SIZE
+         NTILE=MIN(TILE_SIZE,MIN(N,LAST+M-1)-JBASE+1)
+         TILE(1:NTILE)=A(ITOP+JBASE-ROW:ITOP+JBASE-ROW+NTILE-1)
+         DO K=FIRST,LAST
+         LENGTH=MIN(NTILE,K+M-JBASE)
+         IF (LENGTH <= 0) CYCLE
+         SCALE=-A((K-1)*MP+ROW-K+1)
+         IF (SCALE == 0D0) CYCLE
+         DO J=1,LENGTH
+         TILE(J)=TILE(J)+SCALE*ORIGINAL_ROWS(JBASE+J-K,K-FIRST+1)
+         ENDDO
+         ENDDO
+         A(ITOP+JBASE-ROW:ITOP+JBASE-ROW+NTILE-1)=TILE(1:NTILE)
+         ENDDO
+         ENDDO
+         ENDDO
+         IKD=(N-1)*MP+1
+         IF (A(IKD) == 0D0) THEN
+         NSING=-1
+         ELSE IF (N > 1) THEN
+         IF (ABS(A(IKD)) < ABS(A(IKD-MP))*EPS) NSING=-1
+         ENDIF
+         END SUBROUTINE ALDLT
 C*DECK MR02
 C*CALL PROCESS
          SUBROUTINE LYV(A,U,N,NP,M,MP)
