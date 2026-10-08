@@ -1,3 +1,151 @@
+      module gs_stage_observer
+      use, intrinsic :: iso_fortran_env, only: real64
+      implicit none
+      private
+      public :: record_system, record_rhs, record_vector, record_chart,
+     & record_check
+      integer, save :: generation = 0, iteration = 0
+      logical, save :: initialized = .false., enabled = .false.
+      character(1024), save :: directory
+      contains
+      logical function observing()
+      integer :: status, length
+      if (.not. initialized) then
+      call get_environment_variable('CHEASE_GS_OBSERVER_DIR',
+     & directory,
+     & length=length, status=status)
+      if (status == -1) error stop 'Observer directory is too long'
+      enabled = status == 0 .and. length > 0
+      initialized = .true.
+      end if
+      observing = enabled
+      end function observing
+      
+      function path(tag, system_only) result(filename)
+      character(*), intent(in) :: tag
+      logical, intent(in), optional :: system_only
+      character(1200) :: filename
+      character(32) :: identifier
+      logical :: matrix_name
+      matrix_name = .false.
+      if (present(system_only)) matrix_name = system_only
+      if (matrix_name) then
+      write (identifier, '("g",i4.4)') generation
+      else
+      write (identifier, '("g",i4.4,"_s",i6.6)') generation, iteration
+      end if
+      filename =
+     & trim(directory)//'/'//trim(identifier)//'_'//tag//'.dat'
+      end function path
+      
+      subroutine metadata(filename, context)
+      character(*), intent(in) :: filename
+      real(real64), intent(in) :: context(8)
+      integer :: unit
+      open (newunit=unit, file=trim(filename)//'.meta', status='new')
+      write (unit, '(2i12)') generation, iteration
+      write (unit, '(8es26.17)') context
+      close (unit)
+      end subroutine metadata
+      
+      subroutine write_system(filename, ns, nt, n, width, lda, a)
+      character(*), intent(in) :: filename
+      integer, intent(in) :: ns, nt, n, width, lda
+      real(real64), intent(in) :: a(lda,n)
+      integer :: unit, col, row
+      open (newunit=unit, file=trim(filename), status='new',
+     & form='unformatted')
+      write (unit) ns, nt, n, width
+      write (unit) ((a(row,col),row=1,width),col=1,n)
+      close (unit)
+      end subroutine write_system
+      
+      subroutine record_system(ns, nt, n, width, lda, a, context)
+      integer, intent(in) :: ns, nt, n, width, lda
+      real(real64), intent(in) :: a(lda,n), context(8)
+      character(1200) :: filename
+      if (.not. observing()) return
+      generation = generation + 1
+      iteration = 0
+      filename = path('matrix', .true.)
+      call write_system(filename, ns, nt, n, width, lda, a)
+      call metadata(filename, context)
+      end subroutine record_system
+      
+      subroutine record_rhs(ns, nt, n, b, context)
+      integer, intent(in) :: ns, nt, n
+      real(real64), intent(in) :: b(n), context(8)
+      integer :: unit
+      character(1200) :: filename
+      if (.not. observing()) return
+      if (generation == 0) error stop
+     & 'RHS observer requires original matrix'
+      iteration = iteration + 1
+      filename = path('rhs')
+      open (newunit=unit, file=trim(filename), status='new',
+     & form='unformatted')
+      write (unit) ns, nt, n
+      write (unit) b
+      close (unit)
+      call metadata(filename, context)
+      end subroutine record_rhs
+      
+      subroutine record_vector(ns, nt, n, up, values, tag, context)
+      integer, intent(in) :: ns, nt, n, up(n/4)
+      real(real64), intent(in) :: values(n), context(8)
+      character(*), intent(in) :: tag
+      integer :: unit
+      character(1200) :: filename
+      if (.not. observing()) return
+      filename = path(tag)
+      open (newunit=unit, file=trim(filename), status='new',
+     & form='unformatted')
+      write (unit) ns, nt, n
+      write (unit) up
+      write (unit) values
+      close (unit)
+      call metadata(filename, context)
+      end subroutine record_vector
+      
+      subroutine record_chart(ns, nt, nb, s, t, theta, r, z, r2, z2)
+      integer, intent(in) :: ns, nt, nb
+      real(real64), intent(in) :: s(ns+1), t(nt+1), theta(nb)
+      real(real64), intent(in) :: r(nb), z(nb), r2(nb), z2(nb)
+      integer :: unit
+      character(1200) :: filename
+      if (.not. observing()) return
+      filename = path('chart', .true.)
+      open (newunit=unit, file=trim(filename), status='new',
+     & form='unformatted')
+      write (unit) ns, nt, nb
+      write (unit) s
+      write (unit) t
+      write (unit) theta
+      write (unit) r
+      write (unit) z
+      write (unit) r2
+      write (unit) z2
+      close (unit)
+      end subroutine record_chart
+      
+      subroutine record_check(ns, nt, n, width, lda, a, b, context)
+      integer, intent(in) :: ns, nt, n, width, lda
+      real(real64), intent(in) :: a(lda,n), b(n), context(8)
+      integer :: unit
+      character(1200) :: filename
+      if (.not. observing()) return
+      filename = path('check_matrix')
+      call write_system(filename, ns, nt, n, width, lda, a)
+      call metadata(filename, context)
+      filename = path('check_rhs')
+      open (newunit=unit, file=trim(filename), status='new',
+     & form='unformatted')
+      write (unit) ns, nt, n
+      write (unit) b
+      close (unit)
+      call metadata(filename, context)
+      end subroutine record_check
+      end module gs_stage_observer
 C Copyright 2026 ITP plasma group
 C SPDX-License-Identifier: Apache-2.0
 C Active-variable permutation only: native assembly and reconstruction
@@ -3523,6 +3671,7 @@ C
 C
          CALL folded_reset()
          CALL SETUPA
+         CALL GS_CAPTURE_MATRIX
          CALL GET_ENVIRONMENT_VARIABLE('CHEASE_BAND_ORDER',BAND_ORDER,
      R   STATUS=ORDER_STATUS)
          CALL CPU_TIME(START_CPU)
@@ -3676,11 +3825,14 @@ C SOLVE SYSTEM L * D * LT * X = B
 C
          CALL SCOPY(N4NSNT,CPSICL,1,CPSIO,1)
          CALL SOLVIT
+         CALL GS_CAPTURE_VECTOR('direct',CPSICL)
          call scopyr(relax,n4nsnt,cpsio,1,cpsicl,1)
+         CALL GS_CAPTURE_VECTOR('relaxed',CPSICL)
 C
 C FIND PSIMIN AND MAGNETIC AXIS
 C
          CALL MAGAXE
+         CALL GS_CAPTURE_VECTOR('magaxe',CPSICL)
 C
 C PRINT OUT :
 C          - SPSIM, RMAG AND RZMAG FOR SOLOVEV CASE
@@ -3689,7 +3841,9 @@ C            FOR OTHER CASES
 C
          CALL OUTPUT(5)
 C
+         CALL GS_CAPTURE_VECTOR('pre_smooth',CPSICL)
          IF (NSMOOTH .EQ. 1) CALL SMOOTH
+         CALL GS_CAPTURE_VECTOR('post_smooth',CPSICL)
 C
          CALL ERROR1(CPSIO,CPSICL)
 C
@@ -3747,6 +3901,7 @@ C
          CALL VZERO(ZRES,N4NSNT)
          CALL SETUPA
          CALL SETUPB
+         CALL GS_CAPTURE_CHECK
 C
          DO 3 J3=1,N4NSNT
 C
@@ -7899,8 +8054,10 @@ C
 *                                                                     *
 ***********************************************************************
 C
+         CALL GS_CAPTURE_RHS
          CALL DIRECT
          CALL SCOPY(N4NSNT,B,1,CPSILI,1)
+         CALL GS_CAPTURE_VECTOR('reduced',CPSILI)
 c
 ***********************************************************************
 *                                                                     *
@@ -27799,3 +27956,72 @@ C     IMPLICIT NONE
 !     
       RETURN
       END
+
+      subroutine GS_CAPTURE_MATRIX
+      use gs_stage_observer, only: record_system, record_chart
+      INCLUDE 'DECLAR.inc'
+      INCLUDE 'COMDIM.inc'
+      INCLUDE 'COMBLA.inc'
+      INCLUDE 'COMBND.inc'
+      INCLUDE 'COMCON.inc'
+      INCLUDE 'COMNUM.inc'
+      INCLUDE 'COMINT.inc'
+      INCLUDE 'COMSOL.inc'
+      INCLUDE 'COMPHY.inc'
+      INCLUDE 'COMESH.inc'
+      dimension GSO_CONTEXT(8)
+      GSO_CONTEXT = (/R0,RZ0,RMAG,RZMAG,SPSIM,R0EXP,B0EXP,RELAX/)
+      call record_system(NS,NT,N4NSNT,NBAND,NPBAND,A,GSO_CONTEXT)
+      call record_chart(NS,NT,NBPS,CS,CT,TETBPS(1,1),
+     & RRBPS(1,1),RZBPS(1,1),D2RBPS(1,1),D2ZBPS(1,1))
+      end
+      subroutine GS_CAPTURE_RHS
+      use gs_stage_observer, only: record_rhs
+      INCLUDE 'DECLAR.inc'
+      INCLUDE 'COMDIM.inc'
+      INCLUDE 'COMBLA.inc'
+      INCLUDE 'COMBND.inc'
+      INCLUDE 'COMCON.inc'
+      INCLUDE 'COMNUM.inc'
+      INCLUDE 'COMINT.inc'
+      INCLUDE 'COMSOL.inc'
+      INCLUDE 'COMPHY.inc'
+      INCLUDE 'COMESH.inc'
+      dimension GSO_CONTEXT(8)
+      GSO_CONTEXT = (/R0,RZ0,RMAG,RZMAG,SPSIM,R0EXP,B0EXP,RELAX/)
+      call record_rhs(NS,NT,N4NSNT,B,GSO_CONTEXT)
+      end
+      subroutine GS_CAPTURE_VECTOR(TAG,VALUES)
+      use gs_stage_observer, only: record_vector
+      INCLUDE 'DECLAR.inc'
+      INCLUDE 'COMDIM.inc'
+      INCLUDE 'COMBLA.inc'
+      INCLUDE 'COMBND.inc'
+      INCLUDE 'COMCON.inc'
+      INCLUDE 'COMNUM.inc'
+      INCLUDE 'COMINT.inc'
+      INCLUDE 'COMSOL.inc'
+      INCLUDE 'COMPHY.inc'
+      INCLUDE 'COMESH.inc'
+      dimension GSO_CONTEXT(8)
+      character(*) TAG
+      real(kind(1d0)) VALUES(*)
+      GSO_CONTEXT = (/R0,RZ0,RMAG,RZMAG,SPSIM,R0EXP,B0EXP,RELAX/)
+      call record_vector(NS,NT,N4NSNT,NUPDWN,VALUES,TAG,GSO_CONTEXT)
+      end
+      subroutine GS_CAPTURE_CHECK
+      use gs_stage_observer, only: record_check
+      INCLUDE 'DECLAR.inc'
+      INCLUDE 'COMDIM.inc'
+      INCLUDE 'COMBLA.inc'
+      INCLUDE 'COMBND.inc'
+      INCLUDE 'COMCON.inc'
+      INCLUDE 'COMNUM.inc'
+      INCLUDE 'COMINT.inc'
+      INCLUDE 'COMSOL.inc'
+      INCLUDE 'COMPHY.inc'
+      INCLUDE 'COMESH.inc'
+      dimension GSO_CONTEXT(8)
+      GSO_CONTEXT = (/R0,RZ0,RMAG,RZMAG,SPSIM,R0EXP,B0EXP,RELAX/)
+      call record_check(NS,NT,N4NSNT,NBAND,NPBAND,A,B,GSO_CONTEXT)
+      end

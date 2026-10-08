@@ -1,0 +1,21 @@
+cmake_minimum_required(VERSION 3.20)
+project(mars_gs_stage_observer LANGUAGES Fortran)
+enable_testing()
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../../CheaseMerge/chease.f" NATIVE)
+string(FIND "${NATIVE}" "      MODULE folded_band" END)
+if(END LESS 0)
+  message(FATAL_ERROR "Missing native observer module boundary")
+endif()
+string(SUBSTRING "${NATIVE}" 0 ${END} OBSERVER)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/native_observer.f" "${OBSERVER}")
+add_executable(observer_oracle "${CMAKE_CURRENT_BINARY_DIR}/native_observer.f" oracle.f90)
+set_target_properties(observer_oracle PROPERTIES Fortran_MODULE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+target_include_directories(observer_oracle PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+if(CMAKE_Fortran_COMPILER_ID STREQUAL "GNU" AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+  target_compile_options(observer_oracle PRIVATE -fcheck=all -ffpe-trap=invalid,zero,overflow)
+endif()
+add_test(NAME observer_native_headers_and_unchanged_arrays
+  COMMAND ${CMAKE_COMMAND} -DPROGRAM=$<TARGET_FILE:observer_oracle>
+    -DOUTDIR=${CMAKE_CURRENT_BINARY_DIR}/oracle-output -P ${CMAKE_CURRENT_SOURCE_DIR}/run.cmake)
+add_test(NAME observer_disabled_no_array_mutation
+  COMMAND ${CMAKE_COMMAND} -E env CHEASE_GS_OBSERVER_DIR= $<TARGET_FILE:observer_oracle> disabled)

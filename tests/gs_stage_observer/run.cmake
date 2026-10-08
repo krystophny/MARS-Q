@@ -1,0 +1,7 @@
+file(REMOVE_RECURSE "${OUTDIR}")
+file(MAKE_DIRECTORY "${OUTDIR}")
+execute_process(COMMAND ${CMAKE_COMMAND} -E env CHEASE_GS_OBSERVER_DIR=${OUTDIR}
+  ${PROGRAM} ${OUTDIR} RESULT_VARIABLE STATUS)
+if(NOT STATUS EQUAL 0)
+  message(FATAL_ERROR "Native observer oracle failed: ${STATUS}")
+endif()
