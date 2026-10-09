@@ -6708,7 +6708,7 @@ C
 C
 C---*----*----*----*----*----*----*----*----*----*----*----*----*----*
 C
-         CALL VZERO(A,NPBAND*NP4NST)
+         CALL VZERO(A,NPBAND*N4NSNT)
 C
          DO 1 J1=1,NT
 C
