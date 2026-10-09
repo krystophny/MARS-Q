@@ -17617,7 +17617,7 @@ C
          INCLUDE 'COMSUR.inc'
 C
          DIMENSION
-     I   I1(NPT+2*NPISO),  IC(NPT+2*NPISO),
+     I   I1(NPT+2*NPISO),
      R   D2RPP(NPISO),   PP(KN),   PS(NPISO),
      R   RPP(NPISO),     PT(KN)
 C
@@ -17627,14 +17627,17 @@ C   PSIISO(I) <= PP(J) <= PSIISO(I+1), J=1,...,KN
 C 
          IF (KPP.GT.NPISO) STOP 'KPP>NPISO'
 
-         CALL RESETI(IC,KN,1)
-         DO 1 JS = 1,KPP+1
-           DO 1 JG=1,KN
-             IF (IC(JG).EQ.0) GOTO 1
-             ZS1 = 1. - PP(JG) / SPSIM
-             IF (ZS1 .LT. 0.) ZS1 = 0.
-             I1(JG) = JS-1
-             IF (SQRT(ZS1).LE.PS(JS)) IC(JG) = 0
+         DO 1 JG=1,KN
+           ZS1 = 1. - PP(JG) / SPSIM
+           IF (ZS1 .LT. 0.) ZS1 = 0.
+           ZS1 = SQRT(ZS1)
+           I1(JG) = KPP
+           DO 10 JS = 1,KPP+1
+             IF (ZS1.LE.PS(JS)) THEN
+               I1(JG) = JS-1
+               GOTO 1
+             ENDIF
+ 10        CONTINUE
  1       CONTINUE
 C
 ***********************************************************************
