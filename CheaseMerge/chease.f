@@ -11878,6 +11878,20 @@ C
                ZCID0 = RMAG**2
                ZCID2 = 0.
 C
+            ELSE IF (NSTTP .EQ. 4) THEN
+C
+C              PRESCRIBED q (YQL2018): CINT STORES HERE THE
+C              UNNORMALIZED CID0 = CLOSURE INTEGRAL OF dl/|GRAD PSI|
+C              AND CID2 = 1./CIDQ. ON THE DEGENERATE AXIS SURFACE
+C              R = RMAG GIVES CID0/CIDQ = RMAG, SO BOTH AXIS LIMITS
+C              FOLLOW FROM CIDQ EXTRAPOLATED TO PSI = SPSIM.
+C
+               ZCIDQA = FCCCC0(CIDQ(IP),CIDQ(IP+1),CIDQ(IP+2),
+     ,                    CIDQ(IP+3),PSIISO(IP),PSIISO(IP+1),
+     ,                    PSIISO(IP+2),PSIISO(IP+3),SPSIM)
+               ZCID0  = RMAG * ZCIDQA
+               ZCID2  = 1. / ZCIDQA
+C
             ENDIF
 C
             DO 2 J2=1,IP-1
