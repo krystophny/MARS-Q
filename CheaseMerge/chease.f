@@ -11868,6 +11868,10 @@ C
 C
          IF (IP .GT. 1) THEN
 C
+            IF (NSTTP .EQ. 4) THEN
+               CALL QAXISCOAREA(1,IP-1)
+            ELSE
+C
             IF (NSTTP.LE.2) THEN
 C
                ZCID0 = RMAG
@@ -11897,6 +11901,7 @@ C
 C
     2       CONTINUE
 C
+            ENDIF
          ENDIF
 C
 C        COMPUTE PROFILES
@@ -27558,3 +27563,140 @@ C     IMPLICIT NONE
 !     
       RETURN
       END
+
+C*DECK QAXISCOAREA
+         SUBROUTINE QAXISCOAREA(KFIRST,KLAST)
+C        Integrate otherwise untraceable inner q-profile surfaces about
+C        the saved magnetic axis. CID0/R/Q are raw coarea integrals.
+         USE, INTRINSIC :: IEEE_ARITHMETIC, ONLY: IEEE_IS_FINITE
+         INCLUDE 'DECLAR.inc'
+         INCLUDE 'COMDIM.inc'
+         INCLUDE 'COMCON.inc'
+         INCLUDE 'COMESH.inc'
+         INCLUDE 'COMNUM.inc'
+         INCLUDE 'COMPHY.inc'
+         INCLUDE 'COMSOL.inc'
+         INCLUDE 'COMSUR.inc'
+         DIMENSION ZGX(NPMGS+1), ZGW(NPMGS+1)
+
+         IF (KFIRST.LT.1 .OR. KLAST.GT.NISO) STOP 71
+         IF (KLAST.LT.KFIRST) STOP 71
+         IF (.NOT.IEEE_IS_FINITE(SPSIM)) STOP 71
+         IF (.NOT.IEEE_IS_FINITE(RMAG)) STOP 71
+         IF (.NOT.IEEE_IS_FINITE(RZMAG)) STOP 71
+         IF (SPSIM.GE.0. .OR. RMAG.LE.0.) STOP 71
+         IF (NMGAUS.LT.1 .OR. NMGAUS.GT.NPMGS) STOP 71
+         INGAUSS=NMGAUS
+         CALL GAUSS(INGAUSS,ZGX,ZGW)
+         IF (INGAUSS.GT.NPMGS) STOP 71
+         CALL QAXISVALUE(RMAG,RZMAG,ZAX,ZDR,ZDZ,1)
+         ZSCALE=MAX(ABS(SPSIM),ABS(ZAX),TINY(SPSIM))
+         ZTOL=64.*EPSILON(SPSIM)*ZSCALE
+         IF (ABS(ZAX-SPSIM).GT.ZTOL) STOP 72
+
+         DO K=KFIRST,KLAST
+            ZTARGET=PSIISO(K)
+            IF (.NOT.IEEE_IS_FINITE(ZTARGET)) STOP 72
+            IF (ZTARGET.LE.ZAX+ZTOL .OR. ZTARGET.GE.0.) STOP 72
+            CID0(K)=0.
+            CIDR(K)=0.
+            CIDQ(K)=0.
+            DO JT=1,NT
+               ZH=CT(JT+1)-CT(JT)
+               IF (.NOT.IEEE_IS_FINITE(ZH)) STOP 73
+               IF (ZH.LE.0.) STOP 73
+               DO JG=1,INGAUSS
+                  ZANGLE=CT(JT)+.5*ZH*(1.+ZGX(JG))
+                  ZCO=COS(ZANGLE)
+                  ZSI=SIN(ZANGLE)
+                  ZLO=0.
+C                 The initial search distance follows coordinate
+C                 precision and the axis offset, not a source cutoff.
+                  ZHI=MAX(SQRT(EPSILON(RMAG))*ABS(RMAG),
+     &               SQRT((RMAG-R0)**2+(RZMAG-RZ0)**2)/16.)
+                  IFOUND=0
+                  DO JB=1,64
+                     ZR=RMAG+ZHI*ZCO
+                     ZZ=RZMAG+ZHI*ZSI
+                     CALL QAXISVALUE(ZR,ZZ,ZVAL,ZDR,ZDZ,1)
+                     IF (ZVAL.GE.ZTARGET) THEN
+                        IFOUND=1
+                        EXIT
+                     ENDIF
+                     CALL QAXISVALUE(ZR,ZZ,ZVAL,ZDR,ZDZ,2)
+                     ZRAD=ZDR*ZCO+ZDZ*ZSI
+                     IF (ZRAD.LE.0.) STOP 74
+                     ZLO=ZHI
+                     ZHI=2.*ZHI
+                  ENDDO
+                  IF (IFOUND.NE.1) STOP 74
+                  IFOUND=0
+                  DO JB=1,80
+                     ZMID=.5*(ZLO+ZHI)
+                     ZR=RMAG+ZMID*ZCO
+                     ZZ=RZMAG+ZMID*ZSI
+                     CALL QAXISVALUE(ZR,ZZ,ZVAL,ZDR,ZDZ,2)
+                     ZRAD=ZDR*ZCO+ZDZ*ZSI
+                     IF (ZRAD.LE.0.) STOP 74
+C                    A physical coordinate has finite representable
+C                    spacing. Bound its first-order flux roundoff by
+C                    the same evaluated gradient, without changing any
+C                    native convergence tolerance or source denominator.
+                     ZACCUR=ZTOL+2.*EPSILON(ZR)*
+     &                  (ABS(ZR*ZDR)+ABS(ZZ*ZDZ))
+                     IF (ABS(ZVAL-ZTARGET).LE.ZACCUR) THEN
+                        IFOUND=1
+                        EXIT
+                     ENDIF
+                     IF (ZVAL.LT.ZTARGET) THEN
+                        ZLO=ZMID
+                     ELSE
+                        ZHI=ZMID
+                     ENDIF
+                  ENDDO
+                  IF (IFOUND.NE.1) STOP 74
+C                 On a regular level curve, dl/|grad psi| equals
+C                 r/(grad psi dot e_r) dtheta about the magnetic axis.
+                  ZINT=ZH*ZGW(JG)*ZMID/ZRAD
+                  IF (.NOT.IEEE_IS_FINITE(ZINT)) STOP 75
+                  IF (ZINT.LE.0.) STOP 75
+                  CID0(K)=CID0(K)+ZINT
+                  CIDR(K)=CIDR(K)+ZR*ZINT
+                  CIDQ(K)=CIDQ(K)+ZINT/ZR
+               ENDDO
+            ENDDO
+            IF (.NOT.IEEE_IS_FINITE(CIDQ(K))) STOP 75
+            IF (CIDQ(K).LE.0.) STOP 75
+            CID2(K)=1./CIDQ(K)
+         ENDDO
+         END
+
+         SUBROUTINE QAXISVALUE(PR,PZ,PV,PDR,PDZ,KCASE)
+C        Guard the native interpolation domain before evaluating it.
+         USE, INTRINSIC :: IEEE_ARITHMETIC, ONLY: IEEE_IS_FINITE
+         INCLUDE 'DECLAR.inc'
+         INCLUDE 'COMDIM.inc'
+         INCLUDE 'COMCON.inc'
+         INCLUDE 'COMESH.inc'
+         INCLUDE 'COMPHY.inc'
+         INCLUDE 'COMSOL.inc'
+         DIMENSION ZANGLE(1),ZBOUND(1)
+         IF (.NOT.IEEE_IS_FINITE(PR)) STOP 76
+         IF (.NOT.IEEE_IS_FINITE(PZ)) STOP 76
+         IF (PR.LE.0.) STOP 76
+         ZANGLE(1)=ATAN2(PZ-RZ0,PR-R0)
+         IF (ZANGLE(1).LT.CT(1)) ZANGLE(1)=ZANGLE(1)+2.*CPI
+         CALL BOUND(1,ZANGLE,ZBOUND)
+         IF (.NOT.IEEE_IS_FINITE(ZBOUND(1))) STOP 76
+         IF (ZBOUND(1).LE.0.) STOP 76
+         ZRHO=SQRT((PR-R0)**2+(PZ-RZ0)**2)
+         IF (ZRHO.GT.ZBOUND(1)) STOP 76
+         CALL EVLATE(1,PR,PZ,PDR,PDZ,PV)
+         IF (.NOT.IEEE_IS_FINITE(PV)) STOP 77
+         IF (KCASE.EQ.2) THEN
+            IF (ZRHO.EQ.0.) STOP 77
+            CALL EVLATE(2,PR,PZ,PDR,PDZ,PV)
+            IF (.NOT.IEEE_IS_FINITE(PDR)) STOP 77
+            IF (.NOT.IEEE_IS_FINITE(PDZ)) STOP 77
+         ENDIF
+         END
