@@ -25131,86 +25131,89 @@ C
 C*DECK MR01
 C*CALL PROCESS
          SUBROUTINE ALDLT(A,EPS,N,M,MP,NSING)
-C        ------------------------------------
-C
-C     DECOMPOSE A=L*D*LT                                             
-C                                                                    
-C     VERSION 1C           13.9.74     RALF GRUBER    CRPP LAUSANNE  
-C                                                                    
-C     A IS A BAND MATRIX WITH HALF WIDTH M AND LENGTH N              
-C     L CONTAINS 1 IN THE DIAGONAL                                   
-C     AS OUTPUT D REPLACES THE DIAGONAL OF A AND                     
-C     LT WITHOUT ITS DIAGONAL THE REST OF A                          
-C     ALL CALCULATIONS ARE PERFORMED IN A                            
-C     NSING = -1 WHEN A IS SINGULAR                                  
-C
-C
-         INCLUDE 'DECLAR.inc'
-         DIMENSION
-     R   A(*)
-C
-C     INITIALIZE
-C
-         NSING = 0
-         IF (N.LT.0 .OR. M.LT.1 .OR. MP.LT.M) THEN
-            NSING = -1
-            RETURN
-         ENDIF
-         IF (N.EQ.0) RETURN
-         M1  = MP - 1
-         IKD = 0
-         AD  = ABS(A(1)) * EPS
-C
-C     SCAN OVER THE WHOLE LENGTH OF A
-C
-         DO  4  JIB=2,N
-            DIAG=A(IKD+1)
-C
-C     TEST FOR ZERO PIVOT
-C
-            IF (DIAG.EQ.0. .OR. ABS(DIAG) .LT. AD) THEN
-               NSING = -1
-               RETURN
-            ENDIF
-C
-C     RESTRICTION OF LOOP FOR NOT EXCEEDING BAND MATRIX
-C
-            LOPBND = M
-            I1     = N - JIB + 2
-C
-            IF (I1 .LT. M) LOPBND = I1
-C
-C     DIAGONAL ELEMENT BEFORE GAUSS ELIMINATION
-C
-            IJ = IKD + MP + 1
-            AD = ABS(A(IJ)) * EPS
-C
-C     SETS THE ROW OF THE TRANSPOSED LEFT HAND SIDE MATRIX LT
-C
-            DO 3 JJB=2,LOPBND
-               ITOP    = IKD + JJB
-               TOP     = A(ITOP)
-               A(ITOP) = A(ITOP) / DIAG
-C
-C     GAUSS RECTANGULAR RULE GOING DOWNWARDS
-C
-               CALL SAXPY(JJB-1,-TOP,A(IKD+2),1,A(ITOP+M1),M1)
-   3        CONTINUE
-         IKD = IKD + MP
-   4     CONTINUE
-C
-C     LAST DIAGONAL ELEMENT
-C
-         IKD = (N - 1) * MP + 1
-         IF (A(IKD).EQ.0.) THEN
-            NSING = -1
-         ELSE IF (N.GT.1) THEN
-            IJ = IKD - MP
-            IF (ABS(A(IKD)).LT.ABS(A(IJ))*EPS) NSING = -1
-         ENDIF
-C
+         IMPLICIT NONE
+         INTEGER, INTENT(IN) :: N,M,MP
+         REAL(KIND(1D0)), INTENT(IN) :: EPS
+         REAL(KIND(1D0)), INTENT(INOUT) :: A(*)
+         INTEGER, INTENT(OUT) :: NSING
+         INTEGER, PARAMETER :: PANEL_SIZE=32, TILE_SIZE=128
+         REAL(KIND(1D0)) :: ORIGINAL_ROWS(M+16,PANEL_SIZE),
+     R   TILE(TILE_SIZE)
+         REAL(KIND(1D0)) :: DIAG, AD, NEXT_DIAG, SCALE
+         INTEGER :: FIRST,LAST,K,COLUMN,ROW,J,JBASE,NTILE,LENGTH
+         INTEGER :: IKD,ITOP,OLD_OFFSET,LOPBND,LOWER
+C Same unpivoted LDLT and upper-row band storage as the native routine.
+C Normalize a small panel and update its remaining rows immediately.
+C Accumulate the trailing updates in cache-sized contiguous tiles,
+C applying
+C each pivot in its original order before storing the tile once.
+         NSING=0
+         IF (N < 0 .OR. M < 1 .OR. MP < M) THEN
+         NSING=-1
          RETURN
-         END
+         ENDIF
+         IF (N == 0) RETURN
+         AD=ABS(A(1))*EPS
+         DO FIRST=1,N-1,PANEL_SIZE
+         LAST=MIN(N-1,FIRST+PANEL_SIZE-1)
+         DO K=FIRST,LAST
+         IKD=(K-1)*MP
+         DIAG=A(IKD+1)
+         IF (DIAG == 0D0 .OR. ABS(DIAG) < AD) THEN
+         NSING=-1
+         RETURN
+         ENDIF
+C Preserve the legacy threshold: original next diagonal immediately
+C before this pivot's update, including earlier deferred panel terms.
+         NEXT_DIAG=A(IKD+MP+1)
+         IF (K == LAST) THEN
+         LOWER=MAX(FIRST,K+2-M)
+         DO COLUMN=LOWER,K-1
+         OLD_OFFSET=(COLUMN-1)*MP
+         SCALE=-A(OLD_OFFSET+K+2-COLUMN)
+         IF (SCALE /= 0D0) NEXT_DIAG=NEXT_DIAG+
+     R   SCALE*ORIGINAL_ROWS(K+2-COLUMN,COLUMN-FIRST+1)
+         ENDDO
+         ENDIF
+         AD=ABS(NEXT_DIAG)*EPS
+         LOPBND=MIN(M,N-K+1)
+         DO J=2,LOPBND
+         ORIGINAL_ROWS(J,K-FIRST+1)=A(IKD+J)
+         A(IKD+J)=A(IKD+J)/DIAG
+         ENDDO
+         DO ROW=K+1,MIN(LAST,K+M-1)
+         SCALE=-A(IKD+ROW-K+1)
+         ITOP=(ROW-1)*MP+1
+         LENGTH=MIN(N,K+M-1)-ROW+1
+         CALL
+     R   SAXPY(LENGTH,SCALE,ORIGINAL_ROWS(ROW-K+1,K-FIRST+1),1,A(ITOP),1)
+         ENDDO
+         ENDDO
+         DO ROW=LAST+1,MIN(N,LAST+M-1)
+         ITOP=(ROW-1)*MP+1
+         DO JBASE=ROW,MIN(N,LAST+M-1),TILE_SIZE
+         NTILE=MIN(TILE_SIZE,MIN(N,LAST+M-1)-JBASE+1)
+         TILE(1:NTILE)=A(ITOP+JBASE-ROW:ITOP+JBASE-ROW+NTILE-1)
+         DO K=FIRST,LAST
+         LENGTH=MIN(NTILE,K+M-JBASE)
+         IF (LENGTH <= 0) CYCLE
+         SCALE=-A((K-1)*MP+ROW-K+1)
+         IF (SCALE == 0D0) CYCLE
+         DO J=1,LENGTH
+         TILE(J)=TILE(J)+SCALE*ORIGINAL_ROWS(JBASE+J-K,K-FIRST+1)
+         ENDDO
+         ENDDO
+         A(ITOP+JBASE-ROW:ITOP+JBASE-ROW+NTILE-1)=TILE(1:NTILE)
+         ENDDO
+         ENDDO
+         ENDDO
+         IKD=(N-1)*MP+1
+         IF (A(IKD) == 0D0) THEN
+         NSING=-1
+         ELSE IF (N > 1) THEN
+         IF (ABS(A(IKD)) < ABS(A(IKD-MP))*EPS) NSING=-1
+         ENDIF
+         END SUBROUTINE ALDLT
 C*DECK MR02
 C*CALL PROCESS
          SUBROUTINE LYV(A,U,N,NP,M,MP)
