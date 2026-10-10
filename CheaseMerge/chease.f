@@ -25206,7 +25206,7 @@ C
             NSING = -1
          ELSE IF (N.GT.1) THEN
             IJ = IKD - MP
-            IF (ABS(A(IKD)).LT.ABS(A(IJ))*EPS) NSING = -1
+            IF (ABS(A(IKD)).LT.AD) NSING = -1
          ENDIF
 C
          RETURN
