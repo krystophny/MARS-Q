@@ -25147,10 +25147,16 @@ C
 C
          INCLUDE 'DECLAR.inc'
          DIMENSION
-     R   A(N*MP)
+     R   A(*)
 C
 C     INITIALIZE
 C
+         NSING = 0
+         IF (N.LT.0 .OR. M.LT.1 .OR. MP.LT.M) THEN
+            NSING = -1
+            RETURN
+         ENDIF
+         IF (N.EQ.0) RETURN
          M1  = MP - 1
          IKD = 0
          AD  = ABS(A(1)) * EPS
@@ -25162,7 +25168,7 @@ C
 C
 C     TEST FOR ZERO PIVOT
 C
-            IF (ABS(DIAG) .LT. AD) THEN
+            IF (DIAG.EQ.0. .OR. ABS(DIAG) .LT. AD) THEN
                NSING = -1
                RETURN
             ENDIF
@@ -25196,10 +25202,11 @@ C
 C     LAST DIAGONAL ELEMENT
 C
          IKD = (N - 1) * MP + 1
-         IJ  = IKD - MP
-C
-         IF (ABS(A(IKD)) .LT. ABS(A(IJ))*EPS) THEN
+         IF (A(IKD).EQ.0.) THEN
             NSING = -1
+         ELSE IF (N.GT.1) THEN
+            IJ = IKD - MP
+            IF (ABS(A(IKD)).LT.AD) NSING = -1
          ENDIF
 C
          RETURN
