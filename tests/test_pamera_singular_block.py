@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 import unittest
 
-SRC = Path(os.environ.get("MARSQ_ROOT") or Path(__file__).resolve().parents[2]) / "MarsQ_2FK" / "pams.f"
+SRC = Path(os.environ.get("MARSQ_ROOT") or Path(__file__).resolve().parents[1]) / "MarsQ_2FK" / "pams.f"
 
 DRIVER = """      PROGRAM DRV
       IMPLICIT NONE
