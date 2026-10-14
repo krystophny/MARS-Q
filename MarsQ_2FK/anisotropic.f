@@ -3872,13 +3872,19 @@ C     H4 = H5**(-1.5)
 
 C     COMPUTE FNUM=WHOLE NUMERATOR OF THE I-FACTOR
 C     FIRST COMPUTE N0-FACTOR
-      FNUM = RTMP1*ZRESU(:,2,1,KP)/ZRESU(:,2,2,KP)+
-     &       NTVNUMERBASE(RNTOR,OMEGAE0(JS,KGRID),OMEGA,
-     &                    NTVNUMEREFAC)
+      IF (KOPT.EQ.0) THEN
+         FNUM = NTVNUMERWEIGHT(RTMP1,ZRESU(:,2,1,KP),
+     &      ZRESU(:,2,2,KP),NTVNUMERBASE(RNTOR,OMEGAE0(JS,KGRID),
+     &                                  OMEGA,NTVNUMEREFAC))
+      ELSE
+         FNUM = RTMP1*ZRESU(:,2,1,KP)/ZRESU(:,2,2,KP)+
+     &          NTVNUMERBASE(RNTOR,OMEGAE0(JS,KGRID),OMEGA,
+     &                       NTVNUMEREFAC)
+      ENDIF
 
       IF (KOPT.EQ.0) THEN
          FAC0 =-2.
-         FNUM = FAC0*ZRESU(:,2,2,KP)*ZEPK**2.5*FNUM/RFAC**(1.5)
+         FNUM = FAC0*ZEPK**2.5*FNUM/RFAC**(1.5)
          KEXEC = 1
       ELSEIF (KOPT.EQ.2.AND.ABS(PSPECIES_FOWT(KP)).GT.0.) THEN
          FAC0 = PSPECIES_FOWT(KP)*
@@ -4476,17 +4482,26 @@ C     RFAC = ZEPK*H7+1.
 
 C     COMPUTE FNUM=WHOLE NUMERATOR OF THE I-FACTOR
 C     FIRST COMPUTE N0-FACTOR
-      FNUM1 = RTMP1*ZRESU(:,1,1,KP)/ZRESU(:,1,2,KP)+
-     &        NTVNUMERBASE(RNTOR,OMEGAE0(JS,KGRID),OMEGA,
-     &                     NTVNUMEREFAC)
-      FNUM3 = RTMP1*ZRESU(:,3,1,KP)/ZRESU(:,3,2,KP)+
-     &        NTVNUMERBASE(RNTOR,OMEGAE0(JS,KGRID),OMEGA,
-     &                     NTVNUMEREFAC)
+      IF (KOPT.EQ.0) THEN
+         FNUM1 = NTVNUMERWEIGHT(RTMP1,ZRESU(:,1,1,KP),
+     &      ZRESU(:,1,2,KP),NTVNUMERBASE(RNTOR,OMEGAE0(JS,KGRID),
+     &                                  OMEGA,NTVNUMEREFAC))
+         FNUM3 = NTVNUMERWEIGHT(RTMP1,ZRESU(:,3,1,KP),
+     &      ZRESU(:,3,2,KP),NTVNUMERBASE(RNTOR,OMEGAE0(JS,KGRID),
+     &                                  OMEGA,NTVNUMEREFAC))
+      ELSE
+         FNUM1 = RTMP1*ZRESU(:,1,1,KP)/ZRESU(:,1,2,KP)+
+     &           NTVNUMERBASE(RNTOR,OMEGAE0(JS,KGRID),OMEGA,
+     &                        NTVNUMEREFAC)
+         FNUM3 = RTMP1*ZRESU(:,3,1,KP)/ZRESU(:,3,2,KP)+
+     &           NTVNUMERBASE(RNTOR,OMEGAE0(JS,KGRID),OMEGA,
+     &                        NTVNUMEREFAC)
+      ENDIF
 
       IF (KOPT.EQ.0) THEN
          FAC0  =-1.
-         FNUM1 = FAC0*ZRESU(:,1,2,KP)*ZEPK**2.5*FNUM1/RFAC**(1.5)
-         FNUM3 = FAC0*ZRESU(:,3,2,KP)*ZEPK**2.5*FNUM3/RFAC**(1.5)
+         FNUM1 = FAC0*ZEPK**2.5*FNUM1/RFAC**(1.5)
+         FNUM3 = FAC0*ZEPK**2.5*FNUM3/RFAC**(1.5)
          KEXEC = 1
       ELSEIF (KOPT.EQ.1.AND.ABS(PSPECIES_FOWP(KP)).GT.0.
      &        .AND.IFOWPSI0.EQ.1) THEN
