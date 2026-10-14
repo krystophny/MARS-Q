@@ -9875,6 +9875,7 @@ C=======================================================================
       USE RCOMDM
       USE KINETICM
       USE ToolBox
+      USE FEEDBACKM, ONLY: KTREST
       IMPLICIT NONE
       INCLUDE 'comioc.inc'
 
@@ -9884,7 +9885,18 @@ C=======================================================================
       COMPLEX*16,DIMENSION(NRP1,TOTINDX)::DWPPARY,DWPPERY
       COMPLEX*16 OB1,OB2,OB3,OX1,OX2,OPE,OPA,CTMP1,OFW
       COMPLEX*16 DIRECT,ACTUAL,RESIDUAL
+      REAL*8,DIMENSION(NRP1)::FT
+      REAL*8,DIMENSION(NR)::FTM
       REAL*8,DIMENSION(:,:),ALLOCATABLE::B2,B2M,B2C
+
+C     Passive matrices use saved equilibrium F when the discarded
+C     feedback carrier leaves T/TM=1.  Keep global carrier state intact.
+      FT = T
+      FTM = TM
+      IF (KTREST.NE.0) THEN
+         FT = TSAVE
+         FTM = TMSAVE
+      ENDIF
 
       HCHI = 2.*PI/NCHI
       ALLOCATE(B2(NRP1,NCHI),B2M(NR,NCHI),B2C(NR,NCHI))
@@ -9894,12 +9906,12 @@ C     KDWKDENSITY without reading any serialized diagnostic values.
       DO J=1,NCHI
          DO I=2,NRP1
             B2(I,J)=G22L(I,J)*DPSIDS(I)**2/RJA(I,J)**2+
-     &              T(I)**2/REQ(I,J)**2
+     &              FT(I)**2/REQ(I,J)**2
          ENDDO
-         B2(1,J)=T(1)**2/REQ(1,J)**2
+         B2(1,J)=FT(1)**2/REQ(1,J)**2
          DO I=1,NR
             B2M(I,J)=G22LM(I,J)*DPSIDSM(I)**2/RJAM(I,J)**2+
-     &                TM(I)**2/REQM(I,J)**2
+     &                FTM(I)**2/REQM(I,J)**2
          ENDDO
       ENDDO
       CALL DERCHI(B2M,B2C,NR,NR)
@@ -9941,13 +9953,13 @@ C     KDWKDENSITY without reading any serialized diagnostic values.
      &                 CONJG(OB1)*OPE+
      &              DPSIDSM(I)*G22LM(I,J)/RJAM(I,J)/B2MVAL*
      &                 CONJG(OB2)*OPE+
-     &              TM(I)/B2MVAL*CONJG(OB3)*OPE+
+     &              FTM(I)/B2MVAL*CONJG(OB3)*OPE+
      &              RJAM(I,J)/B2MVAL*PPEQM(I)*DPSIDSM(I)*
      &                 CONJG(OX1)*OPA+
      &             (RJAM(I,J)/2./B2MVAL*(B2VALP-B2VALM)/CSH(I)-
      &              DPSIDSM(I)**2*G12LM(I,J)/2./RJAM(I,J)/
      &              B2MVAL**2*B2CVAL)*CONJG(OX1)*(OPE+OPA)+
-     &              RJAM(I,J)*TM(I)/2./B2MVAL**2*B2CVAL*
+     &              RJAM(I,J)*FTM(I)/2./B2MVAL**2*B2CVAL*
      &              CONJG(OX2)*(OPE+OPA)
                DIRECT=DIRECT+OFW
             ENDDO
