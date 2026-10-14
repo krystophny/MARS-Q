@@ -9584,16 +9584,19 @@ C     READ MARTIX FROM BINARY FILES ON EACH SURFACE
             CALL READ_SURFACE_QUANTITIES (IS+1,1)
          ENDIF   
 
+C        READ_SURFACE_QUANTITIES serializes ten populated coefficients.
+C        Slots 11:30 are spare storage and must not enter cache checks.
          OCACHEFINITE = OCACHEFINITE.AND.
-     &      ALL(IEEE_IS_FINITE(REAL(BUFFER_I))).AND.
-     &      ALL(IEEE_IS_FINITE(AIMAG(BUFFER_I))).AND.
-     &      ALL(IEEE_IS_FINITE(REAL(BUFFERM_I))).AND.
-     &      ALL(IEEE_IS_FINITE(AIMAG(BUFFERM_I))).AND.
-     &      ALL(IEEE_IS_FINITE(REAL(BUFFER_I1))).AND.
-     &      ALL(IEEE_IS_FINITE(AIMAG(BUFFER_I1)))
+     &      ALL(IEEE_IS_FINITE(REAL(BUFFER_I(:,:,:,1:10)))).AND.
+     &      ALL(IEEE_IS_FINITE(AIMAG(BUFFER_I(:,:,:,1:10)))).AND.
+     &      ALL(IEEE_IS_FINITE(REAL(BUFFERM_I(:,:,:,1:10)))).AND.
+     &      ALL(IEEE_IS_FINITE(AIMAG(BUFFERM_I(:,:,:,1:10)))).AND.
+     &      ALL(IEEE_IS_FINITE(REAL(BUFFER_I1(:,:,:,1:10)))).AND.
+     &      ALL(IEEE_IS_FINITE(AIMAG(BUFFER_I1(:,:,:,1:10))))
          CACHEMAX = MAX(CACHEMAX,
-     &      MAXVAL(ABS(BUFFER_I)),MAXVAL(ABS(BUFFERM_I)),
-     &      MAXVAL(ABS(BUFFER_I1)))
+     &      MAXVAL(ABS(BUFFER_I(:,:,:,1:10))),
+     &      MAXVAL(ABS(BUFFERM_I(:,:,:,1:10))),
+     &      MAXVAL(ABS(BUFFER_I1(:,:,:,1:10))))
          
          DO INDX=1,TOTINDX
 C     FILL IN THE GLOBAL MATRIX FOR PRESSURE CALCULATION
