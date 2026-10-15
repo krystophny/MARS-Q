@@ -10196,7 +10196,7 @@ C=======================================================================
       REAL*8 DRIVERESID,DRIVESCALE,TORQUEFAC
       COMPLEX*16,DIMENSION(NRP1,TOTINDX,5)::DWPPARYD,DWPTERYD
 
-      TORQUEFAC=-2.0D0*RNTOR/(4.0D0*PI*PI)
+      TORQUEFAC=-1.0D0*RNTOR/(4.0D0*PI*PI)
       FID=ASSIGNFREEFILEUNIT()
       OPEN(FID,FILE='DWK_DRIVE_LEDGER.OUT',FORM='FORMATTED',
      &     STATUS='REPLACE',ACTION='WRITE')
@@ -10245,7 +10245,7 @@ C=======================================================================
       COMPLEX*16 PARA_X,PERP_X,PARA_Y,PERP_Y,PARA,PERP
 
       PI2 = 2.0D0*ACOS(-1.0D0)**2
-      TORQUEFAC = -2.0D0*RNTOR/(2.0D0*PI2)
+      TORQUEFAC = -1.0D0*RNTOR/(2.0D0*PI2)
       FID = 97
       OPEN(FID,FILE='DWK_BREAKDOWN.OUT',FORM='FORMATTED',
      &     STATUS='REPLACE')
