@@ -294,7 +294,16 @@ C     THE FILE CHANEL FOR OUTPUT KINETIC QUANTITY IN 2D PLOT
       ENDIF
 
       CALL ALLOCATEDWKCOMPMAT
-      
+
+C     A VALIDATED COMPONENT CACHE ALREADY CONTAINS THE EXPENSIVE OUTPUT
+C     OF KJPCOEFF ON BOTH RADIAL GRIDS.  KEEP THE MASTER COMPONENT MAP
+C     ALLOCATED FOR CALCDWKCOMP, BUT DO NOT RECOMPUTE OR OVERWRITE THE
+C     SERIALIZED RECORDS.  RDNAME RESTRICTS THIS TO FROZEN-FIELD KNTV=21.
+      IF (KDWKREAD.EQ.1) THEN
+         WRITE(*,*) 'KJP: REUSING VALIDATED DWK COMPONENT CACHE'
+         RETURN
+      ENDIF
+
       ALLOCATE( LAMM(2*NLAMK+2), LAMHH(2*NLAMK), LAMTMP(2*NLAMK+2) )
 
       ALLOCATE( RCHI(NCHI+1), RCHI2(NCHI+1), RW1(NCHI+1),
@@ -1533,6 +1542,9 @@ C     FILL IN MATRICES FOR KXDPHI FOR NEUTRALITY EQUATION
  1    CONTINUE
 
       IF (KJPKEY.EQ.1.OR.KJPKEY.EQ.2) GOTO 2
+C     A SECOND KJPKEY=0 CALL (KNTV=21 BEFORE OUTPUT, THEN ENERGYMAT)
+C     FINDS THE ARRAYS ALREADY RELEASED
+      IF (.NOT.ALLOCATED(RLM)) GOTO 2
 
       DEALLOCATE( RLM )
       DEALLOCATE( NLAMK0, NLAMK1 )
@@ -2809,7 +2821,7 @@ C=======================================================================
       INTEGER IHE(100),NIHE
       
       KCHECK  = 1
-      KSMOOTH = 1
+      KSMOOTH = KSMOOTHB
 
       KM      = NKSMOOTHB
       ALLOCATE(BMC(KM+1),BMS(KM+1))
@@ -3338,6 +3350,14 @@ C     RESCALE THERMAL PRESSURE WITH THE EXPERIMENTAL TEMPERATURE PROFILES
           ESPECIES_PRE(:,2,1) = PEQM-ESPECIES_PRE(:,2,2)
           TI0_TMP=ALPHAP*ESPECIES_PRE(1,1,1)/ESPECIES_DEN(1,1,1)
           TE0_TMP=(1-ALPHAP)*ESPECIES_PRE(1,1,1)/ESPECIES_DEN(1,1,2)
+          IF (KPROFTAUTH.EQ.1) THEN
+C           NPROFIE=4 has already set FRACPTH from dimensional Ti0+Te0.
+C           Legacy initialization omits that factor and then forces the
+C           supplied temperature shapes back onto PEQ.  The opt-in path keeps
+C           both experimental amplitudes and shapes instead.
+             TI0_TMP=TI0_TMP*FRACPTH
+             TE0_TMP=TE0_TMP*FRACPTH
+          ENDIF
           ESPECIES_TEM(:,1,1) = TI0_TMP*TEMPI  
           ESPECIES_TEM(:,2,1) = TI0_TMP*TEMPIM  
           ESPECIES_TEM(:,1,2) = TE0_TMP*TEMPE  
@@ -3346,15 +3366,23 @@ C     RESCALE THERMAL PRESSURE WITH THE EXPERIMENTAL TEMPERATURE PROFILES
 
           ESPECIES_PREF(:,:,1:2) = ESPECIES_TEM(:,:,1:2)
      &                           * ESPECIES_DEN(:,:,1:2)
-          ESPECIES_PREF(:,:,1) = ESPECIES_PREF(:,:,1)
-     &                         / ( ESPECIES_PREF(:,:,1)
-     &                         + ESPECIES_PREF(:,:,2) )
-          ESPECIES_PREF(:,:,2) = 1.0 
-     &                         - ESPECIES_PREF(:,:,1)
-          ESPECIES_PRE(:,:,2) = ESPECIES_PRE(:,:,1)
-     &                        * ESPECIES_PREF(:,:,2)
-          ESPECIES_PRE(:,:,1) = ESPECIES_PRE(:,:,1)
-     &                        * ESPECIES_PREF(:,:,1)
+          IF (KPROFTAUTH.EQ.1) THEN
+             ESPECIES_PRE(:,:,1:2) = ESPECIES_PREF(:,:,1:2)
+             ESPECIES_PREF(:,:,1) = ESPECIES_PRE(:,:,1)
+     &                            / ( ESPECIES_PRE(:,:,1)
+     &                            + ESPECIES_PRE(:,:,2) )
+             ESPECIES_PREF(:,:,2) = 1.0-ESPECIES_PREF(:,:,1)
+          ELSE
+             ESPECIES_PREF(:,:,1) = ESPECIES_PREF(:,:,1)
+     &                            / ( ESPECIES_PREF(:,:,1)
+     &                            + ESPECIES_PREF(:,:,2) )
+             ESPECIES_PREF(:,:,2) = 1.0
+     &                            - ESPECIES_PREF(:,:,1)
+             ESPECIES_PRE(:,:,2) = ESPECIES_PRE(:,:,1)
+     &                           * ESPECIES_PREF(:,:,2)
+             ESPECIES_PRE(:,:,1) = ESPECIES_PRE(:,:,1)
+     &                           * ESPECIES_PREF(:,:,1)
+          ENDIF
 
       ENDIF
 
@@ -4392,7 +4420,7 @@ C     SFD RELEASE
 
       ENDIF
 
-      IF (INCSFD.GT.0) CALL WRITE_SURFACE_QUANTITIES(JS,KGRID)
+      CALL WRITE_SURFACE_QUANTITIES(JS,KGRID)
       
       RETURN
       END
@@ -4469,6 +4497,9 @@ C=======================================================================
       CASE (1)
          DO KP=1,NSPECIES
          DO L=1,MLMAX
+            IF (KNTVELL.NE.999) THEN
+               IF (NINT(RLM(L)).NE.KNTVELL) CYCLE
+            ENDIF
             IF (KPARTICLE.EQ.0 .AND. ABS(RLM(L)).LT.0.1) THEN
                R=2
             ELSE
@@ -4525,6 +4556,9 @@ C=======================================================================
       CASE (2)
          DO KP=1,NSPECIES
          DO L=1,MLMAX
+         IF (KNTVELL.NE.999) THEN
+            IF (NINT(RLM(L)).NE.KNTVELL) CYCLE
+         ENDIF
          IF (SLAM0(L,KP).GT.0.) THEN
             IF (KPARTICLE.EQ.0 .AND. ABS(RLM(L)).LT.0.1) THEN
                R=2
@@ -4587,6 +4621,9 @@ C=======================================================================
       CASE (3)
          DO KP=1,NSPECIES
          DO L=1,MLMAX
+         IF (KNTVELL.NE.999) THEN
+            IF (NINT(RLM(L)).NE.KNTVELL) CYCLE
+         ENDIF
          IF (SLAM0(L,KP).GT.0.) THEN
             IF (KPARTICLE.EQ.0 .AND. ABS(RLM(L)).LT.0.1) THEN
                R=2
@@ -4636,6 +4673,9 @@ C=======================================================================
       CASE (4)
          DO KP=1,NSPECIES
          DO L=1,MLMAX
+         IF (KNTVELL.NE.999) THEN
+            IF (NINT(RLM(L)).NE.KNTVELL) CYCLE
+         ENDIF
          IF (ABS(RLM(L)).LT.0.1.AND.KPARTICLE.EQ.0) THEN
             R=2
             CTMP   = VI0(1,KP)*H3
@@ -4666,6 +4706,7 @@ C=======================================================================
 
       CASE (5)   
          R=1
+         IF (KNTVELL.NE.999.AND.KNTVELL.NE.998) CYCLE
          DO KP=1,NSPECIES
          L = M-K + (M2-M1) + 1
          X1PARA(KP,R) = ZKIA(1,KP)*ZGL0PA(L)*LAMH*H3
@@ -4686,6 +4727,7 @@ C=======================================================================
          ENDDO
       CASE (6)
          R=1
+         IF (KNTVELL.NE.999.AND.KNTVELL.NE.998) CYCLE
          DO KP=1,NSPECIES
          IF ((ISPECIES_F0(KP).EQ.1.OR.ISPECIES_F0(KP).EQ.2)
      &       .AND.ABS(PSPECIES_AT(KP)).GT.0.) THEN
@@ -6040,7 +6082,7 @@ C     FIND INITIAL GUESS
      &   WRITE(*,*) 'HPL,HPU',HPL,HPU,JS,KGRID
 
       IF (HPL.LE.0.0.OR.HPU.GE.0.0)
-     &  STOP 'KINETIC:HPL<0 | HPU>0,TRY KSMOOTH=1'
+     &  STOP 'KINETIC:HPL<0 | HPU>0,TRY KSMOOTHB=1'
       RETURN
       END
       
@@ -6136,7 +6178,7 @@ C     IF (HPU.GT.0.AND.HPL.LT.0.AND.0.EQ.1) THEN
       ENDIF
 
       IF (HPL.LE.0.0.OR.HPU.GE.0.0) 
-     &   STOP 'KINETIC:HPL<0 | HPU>0,TRY KSMOOTH=1'
+     &   STOP 'KINETIC:HPL<0 | HPU>0,TRY KSMOOTHB=1'
 
       RETURN
       END
@@ -8607,6 +8649,62 @@ C     TRAPPED PARTICLES DO NOT HAVE SINGULARITY EITHER
       END
 
 C=======================================================================
+C BUILD THE SYSTEM MATRICES WITH THE PRESSURE-TO-DISPLACEMENT BLOCKS   =
+C (KPBKEY=1) FOR THE KNTV=21 TORQUE, AS ENERGYMAT DOES (GAFUSION #3)   =
+C=======================================================================
+      SUBROUTINE PREPAREKINETICENERGYMAT(
+     &                  ASUBM,BSUBM,CSUBM,DSUBM,ESUBM,FSUBM,GSUBM,HSUBM)
+
+      USE RCOMDM
+      USE DIMENSIM
+      USE GLOBALM
+      USE KINETICM
+      USE FEEDBACKM, ONLY: KTREST
+      IMPLICIT NONE
+      INCLUDE 'specmat.inc'
+      INCLUDE 'compam.inc'
+      INCLUDE 'comioc.inc'
+
+      COMPLEX*16 AL0SAVE
+      INTEGER    J,KTRESTSAVE
+
+C     FEEDCTRL temporarily sets T/TM=1 for the discarded carrier solve.
+C     The normal LINEAR pass brackets KJP with the saved equilibrium arrays,
+C     but this passive KJPKEY=0 pass also consumes T/TM throughout PLASMALIN
+C     and KCOEFFI.  Expose the saved equilibrium F(s) for this whole pass;
+C     otherwise the reciprocal pressure-to-displacement blocks are built on
+C     the vacuum toroidal field even though the KJP coefficients used by the
+C     torque contraction were built on the equilibrium field.
+      AL0SAVE = AL0
+      AL0 = ALNORM
+      KJPKEY = 0
+      KPBKEY = 1
+      KTRESTSAVE = KTREST
+      IF (KTRESTSAVE.NE.0) THEN
+         DO J=1,NRP1
+            T(J)  = TSAVE(J)
+         ENDDO
+         DO J=1,NR
+            TM(J) = TMSAVE(J)
+         ENDDO
+         KTREST = 0
+      ENDIF
+      CALL LINEAR(ASUBM,BSUBM,CSUBM,DSUBM,ESUBM,FSUBM,GSUBM,HSUBM)
+      IF (KTRESTSAVE.NE.0) THEN
+         DO J=1,NRP1
+            T(J)  = 1.0
+         ENDDO
+         DO J=1,NR
+            TM(J) = 1.0
+         ENDDO
+         KTREST = KTRESTSAVE
+      ENDIF
+      AL0 = AL0SAVE
+
+      RETURN
+      END
+
+C=======================================================================
 C COMPUTE PERTURBED ENERGY USING THE COMPUTED EIGENFUNCTION AND        =
 C THE SYSTEM MATRICES                                                  =
 C INCLUDING:                                                           = 
@@ -8650,18 +8748,14 @@ C=======================================================================
       PARAMETER     (IEXV2 = -1, IEXY=0)
       REAL*8        ZEM,ZEP,ZV2M,ZV2P,z3m,z3p
 
-      COMPLEX*16    AL0SAVE,CTMP
+      COMPLEX*16    CTMP
       CHARACTER*80  LINE
 
       INCLUDE 'integc.inc'
 
 C     FILL IN SYSTEM MATRICES WITH THE CONVERGED EIGENVALUE
-      AL0SAVE = AL0
-      AL0 = ALNORM
-      KJPKEY = 0
-      KPBKEY = 1
-      CALL LINEAR(ASUBM,BSUBM,CSUBM,DSUBM,ESUBM,FSUBM,GSUBM,HSUBM)
-      AL0 = AL0SAVE
+      CALL PREPAREKINETICENERGYMAT(
+     &     ASUBM,BSUBM,CSUBM,DSUBM,ESUBM,FSUBM,GSUBM,HSUBM)
      
       ALLOCATE( DWPX(NTP1), DWPPARX(NTP1), DWPPERX(NTP1), DWJX(NTP1),
      &          DWQX(NTP1), DWVX(NTP1),    DWXIX(NTP1),   DWX2X(NTP1),
@@ -9429,8 +9523,10 @@ C     COMPUTATION OF PPERP AND PPARA
       INCLUDE 'compam.inc'
       INCLUDE 'comioc.inc'
       
-      INTEGER KP,IS,TOTINDX,INDX,I,J,FID
-      REAL*8 PI2
+      INTEGER KP,IS,TOTINDX,INDX,I,J,FID,MROW,MSA,LXROW,LYCOL
+      REAL*8 PI2,CACHEMAX,FIELDMAX,OPPARAMAX,OPPERPMAX,
+     &       PPARAMAX,PPERPMAX
+      LOGICAL OWNDWKC
       COMPLEX*16,DIMENSION(:),ALLOCATABLE:: DWPPARA,DWPPERP,DWK
       COMPLEX*16,DIMENSION(:,:),ALLOCATABLE::DWPPARX,DWPPERX,
      &                                       DWPPARY,DWPPERY
@@ -9443,7 +9539,9 @@ C     COMPUTATION OF PPERP AND PPARA
       IF (.NOT. ODWKCOM) RETURN
       IF (ISWEEP.NE.NSWEEP) RETURN
       
-      CALL ALLOCATEDWKCOMPMAT
+C     KJP KEEPS THE COMPONENT ARRAYS ALLOCATED WHEN KJPKEY.NE.0
+      OWNDWKC = .NOT.ALLOCATED(INDXDWKC)
+      IF (OWNDWKC) CALL ALLOCATEDWKCOMPMAT
       TOTINDX = SIZE(VX1PARAC,3)
       ALLOCATE (DWPPARA(TOTINDX),DWPPERP(TOTINDX),DWK(TOTINDX))
       ALLOCATE (DWPPARX(NRP1,TOTINDX),DWPPERX(NRP1,TOTINDX),
@@ -9459,6 +9557,7 @@ C     COMPUTATION OF PPERP AND PPARA
       
       PPARAC  = 0.0
       PPERPC  = 0.0
+      CACHEMAX = 0.0
       
       BUFFER_I  => BUFFER_DATA1
       BUFFER_I1 => BUFFER_DATA2
@@ -9481,6 +9580,10 @@ C     READ MARTIX FROM BINARY FILES ON EACH SURFACE
             BUFFERT => BUFFER_I1
             CALL READ_SURFACE_QUANTITIES (IS+1,1)
          ENDIF   
+
+         IF (IS.EQ.MAX(1,NR/2)) CACHEMAX = MAX(
+     &      MAXVAL(ABS(BUFFER_I)),MAXVAL(ABS(BUFFERM_I)),
+     &      MAXVAL(ABS(BUFFER_I1)))
          
          DO INDX=1,TOTINDX
 C     FILL IN THE GLOBAL MATRIX FOR PRESSURE CALCULATION
@@ -9500,6 +9603,35 @@ C     CALCULATE ENERGY PROFILE OF DIFFERENT COMPONENTS
 	  
          ENDDO
       ENDDO
+
+      FIELDMAX = MAX(MAXVAL(ABS(X1U)),MAXVAL(ABS(X2U)),
+     &               MAXVAL(ABS(B1U)),MAXVAL(ABS(B2U)),
+     &               MAXVAL(ABS(B3U)))
+      OPPARAMAX = 0.0
+      OPPERPMAX = 0.0
+      DO IS=1,NR
+         DO MROW=1,MSMAX
+            LXROW = (MROW-1)*NXCOMP
+            DO MSA=1,MSMAX
+               LYCOL = (MSA-1)*NYCOMP
+               IF (KYPPARA.GT.0) OPPARAMAX = MAX(OPPARAMAX,
+     &            ABS(HSUBM(LXROW+KXV1,LYCOL+KYPPARA,IS)),
+     &            ABS(ESUBM(LXROW+KXV1,LYCOL+KYPPARA,IS+1)))
+               IF (KYPPERP.GT.0) OPPERPMAX = MAX(OPPERPMAX,
+     &            ABS(HSUBM(LXROW+KXV1,LYCOL+KYPPERP,IS)),
+     &            ABS(ESUBM(LXROW+KXV1,LYCOL+KYPPERP,IS+1)))
+            ENDDO
+         ENDDO
+      ENDDO
+      PPARAMAX = MAXVAL(ABS(PPARAC))
+      PPERPMAX = MAXVAL(ABS(PPERPC))
+      WRITE(*,*) 'DWK CACHE/FIELD/OPPARA/OPPERP/PARA/PERP MAXIMA:',
+     &           CACHEMAX,FIELDMAX,OPPARAMAX,OPPERPMAX,
+     &           PPARAMAX,PPERPMAX
+      IF (CACHEMAX.LE.0.0.OR.FIELDMAX.LE.0.0.OR.
+     &    OPPARAMAX.LE.0.0.OR.OPPERPMAX.LE.0.0.OR.
+     &    MAX(PPARAMAX,PPERPMAX).LE.0.0)
+     &   STOP 'INVALID ZERO DWK CONTRACTION INPUT'
 
       PI2 = PI*PI*2.0
 C     CALCULATE THE TOTAL ENERGY OF EACH COMPONENT
@@ -9640,7 +9772,7 @@ C     OUTPUT THE ENERGY COMPONENTS
       DEALLOCATE (PPARAC,PPERPC)
       DEALLOCATE (BUFFER_DATA1,BUFFER_DATA2,BUFFER_DATAM)
 
-      CALL DEALLOCATEDWKCOMPMAT
+      IF (OWNDWKC) CALL DEALLOCATEDWKCOMPMAT
 
       END SUBROUTINE CALCDWKCOMP
       
@@ -9724,41 +9856,88 @@ C      WRITE (*,*) 'SUCCESS OF READ:', FILENAME
       IMPLICIT NONE
       
       INTEGER KP,INDX
+      INTEGER EXPECTED(NSPECIES,5)
       
       IF (.NOT. ODWKCOM) RETURN
-	
-      ALLOCATE (INDXDWKC(NSPECIES,5))
-      INDXDWKC = -1
-      
+
+      EXPECTED = -1
       INDX=0
       DO KP=1,NSPECIES
          IF (ABS(PSPECIES_AP(KP)).GT.0) THEN
             INDX=INDX+1
-            INDXDWKC(KP,1)=INDX
+            EXPECTED(KP,1)=INDX
          ENDIF
          IF (ABS(PSPECIES_AT(KP)).GT.0) THEN
             INDX=INDX+1
-            INDXDWKC(KP,2)=INDX
+            EXPECTED(KP,2)=INDX
          ENDIF
-           IF (ABS(PSPECIES_NP(KP)).GT.0) THEN
+         IF (ABS(PSPECIES_NP(KP)).GT.0) THEN
             INDX=INDX+1
-            INDXDWKC(KP,3)=INDX
+            EXPECTED(KP,3)=INDX
          ENDIF
          IF (ABS(PSPECIES_NTB(KP)).GT.0) THEN
             INDX=INDX+1
-            INDXDWKC(KP,4)=INDX
+            EXPECTED(KP,4)=INDX
          ENDIF
          IF (ABS(PSPECIES_NTD(KP)).GT.0) THEN
             INDX=INDX+1
-            INDXDWKC(KP,5)=INDX
+            EXPECTED(KP,5)=INDX
          ENDIF
       ENDDO
-      
+
+C     KJP RETAINS THE MASTER THREAD'S COMPONENT WORKSPACE UNTIL THE
+C     FINAL DWK/NTV DIAGNOSTIC.  REUSE THAT WORKSPACE IF, AND ONLY IF,
+C     ITS COMPLETE SHAPE AND COMPONENT MAP STILL MATCH THIS RUN.
+      IF (ALLOCATED(INDXDWKC)) THEN
+         IF (.NOT.ALLOCATED(VX1PARAC).OR.
+     &       .NOT.ALLOCATED(VX1PERPC).OR.
+     &       .NOT.ALLOCATED(VX2PARAC).OR.
+     &       .NOT.ALLOCATED(VX2PERPC).OR.
+     &       .NOT.ALLOCATED(VQ1PARAC).OR.
+     &       .NOT.ALLOCATED(VQ1PERPC).OR.
+     &       .NOT.ALLOCATED(VQ2PARAC).OR.
+     &       .NOT.ALLOCATED(VQ2PERPC).OR.
+     &       .NOT.ALLOCATED(VQ3PARAC).OR.
+     &       .NOT.ALLOCATED(VQ3PERPC))
+     &      STOP 'INCOMPLETE DWK COMPONENT WORKSPACE'
+         IF (SIZE(INDXDWKC,1).NE.NSPECIES.OR.
+     &       SIZE(INDXDWKC,2).NE.5.OR.
+     &       ANY(INDXDWKC.NE.EXPECTED))
+     &      STOP 'INCONSISTENT DWK COMPONENT MAP'
+         IF (SIZE(VX1PARAC,1).NE.MSMAX.OR.
+     &       SIZE(VX1PARAC,2).NE.MSMAX.OR.
+     &       SIZE(VX1PARAC,3).NE.INDX.OR.
+     &       ANY(SHAPE(VX1PERPC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VX2PARAC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VX2PERPC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VQ1PARAC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VQ1PERPC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VQ2PARAC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VQ2PERPC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VQ3PARAC).NE.SHAPE(VX1PARAC)).OR.
+     &       ANY(SHAPE(VQ3PERPC).NE.SHAPE(VX1PARAC)))
+     &      STOP 'INCONSISTENT DWK COMPONENT WORKSPACE'
+         RETURN
+      ENDIF
+
+      ALLOCATE (INDXDWKC(NSPECIES,5))
+      INDXDWKC = EXPECTED
+
       ALLOCATE ( VX1PARAC(MSMAX,MSMAX,INDX), VX1PERPC(MSMAX,MSMAX,INDX),
      &           VX2PARAC(MSMAX,MSMAX,INDX), VX2PERPC(MSMAX,MSMAX,INDX),
      &           VQ1PARAC(MSMAX,MSMAX,INDX), VQ1PERPC(MSMAX,MSMAX,INDX),
      &           VQ2PARAC(MSMAX,MSMAX,INDX), VQ2PERPC(MSMAX,MSMAX,INDX),
      &           VQ3PARAC(MSMAX,MSMAX,INDX), VQ3PERPC(MSMAX,MSMAX,INDX))
+      VX1PARAC = 0.
+      VX1PERPC = 0.
+      VX2PARAC = 0.
+      VX2PERPC = 0.
+      VQ1PARAC = 0.
+      VQ1PERPC = 0.
+      VQ2PARAC = 0.
+      VQ2PERPC = 0.
+      VQ3PARAC = 0.
+      VQ3PERPC = 0.
       END SUBROUTINE ALLOCATEDWKCOMPMAT
       
       SUBROUTINE DEALLOCATEDWKCOMPMAT
