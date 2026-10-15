@@ -12,8 +12,7 @@ branches = [
   "upstream-clean/nrp1-zero-init",           # gafusion #25 / PR #26
   "upstream-clean/dwk-tail-underflow",       # gafusion #38 / PR #39
   "upstream-clean/prescribed-q-current-sign",# gafusion #32 / PR #14
-  "upstream-clean/kia-pass-h4",              # candidate, not filed
-  "upstream-clean/kntv21-crash",             # candidate, not filed
+  "upstream-clean/kntv21-crash",             # gafusion #3 + crash fixes
 ]
 pairwise = true
 
@@ -22,6 +21,7 @@ pairwise = true
 extends = "minimal"
 branches = [
   "build/tests-harness",
+  "upstream-clean/kia-pass-h4",              # NTV-D14; 18% of the Wang torque, fork only
   "fix/chease-isofun-ffprime-integral",      # was gafusion PR #6
   "fix/chease-smooth-fourth-slot",           # was PR #7
   "fix/chease-inner-coarea",                 # was PR #16
