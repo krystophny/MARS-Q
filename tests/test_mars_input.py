@@ -70,12 +70,29 @@ class ExecutableInputTests(unittest.TestCase):
             diagnostic,
         )
 
-    def test_mars_k_ntv_requires_dwk_components(self):
+    def test_legacy_kntv20_accepts_disabled_dwk_components(self):
+        # KNTV=20 contracts the physical pressure in KDWKDENSITY; it does
+        # not need the optional per-component DWK cache used by KNTV=21.
+        for outopt in ("", "ODWKCOM=.FALSE."):
+            with self.subTest(outopt=outopt):
+                result = run_with_input(
+                    minimal_input(
+                        kinetic="INCKIN=1",
+                        qlin="KNTV=20, KEYTORQ=0",
+                        outopt=outopt,
+                    )
+                )
+                # Deliberately absent equilibrium data stops the run after
+                # namelist validation; its echo proves input was accepted.
+                self.assertIn("&BASIC", result.stdout)
+                self.assertNotIn("ERROR AT MARS-K NTV INPUT", result.stdout)
+
+    def test_kntv21_requires_dwk_components(self):
         result = run_with_input(
-            minimal_input(kinetic="INCKIN=1", qlin="KNTV=20, KEYTORQ=0")
+            minimal_input(kinetic="INCKIN=1", qlin="KNTV=21, KEYTORQ=0")
         )
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("KNTV=20/21 WITH INCKIN>0 REQUIRES ODWKCOM=.TRUE.", result.stdout)
+        self.assertIn("KNTV=21 WITH INCKIN>0 REQUIRES ODWKCOM=.TRUE.", result.stdout)
 
     def test_mars_k_ntv_cross_term_request_fails_loudly(self):
         result = run_with_input(
