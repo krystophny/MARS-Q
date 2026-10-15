@@ -1,0 +1,58 @@
+# Ordered branch manifest for the fork stacks.  tools/build_stack.py checks
+# and builds them.  Every listed branch is based on `base` and must apply to
+# it alone; `depends_on` only says what a branch needs to be *tested*.
+base = "8824bb1"          # fork main == gafusion/MARS-Q master
+
+[stacks.minimal]
+# Severe defects (NaN, crash, sign, large factors), one tiny commit each,
+# offered upstream.  Must apply pairwise to base.
+branches = [
+  "upstream-clean/dwk-torque-factor",        # gafusion #21 / PR #22
+  "upstream-clean/profwe-zero",              # gafusion #19 / PR #20
+  "upstream-clean/nrp1-zero-init",           # gafusion #25 / PR #26
+  "upstream-clean/dwk-tail-underflow",       # gafusion #38 / PR #39
+  "upstream-clean/prescribed-q-current-sign",# gafusion #32 / PR #14
+  "upstream-clean/kia-pass-h4",              # candidate, not filed
+  "upstream-clean/kntv21-crash",             # candidate, not filed
+]
+pairwise = true
+
+[stacks.full]
+# stacks.minimal plus the fork fix/check/perf branches, in this order.
+extends = "minimal"
+branches = [
+  "build/tests-harness",
+  "fix/chease-isofun-ffprime-integral",      # was gafusion PR #6
+  "fix/chease-smooth-fourth-slot",           # was PR #7
+  "fix/chease-inner-coarea",                 # was PR #16
+  "fix/chease-restart-derivatives",          # was PR #17
+  "fix/pamera-fmind-exit",                   # was PR #24
+  "fix/torqfac-aspct",                       # was PR #37
+  "check/chease-nrbox-guard",                # was PR #8
+  "check/chease-quadrature-guard",           # was PR #13
+  "perf/chease-tiled-ldlt",                  # was PR #10, includes PR #9
+  "perf/chease-active-band-clear",           # was PR #11
+  "perf/chease-ppspln-radius",               # was PR #12
+]
+
+[depends_on]
+# Test commits use tests/CMakeLists.txt and tests/support.py.
+"fix/chease-isofun-ffprime-integral" = ["build/tests-harness"]
+"fix/chease-smooth-fourth-slot" = ["build/tests-harness"]
+"fix/chease-inner-coarea" = ["build/tests-harness"]
+"fix/chease-restart-derivatives" = ["build/tests-harness"]
+"fix/pamera-fmind-exit" = ["build/tests-harness"]
+"check/chease-nrbox-guard" = ["build/tests-harness"]
+"check/chease-quadrature-guard" = ["build/tests-harness"]
+"check/chease-aldlt-status" = ["build/tests-harness"]
+"perf/chease-tiled-ldlt" = ["build/tests-harness"]
+"perf/chease-active-band-clear" = ["build/tests-harness"]
+"perf/chease-ppspln-radius" = ["build/tests-harness"]
+# The native KNTV=21 check of kntv21-crash needs the NRP1 initialisation
+# (otherwise the deck can hit gafusion #25 first).
+"upstream-clean/kntv21-crash" = ["upstream-clean/nrp1-zero-init"]
+
+[superseded]
+# Kept as a branch for a standalone PR, but not stacked: the tiled ALDLT
+# rewrite contains the same status and edge-case handling.
+"check/chease-aldlt-status" = "perf/chease-tiled-ldlt"
