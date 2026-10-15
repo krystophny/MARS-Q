@@ -35,6 +35,35 @@ branches = [
   "perf/chease-ppspln-radius",               # was PR #12
 ]
 
+[stacks.fork]
+# Fork-only defect fixes (not offered upstream): independent, each applies
+# alone and pairwise to base.
+extends = "full"
+branches = [
+  "fix/kinetic-ruu2-threadprivate",          # was fork PR #5 (diagnostic race)
+  "fix/kinetic-slam0-two-species",           # was PR #12 (diagnostic bounds)
+  "fix/ntv-periodic-projection",             # was PR #6 (Shaing KNTV=10/11)
+  "fix/kinetic-bpk-after-b-filter",          # was PR #8; changes default kinetic results
+  "fix/marsq-omegase-edge-copy",             # was PR #14/#25
+  "fix/chease-axis-field-abscissa",          # was PR #35
+  "fix/chease-prescribed-q-axis",            # was PR #47/#48
+  "perf/biot-savart-omp",                    # was PR #5
+]
+pairwise = true
+
+[stacks.production]
+# Opt-in frozen-field NTV layer and the request-file diagnostics used by
+# the TC24 runs.  F1 starts with upstream-clean/kntv21-crash, whose commits
+# are dropped here as already present; the same holds for the
+# dwk-tail-underflow commit at the start of diag/ntv-numerator-efac.
+extends = "fork"
+branches = ["feat/marsk-frozen-field-ntv"]
+layers = [
+  { branch = "diag/marsk-dwk-requests",     on = "feat/marsk-frozen-field-ntv" },
+  { branch = "diag/ntv-numerator-efac",     on = "diag/marsk-dwk-requests" },
+  { branch = "diag/marsk-native-observers", on = "diag/ntv-numerator-efac" },
+]
+
 [depends_on]
 # Test commits use tests/CMakeLists.txt and tests/support.py.
 "fix/chease-isofun-ffprime-integral" = ["build/tests-harness"]
@@ -51,8 +80,20 @@ branches = [
 # The native KNTV=21 check of kntv21-crash needs the NRP1 initialisation
 # (otherwise the deck can hit gafusion #25 first).
 "upstream-clean/kntv21-crash" = ["upstream-clean/nrp1-zero-init"]
+"fix/ntv-periodic-projection" = ["build/tests-harness"]
+"fix/chease-axis-field-abscissa" = ["build/tests-harness"]
+"fix/chease-final-pivot-scale" = ["build/tests-harness"]
+"feat/marsk-frozen-field-ntv" = ["build/tests-harness"]
+# The torque-report test assumes the -n Im(dW_K) production factor.
+"diag/marsk-dwk-requests" = ["build/tests-harness", "upstream-clean/dwk-torque-factor"]
 
 [superseded]
 # Kept as a branch for a standalone PR, but not stacked: the tiled ALDLT
 # rewrite contains the same status and edge-case handling.
 "check/chease-aldlt-status" = "perf/chease-tiled-ldlt"
+
+[pending]
+# Branch exists, applies alone to base, not stacked until the condition holds.
+"fix/kinetic-ki-bounce-ndb" = "KFASTRUN=1/0 bounce-harmonic agreement test (changes default output)"
+"fix/chease-final-pivot-scale" = "same own-scale final pivot added to check/chease-aldlt-status and perf/chease-tiled-ldlt (same lines)"
+"feat/kproftauth-dimensional" = "decision on the KPROFTAUTH variant (based on feat/marsk-frozen-field-ntv)"
