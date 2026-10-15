@@ -4,7 +4,7 @@
 base = "8824bb1"          # fork master == gafusion/MARS-Q master
 
 [stacks.minimal]
-# Severe defects (NaN, crash, sign, large factors), one tiny commit each,
+# Severe defects (NaN, crash, sign, >= 10-15 % of the NTV torque), one tiny commit each,
 # offered upstream.  Must apply pairwise to base.
 branches = [
   "upstream-clean/dwk-torque-factor",        # gafusion #21 / PR #22
@@ -12,6 +12,7 @@ branches = [
   "upstream-clean/nrp1-zero-init",           # gafusion #25 / PR #26
   "upstream-clean/dwk-tail-underflow",       # gafusion #38 / PR #39
   "upstream-clean/prescribed-q-current-sign",# gafusion #32 / PR #14
+  "upstream-clean/kia-pass-h4",              # gafusion #40 / PR #41
   "upstream-clean/kntv21-crash",             # gafusion #3 + crash fixes
 ]
 pairwise = true
@@ -21,7 +22,6 @@ pairwise = true
 extends = "minimal"
 branches = [
   "build/tests-harness",
-  "upstream-clean/kia-pass-h4",              # NTV-D14; 18% of the Wang torque, fork only
   "fix/chease-isofun-ffprime-integral",      # was gafusion PR #6
   "fix/chease-smooth-fourth-slot",           # was PR #7
   "fix/chease-inner-coarea",                 # was PR #16
