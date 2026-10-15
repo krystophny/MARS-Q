@@ -10974,14 +10974,11 @@ C
             CID0(K) = CID0(K) / CIDQ(K)
             CID2(K) = CIDR(K) / CIDQ(K)
 C
-         ELSE IF (NSTTP .EQ. 3) THEN
+         ELSE IF (NSTTP .EQ. 3 .OR. NSTTP .EQ. 4) THEN
 C
             CID0(K) = CIDR(K) / CIDQ(K)
             CID2(K) = CID2(K) / CIDQ(K)
-CYQL2018
-         ELSE IF (NSTTP .EQ. 4) THEN
-            CID2(K) = 1./CIDQ(K)
- 
+C
          ENDIF
 C
          RETURN
@@ -11873,7 +11870,7 @@ C
                ZCID0 = RMAG
                ZCID2 = RMAG**2
 C
-            ELSE IF (NSTTP .EQ. 3) THEN
+            ELSE IF (NSTTP .EQ. 3 .OR. NSTTP .EQ. 4) THEN
 C
                ZCID0 = RMAG**2
                ZCID2 = 0.
@@ -16196,6 +16193,13 @@ C
             IF (ZS .LT. 0.) ZS = 0.
 C
             ZS = SQRT(ZS)
+C
+C           YQL2018 NSTTP=4: the source carries a factor 1/ZS. On the
+C           degenerate axis node ZS vanishes; the source profiles are
+C           tabulated on CSIPR(1:KN), so evaluate at the innermost
+C           tabulated surface there.
+C
+            IF (NSTTP .EQ. 4 .AND. ZS .LT. CSIPR(1)) ZS = CSIPR(1)
 C
             ZH = CSIPR(I1(J3)+1) - CSIPR(I1(J3))
             ZA = (CSIPR(I1(J3)+1) - ZS) / ZH
