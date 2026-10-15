@@ -74,6 +74,7 @@ C     THE FILE CHANEL FOR OUTPUT KINETIC QUANTITY IN 2D PLOT
       INCLUDE 'integc.inc'
 
       KCHECK=0
+      CALL KDRIVE_INIT
 
       IF (KJPKEY.EQ.0) GOTO 1
       IF (KJPKEY.EQ.2) GOTO 3
@@ -4277,7 +4278,10 @@ C        COMPUTE PHI(CHI) AT SPECIFIC INTEGRATION POINTS
          CALL KPHI(JS,KGRID)
 
 C        ENERGY INTEGRATION AT ZERO ORBIT WIDTH
+         PRECOBS_TAG=1
+         PRECOBS_WEIGHT=LAMH
          CALL KI(JS,KGRID,0,0)
+         PRECOBS_TAG=0
 
 C        COMPUTE G-FACTORS
          CALL KG(0)
@@ -4498,6 +4502,8 @@ C=======================================================================
       INTEGER KCHECK
       KCHECK = 0
 
+      CALL WRITENATIVEFACTORS(JS,KGRID,KPARTICLE,
+     &                        ICASE,LAMH)
       LAM1   = HKMIN(JS,KGRID)
       LAM2   = HKMAX(JS,KGRID)
       H3     = WFUN (JS,KGRID)
@@ -7819,6 +7825,7 @@ C     SPLINE DRIFT(LAM)
      &              2*NLAMK0(JS,KGRID),LAMTMP)
 
 C     INTEGRATION OVER NEW LAMN
+      CALL PRECOBS_SPLINE(JS,KGRID)
       VVI0 = 0.
       DO J=1,2*(NN-1)
          DRIFT = DRIFTNG(J)
@@ -7826,7 +7833,10 @@ C     INTEGRATION OVER NEW LAMN
          DO KP=1,NSPECIES
             IF (ABS(PSPECIES_NTD(KP)).GT.0.) THEN
             CALL KDISTRIBF_TYPE(JS,KGRID,KP,LAM)
+            PRECOBS_TAG=2
+            PRECOBS_WEIGHT=LAMNH(J)
             CALL KI_PRECESSION(JS,KGRID,0,KP,KOPT,ZVI)
+            PRECOBS_TAG=0
             VVI0(:,KP) = VVI0(:,KP) + ZVI*PSPECIES_NTD(KP)*LAMNH(J)
             ENDIF
          ENDDO
@@ -9818,6 +9828,7 @@ C     CALCULATE ENERGY PROFILE OF DIFFERENT COMPONENTS
          ENDDO
       ENDDO
 
+      CALL WRITEKINETICINPUTSTATE
       FIELDMAX = MAX(MAXVAL(ABS(X1U)),MAXVAL(ABS(X2U)),
      &               MAXVAL(ABS(B1U)),MAXVAL(ABS(B2U)),
      &               MAXVAL(ABS(B3U)))
@@ -9853,6 +9864,8 @@ C     Optional integer/half-mesh work breakdown.  It must consume the raw
 C     arrays before the production radial combination below; the writer
 C     applies that combination once and does not apply the radial integration
 C     weight CSH to a torque density.
+      CALL WRITENATIVEPRESSURE(PPARAC,PPERPC,
+     &                         TOTINDX)
       INQUIRE(FILE='DWK_BREAKDOWN.REQUEST',EXIST=OBREAKDOWN)
       IF (OBREAKDOWN) CALL WRITEDWKBREAKDOWN(DWPPARX,DWPPERX,
      &                                      DWPPARY,DWPPERY,TOTINDX)
@@ -11774,3 +11787,217 @@ C        CHECK AGAIN PARTICLE POSITION
      
       RETURN
       END
+
+C     Opt-in native drive observation; initialized before threaded surfaces.
+      SUBROUTINE KDRIVE_INIT
+      USE GLOBALM, ONLY: KDRIVE_ACTIVE,KDRIVE_LO,KDRIVE_HI,
+     &                  KDRIVE_SEEN,NSPECIES
+      USE DIMENSIM, ONLY: NRP1
+      IMPLICIT NONE
+      INTEGER FID
+      LOGICAL REQUESTED
+      IF (ALLOCATED(KDRIVE_SEEN)) RETURN
+      INQUIRE(FILE='NATIVE_DRIVE.REQUEST',EXIST=REQUESTED)
+      IF (.NOT.REQUESTED) RETURN
+      OPEN(NEWUNIT=FID,FILE='NATIVE_DRIVE.REQUEST',STATUS='OLD')
+      READ(FID,*) KDRIVE_LO,KDRIVE_HI
+      CLOSE(FID)
+      IF (KDRIVE_LO.GT.KDRIVE_HI) ERROR STOP 'BAD DRIVE OBSERVER RANGE'
+      ALLOCATE(KDRIVE_SEEN(NRP1,2,NSPECIES))
+      KDRIVE_SEEN=.FALSE.
+      KDRIVE_ACTIVE=.TRUE.
+      END SUBROUTINE KDRIVE_INIT
+
+
+C     RAW FACTORS AS CONSUMED BY KJPFILL; NO PHYSICAL HN CLAIM.
+      SUBROUTINE WRITENATIVEFACTORS(JS,KGRID,KPARTICLE,ICASE,LAMH)
+      USE DIMENSIM
+      USE GLOBALM
+      USE KINETICM
+      USE ToolBox
+      IMPLICIT NONE
+      INTEGER JS,KGRID,KPARTICLE,ICASE,M,L,KP,FID
+      REAL*8 LAMH
+      LOGICAL ENABLED,SELECTED
+      CHARACTER*80 PATH
+      INQUIRE(FILE='NATIVE_FACTOR_TRACE.REQUEST',EXIST=ENABLED)
+      IF (.NOT.ENABLED) RETURN
+      CALL KELLTRACESELECT(JS,KGRID,SELECTED)
+      IF (.NOT.SELECTED) RETURN
+      IF (KPARTICLE.NE.0) RETURN
+      WRITE(PATH,'("NATIVE_FACTORS_JS",I4.4,"_G",I1,".OUT")')
+     &      JS,KGRID
+C$OMP CRITICAL(NATIVE_FACTOR_WRITE)
+      FID=ASSIGNFREEFILEUNIT()
+      OPEN(FID,FILE=PATH,STATUS='UNKNOWN',POSITION='APPEND',
+     &     ACTION='WRITE')
+      WRITE(FID,*) '% RAW NORMALIZED SOURCE FACTORS; NOT PHYSICAL HN'
+      WRITE(FID,100) 'CTX ',JS,KGRID,KPARTICLE,ICASE,
+     &    LAM,LAMH,WFUN(JS,KGRID),SLAMD0,RQK,B0K
+      DO L=1,MLMAX
+         IF (ABS(RLM(L)).GE.0.1) CYCLE
+         DO M=1,MSMAX
+            WRITE(FID,101) 'G ',L,M,RM(M,2),RLM(L),
+     &         VPARA(M,L),VPERP(M,L),VDPHI(M,L)
+            WRITE(FID,102) 'H ',L,M,RM(M,2),RLM(L),
+     &         VX1(M,L),VX2(M,L),VQ1(M,L),VQ2(M,L),
+     &         VQ3(M,L),VDP(M,L)
+            IF (SLAMD0.GT.0.) THEN
+               WRITE(FID,101) 'G0 ',L,M,RM(M,2),RLM(L),
+     &            VPARA0(M,L),VPERP0(M,L),VDPHI0(M,L)
+               WRITE(FID,102) 'H0 ',L,M,RM(M,2),RLM(L),
+     &            VX10(M,L),VX20(M,L),VQ10(M,L),VQ20(M,L),
+     &            VQ30(M,L),VDP0(M,L)
+            ENDIF
+            DO KP=1,NSPECIES
+               IF (SLAM0(L,KP).LE.0.) CYCLE
+               WRITE(FID,103) 'GS ',L,M,KP,SLAM0(L,KP),
+     &            SVPARA0(M,L,KP),SVPERP0(M,L,KP),
+     &            SVDPHI0(M,L,KP)
+               WRITE(FID,104) 'HS ',L,M,KP,SLAM0(L,KP),
+     &            SVX10(M,L,KP),SVX20(M,L,KP),
+     &            SVQ10(M,L,KP),SVQ20(M,L,KP),
+     &            SVQ30(M,L,KP),SVDP0(M,L,KP)
+            ENDDO
+         ENDDO
+         DO KP=1,NSPECIES
+            WRITE(FID,105) 'I ',L,KP,RLM(L),VI(:,L,KP)
+            IF (SLAMD0.GT.0.)
+     &         WRITE(FID,105) 'I0 ',L,KP,RLM(L),VI0(:,KP)
+            IF (SLAM0(L,KP).GT.0.) THEN
+               WRITE(FID,105) 'SF ',L,KP,SLAM0(L,KP),
+     &            SF0(L,KP,0,:)
+            ENDIF
+         ENDDO
+      ENDDO
+      CLOSE(FID)
+C$OMP END CRITICAL(NATIVE_FACTOR_WRITE)
+ 100  FORMAT(A,4I6,6ES26.17)
+ 101  FORMAT(A,2I6,2ES26.17,6ES26.17)
+ 102  FORMAT(A,2I6,2ES26.17,12ES26.17)
+ 103  FORMAT(A,3I6,ES26.17,6ES26.17)
+ 104  FORMAT(A,3I6,ES26.17,12ES26.17)
+ 105  FORMAT(A,2I6,ES26.17,8ES26.17)
+      END SUBROUTINE WRITENATIVEFACTORS
+
+      SUBROUTINE WRITENATIVEPRESSURE(PPARAC,PPERPC,TOTINDX)
+      USE DIMENSIM
+      USE GLOBALM
+      USE RCOMDM
+      USE KINETICM
+      USE ToolBox
+      IMPLICIT NONE
+      INTEGER TOTINDX,IS,M,INDX,FID,KP,CHANNEL
+      COMPLEX*16 PPARAC(NRP1,MSMAX,TOTINDX)
+      COMPLEX*16 PPERPC(NRP1,MSMAX,TOTINDX)
+      LOGICAL ENABLED,SELECTED
+      INQUIRE(FILE='NATIVE_FACTOR_TRACE.REQUEST',EXIST=ENABLED)
+      IF (.NOT.ENABLED) RETURN
+      FID=ASSIGNFREEFILEUNIT()
+      OPEN(FID,FILE='NATIVE_PRESSURE_ROWS.OUT',STATUS='REPLACE',
+     &     ACTION='WRITE')
+      WRITE(FID,*) '% RAW PRESSURE BEFORE DWK RADIAL FOLD; SOURCE UNITS'
+      WRITE(FID,*) '% P IS INDX M CSM PARA_RE_IM PERP_RE_IM'
+      WRITE(FID,*) '% U IS M CSLO CSHI CSM X1LO X1HI X2 B1LO',
+     &             ' B1HI B2 B3 (COMPLEX RE_IM)'
+      DO KP=1,NSPECIES
+         DO CHANNEL=1,5
+            WRITE(FID,*) 'MAP ',KP,CHANNEL,INDXDWKC(KP,CHANNEL)
+         ENDDO
+      ENDDO
+      DO IS=1,NR
+         CALL KELLTRACESELECT(IS,2,SELECTED)
+         IF (.NOT.SELECTED) CYCLE
+         DO M=1,MSMAX
+            WRITE(FID,200) 'U ',IS,M,CS(IS),CS(IS+1),CSM(IS),
+     &         X1U(IS,M),X1U(IS+1,M),X2U(IS,M),
+     &         B1U(IS,M),B1U(IS+1,M),B2U(IS,M),B3U(IS,M)
+            DO INDX=1,TOTINDX
+               WRITE(FID,201) 'P ',IS,INDX,M,CSM(IS),
+     &            PPARAC(IS,M,INDX),PPERPC(IS,M,INDX)
+            ENDDO
+         ENDDO
+      ENDDO
+      CLOSE(FID)
+ 200  FORMAT(A,2I6,3ES26.17,14ES26.17)
+ 201  FORMAT(A,3I6,ES26.17,4ES26.17)
+      END SUBROUTINE WRITENATIVEPRESSURE
+
+
+C     Passive imported-input readback, in native R0EXP/B0EXP source units.
+      SUBROUTINE WRITEKINETICINPUTSTATE
+      USE DIMENSIM
+      USE GLOBALM
+      USE RCOMDM
+      USE FEEDBACKM, ONLY: KTREST
+      USE ToolBox
+      IMPLICIT NONE
+      INTEGER UID,FID,IOS,JS,KGRID,I,M,L
+      REAL*8 LR,FLOCAL
+      LOGICAL EXISTS
+      CHARACTER*100 PATH
+      INQUIRE(FILE='KGHACTION.POINTS',EXIST=EXISTS)
+      IF (.NOT.EXISTS) RETURN
+      FID=ASSIGNFREEFILEUNIT()
+      OPEN(FID,FILE='KINETIC_INPUT_FIELDS.OUT',STATUS='REPLACE',
+     &     ACTION='WRITE')
+      WRITE(FID,*) '% I M CS CSM X1 X2 X3 B1 B2 B3 complexpairs'
+      WRITE(FID,*) '% Full X1/B1; half X2/X3/B2/B3; dummy edge half=0'
+      DO I=1,NRP1
+         DO M=1,MSMAX
+            IF (I.LE.NR) THEN
+               LR=CSM(I)
+            ELSE
+               LR=0.0D0
+            ENDIF
+            WRITE(FID,'(16(1X,ES26.17E3))') REAL(I),RM(M,2),
+     &         CS(I),LR,X1U(I,M),X2U(I,M),X3U(I,M),
+     &         B1U(I,M),B2U(I,M),B3U(I,M)
+         ENDDO
+      ENDDO
+      CLOSE(FID)
+      UID=ASSIGNFREEFILEUNIT()
+      OPEN(UID,FILE='KGHACTION.POINTS',STATUS='OLD',ACTION='READ')
+      DO
+         READ(UID,*,IOSTAT=IOS) JS,KGRID,LR
+         IF (IOS.NE.0) EXIT
+         IF (KGRID.NE.1.AND.KGRID.NE.2)
+     &      STOP 'INVALID KINETIC INPUT GRID'
+         IF (JS.LT.1.OR.JS.GT.NRP1)
+     &      STOP 'INVALID KINETIC INPUT NODE'
+         IF (KGRID.EQ.2.AND.JS.GT.NR)
+     &      STOP 'INVALID KINETIC INPUT HALFPOINT'
+         WRITE(PATH,'("KINETIC_INPUT_JS",I4.4,"_G",I1,
+     &               "_GEOMETRY.OUT")') JS,KGRID
+         FID=ASSIGNFREEFILEUNIT()
+         OPEN(FID,FILE=PATH,STATUS='REPLACE',ACTION='WRITE')
+         WRITE(FID,*) '% R0EXP[m] B0EXP[T] RNTOR; phi_phys=-phi_MARS'
+         WRITE(FID,'(A,3(1X,ES26.17E3))') 'SCALE',R0EXP,
+     &      B0EXP,RNTOR
+         WRITE(FID,*) '% L s Factive dpsi P Pprime omegaE R Z J',
+     &      ' G11 G22 G33 G12 RDCDZ RDSDZ RBZ'
+         IF (KGRID.EQ.1) THEN
+            FLOCAL=T(JS)
+            IF (KTREST.NE.0) FLOCAL=TSAVE(JS)
+            DO L=1,NCHI
+               WRITE(FID,'(I8,16(1X,ES26.17E3))') L,CS(JS),
+     &            FLOCAL,DPSIDS(JS),PEQ(JS),PPEQ(JS),ROT(JS),
+     &            REQ(JS,L),ZEQ(JS,L),RJA(JS,L),G11L(JS,L),
+     &            G22L(JS,L),G33L(JS,L),G12L(JS,L),
+     &            RDCDZ(JS,L),RDSDZ(JS,L),RBZ(JS,L)
+            ENDDO
+         ELSE
+            FLOCAL=TM(JS)
+            IF (KTREST.NE.0) FLOCAL=TMSAVE(JS)
+            DO L=1,NCHI
+               WRITE(FID,'(I8,16(1X,ES26.17E3))') L,CSM(JS),
+     &            FLOCAL,DPSIDSM(JS),PEQM(JS),PPEQM(JS),ROTM(JS),
+     &            REQM(JS,L),ZEQM(JS,L),RJAM(JS,L),G11LM(JS,L),
+     &            G22LM(JS,L),G33LM(JS,L),G12LM(JS,L),
+     &            RDCDZM(JS,L),RDSDZM(JS,L),RBZM(JS,L)
+            ENDDO
+         ENDIF
+         CLOSE(FID)
+      ENDDO
+      CLOSE(UID)
+      END SUBROUTINE WRITEKINETICINPUTSTATE
