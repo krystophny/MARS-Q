@@ -2823,7 +2823,7 @@ C=======================================================================
       INTEGER IHE(100),NIHE
       
       KCHECK  = 1
-      KSMOOTH = 1
+      KSMOOTH = KSMOOTHB
 
       KM      = NKSMOOTHB
       ALLOCATE(BMC(KM+1),BMS(KM+1))
@@ -4507,6 +4507,9 @@ C=======================================================================
       CASE (1)
          DO KP=1,NSPECIES
          DO L=1,MLMAX
+            IF (KNTVELL.NE.999) THEN
+               IF (NINT(RLM(L)).NE.KNTVELL) CYCLE
+            ENDIF
             IF (KPARTICLE.EQ.0 .AND. ABS(RLM(L)).LT.0.1) THEN
                R=2
             ELSE
@@ -4563,6 +4566,9 @@ C=======================================================================
       CASE (2)
          DO KP=1,NSPECIES
          DO L=1,MLMAX
+         IF (KNTVELL.NE.999) THEN
+            IF (NINT(RLM(L)).NE.KNTVELL) CYCLE
+         ENDIF
          IF (SLAM0(L,KP).GT.0.) THEN
             IF (KPARTICLE.EQ.0 .AND. ABS(RLM(L)).LT.0.1) THEN
                R=2
@@ -4625,6 +4631,9 @@ C=======================================================================
       CASE (3)
          DO KP=1,NSPECIES
          DO L=1,MLMAX
+         IF (KNTVELL.NE.999) THEN
+            IF (NINT(RLM(L)).NE.KNTVELL) CYCLE
+         ENDIF
          IF (SLAM0(L,KP).GT.0.) THEN
             IF (KPARTICLE.EQ.0 .AND. ABS(RLM(L)).LT.0.1) THEN
                R=2
@@ -4674,6 +4683,9 @@ C=======================================================================
       CASE (4)
          DO KP=1,NSPECIES
          DO L=1,MLMAX
+         IF (KNTVELL.NE.999) THEN
+            IF (NINT(RLM(L)).NE.KNTVELL) CYCLE
+         ENDIF
          IF (ABS(RLM(L)).LT.0.1.AND.KPARTICLE.EQ.0) THEN
             R=2
             CTMP   = VI0(1,KP)*H3
@@ -4704,6 +4716,7 @@ C=======================================================================
 
       CASE (5)   
          R=1
+         IF (KNTVELL.NE.999.AND.KNTVELL.NE.998) CYCLE
          DO KP=1,NSPECIES
          L = M-K + (M2-M1) + 1
          X1PARA(KP,R) = ZKIA(1,KP)*ZGL0PA(L)*LAMH*H3
@@ -4724,6 +4737,7 @@ C=======================================================================
          ENDDO
       CASE (6)
          R=1
+         IF (KNTVELL.NE.999.AND.KNTVELL.NE.998) CYCLE
          DO KP=1,NSPECIES
          IF ((ISPECIES_F0(KP).EQ.1.OR.ISPECIES_F0(KP).EQ.2)
      &       .AND.ABS(PSPECIES_AT(KP)).GT.0.) THEN
@@ -6078,7 +6092,7 @@ C     FIND INITIAL GUESS
      &   WRITE(*,*) 'HPL,HPU',HPL,HPU,JS,KGRID
 
       IF (HPL.LE.0.0.OR.HPU.GE.0.0)
-     &  STOP 'KINETIC:HPL<0 | HPU>0,TRY KSMOOTH=1'
+     &  STOP 'KINETIC:HPL<0 | HPU>0,TRY KSMOOTHB=1'
       RETURN
       END
       
@@ -6174,7 +6188,7 @@ C     IF (HPU.GT.0.AND.HPL.LT.0.AND.0.EQ.1) THEN
       ENDIF
 
       IF (HPL.LE.0.0.OR.HPU.GE.0.0) 
-     &   STOP 'KINETIC:HPL<0 | HPU>0,TRY KSMOOTH=1'
+     &   STOP 'KINETIC:HPL<0 | HPU>0,TRY KSMOOTHB=1'
 
       RETURN
       END
