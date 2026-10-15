@@ -1,7 +1,7 @@
 # Ordered branch manifest for the fork stacks.  tools/build_stack.py checks
 # and builds them.  Every listed branch is based on `base` and must apply to
 # it alone; `depends_on` only says what a branch needs to be *tested*.
-base = "8824bb1"          # fork main == gafusion/MARS-Q master
+base = "8824bb1"          # fork master == gafusion/MARS-Q master
 
 [stacks.minimal]
 # Severe defects (NaN, crash, sign, large factors), one tiny commit each,
