@@ -1335,8 +1335,12 @@ C
      &            RHOU(NRP1), RHOUM(NRP1),
      &            DRHOU(NRP1),DRHOUM(NRP1))
 
+C        ELEMENT NRP1 IS READ (TIMES A ZERO EDGE WEIGHT) BUT NEVER SET:
+C        START FROM ZERO, HEAP GARBAGE NaN WOULD GIVE 0*NaN = NaN
          DPSIDSM = 0.
          TM      = 0.
+         PPEQM   = 0.
+         TPM     = 0.
       END IF
 
       ALLOCATE(PSIISO(2*NRP1),RTMP(NRP1,NCHI))
@@ -1622,6 +1626,7 @@ C     STARTING FROM SLEFT (DEFAULT SLEFT=0.0)
      &            ROTEQ(NRP1), ROTEQM(NRP1),
      &            DROTEQ(NRP1),DROTEQM(NRP1),
      &            RHOEQ(NRP1), RHOEQM(NRP1) )
+         OMEGASE = 0.
          TROTI  = 0.
          TROTM  = 0.
          TDROTI = 0.
