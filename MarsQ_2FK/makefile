@@ -16,9 +16,21 @@ SRCS_LSODE = daxpy.f   dcopy.f  dewset.f  dgbsl.f  dgesl.f \
              dsrcom.f  dumach.f  idamax.f  ixsav.f   makefile  xsetf.f
 
 
+# Optional global forced-response solver; the default has no new dependency.
+PAMS_CSC ?= 0
+PAMS_CSC_SOURCE = pams_global_stub.f90
+ifeq ($(PAMS_CSC),1)
+PAMS_CSC_SOURCE = pams_global_csc.f90
+PAMS_CSC_FLAGS = -I$(FORTSPARSE_PREFIX)/include
+PAMS_CSC_LIBS = $(FORTSPARSE_PREFIX)/lib/libfortsparse.a -ldl -lrt
+# Set FORTSPARSE_LIBS when a static dependency needs additional platform libraries.
+PAMS_CSC_LIBS += $(FORTSPARSE_LIBS)
+PAMS_CSC_ARGS = --pams-csc --fortsparse-prefix "$(FORTSPARSE_PREFIX)" --fortsparse-libs="$(FORTSPARSE_LIBS)"
+endif
+
 #SRCS =   $(DIR_LSODE $(SRC_LSODE))                   \
 
-SRCS =   ./lsode/*.f    \
+SRCS =   $(PAMS_CSC_SOURCE) ./lsode/*.f    \
          dimensim.f globalm.f gijlm.f ran_modm.f  \
          feedbackm.f   gvacuumm.f  rcomdm.f \
          convolcofm.f  resmatm.f kineticm.f torquem.f \
@@ -60,6 +72,9 @@ F95 = mpif90
 F95FLAGS = -O1 -r8 -openmp
 #LDFLAGS =
 
+INCDIR += $(PAMS_CSC_FLAGS)
+LIBS += $(PAMS_CSC_LIBS)
+
 all: $(PROG)
 
 .PHONY: gnu gnu-debug ifx nvhpc clean-objects test test-runtime check
@@ -67,21 +82,21 @@ all: $(PROG)
 
 gnu:
 	python3 ../tools/build_with_provenance.py --profile gnu \
-		--build-dir $(BUILD_DIR)
+		--build-dir $(BUILD_DIR) $(PAMS_CSC_ARGS)
 
 gnu-debug:
 	python3 ../tools/build_with_provenance.py --profile gnu-debug \
-		--build-dir $(BUILD_DIR)
+		--build-dir $(BUILD_DIR) $(PAMS_CSC_ARGS)
 
 # Source the Intel oneAPI environment before invoking this target.
 ifx:
 	python3 ../tools/build_with_provenance.py --profile ifx \
-		--build-dir $(BUILD_DIR)
+		--build-dir $(BUILD_DIR) $(PAMS_CSC_ARGS)
 
 # Put the NVIDIA HPC SDK compiler and HPC-X MPI wrapper on PATH first.
 nvhpc:
 	python3 ../tools/build_with_provenance.py --profile nvhpc \
-		--build-dir $(BUILD_DIR)
+		--build-dir $(BUILD_DIR) $(PAMS_CSC_ARGS)
 
 $(PROG): $(OBJS)
 	$(F95) $(F95FLAGS) -o $@ $(OBJS) $(LIBS) $(INCDIR)
@@ -111,7 +126,7 @@ tar:
 .SUFFIXES: $(SUFFIXES) .f
 
 .f90.o:
-	$(F95) $(F95FLAGS) -c $<
+	$(F95) $(F95FLAGS) $(PAMS_CSC_FLAGS) -c $<
 
 .f.o:
-	$(F95) $(F95FLAGS) -c $<
+	$(F95) $(F95FLAGS) $(PAMS_CSC_FLAGS) -c $<

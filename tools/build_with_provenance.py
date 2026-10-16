@@ -277,7 +277,24 @@ def validate_manifest(path: Path) -> dict[str, Any]:
     return manifest
 
 
-def build(profile_name: str, build_dir: Path, require_clean: bool) -> Path:
+def build(profile_name: str, build_dir: Path, require_clean: bool, *,
+          pams_csc: bool = False, fortsparse_prefix: Path | None = None,
+          fortsparse_libs: str = "") -> Path:
+    if pams_csc and (profile_name not in ("gnu", "gnu-debug") or fortsparse_prefix is None):
+        raise ValueError("PAMS CSC requires a GNU profile and --fortsparse-prefix")
+    if not pams_csc and (fortsparse_prefix is not None or fortsparse_libs):
+        raise ValueError("fortsparse options require --pams-csc")
+    dependency = {"enabled": pams_csc}
+    if pams_csc:
+        assert fortsparse_prefix is not None
+        fortsparse_prefix = fortsparse_prefix.expanduser().resolve()
+        dependency.update(prefix=str(fortsparse_prefix), extra_link_flags=shlex.split(fortsparse_libs))
+        dependency_files = [fortsparse_prefix / "lib/libfortsparse.a",
+                            fortsparse_prefix / "bin/fortsparse_umfpack_helper"]
+        dependency_files += sorted((fortsparse_prefix / "include").glob("*.mod"))
+        if not dependency_files[2:]:
+            raise ValueError("fortsparse prefix has no Fortran modules")
+        dependency["files_sha256"] = {str(p): sha256_file(p) for p in dependency_files}
     profile = PROFILES[profile_name]
     compiler = resolve_program(profile["compiler"])
     make = resolve_program("make")
@@ -304,6 +321,10 @@ def build(profile_name: str, build_dir: Path, require_clean: bool) -> Path:
         f"F95={compiler}",
         f"F95FLAGS={flags_string}",
     ]
+    build_command.append("PAMS_CSC=1" if pams_csc else "PAMS_CSC=0")
+    if pams_csc:
+        build_command += [f"FORTSPARSE_PREFIX={fortsparse_prefix}",
+                          f"FORTSPARSE_LIBS={fortsparse_libs}"]
     wrapper_command = [
         str(python),
         str(Path(__file__).resolve()),
@@ -312,6 +333,9 @@ def build(profile_name: str, build_dir: Path, require_clean: bool) -> Path:
         "--build-dir",
         str(build_dir),
     ]
+    if pams_csc:
+        wrapper_command += ["--pams-csc", "--fortsparse-prefix", str(fortsparse_prefix),
+                            "--fortsparse-libs=" + fortsparse_libs]
     if require_clean:
         wrapper_command.append("--require-clean")
 
@@ -324,6 +348,9 @@ def build(profile_name: str, build_dir: Path, require_clean: bool) -> Path:
             raise RuntimeError(
                 f"build did not create expected executable: {temporary_binary}"
             )
+        if pams_csc:
+            if dependency["files_sha256"] != {str(p): sha256_file(p) for p in dependency_files}:
+                raise RuntimeError("fortsparse modules/library/helper changed during build")
         source_after = git_state()
         if source_fingerprint(source_before) != source_fingerprint(source_after):
             raise RuntimeError("Git source state changed while MARS was compiling")
@@ -353,6 +380,7 @@ def build(profile_name: str, build_dir: Path, require_clean: bool) -> Path:
         "artifact": artifact_record(binary),
         "build": {
             "profile": profile_name,
+            "pams_csc": dependency,
             "flags": flags,
             "flags_string": flags_string,
             "compiler": compiler_record(compiler),
@@ -407,6 +435,11 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help="refuse to build when tracked or untracked Git changes are present",
     )
+    parser.add_argument("--pams-csc", action="store_true",
+                        help="enable globally pivoted steady-response backend")
+    parser.add_argument("--fortsparse-prefix", type=Path)
+    parser.add_argument("--fortsparse-libs", default="",
+                        help="additional native static-link flags")
     return parser.parse_args()
 
 
@@ -423,7 +456,9 @@ def main() -> int:
     if not build_dir.is_absolute():
         build_dir = (Path.cwd() / build_dir).resolve()
     assert arguments.profile is not None
-    build(arguments.profile, build_dir, arguments.require_clean)
+    build(arguments.profile, build_dir, arguments.require_clean,
+          pams_csc=arguments.pams_csc, fortsparse_prefix=arguments.fortsparse_prefix,
+          fortsparse_libs=arguments.fortsparse_libs)
     return 0
 
 
