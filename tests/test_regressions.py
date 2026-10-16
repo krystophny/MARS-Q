@@ -299,11 +299,16 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("INCONSISTENT DWK COMPONENT WORKSPACE", allocator)
         self.assertLess(
             allocator.index("IF (ALLOCATED(INDXDWKC)) THEN"),
-            allocator.index("ALLOCATE (INDXDWKC(NSPECIES,5))"),
+            allocator.index("ALLOCATE (INDXDWKC(NSPECIES,10))"),
         )
         self.assertLess(
             allocator.index("RETURN", allocator.index("IF (ALLOCATED(INDXDWKC))")),
-            allocator.index("ALLOCATE (INDXDWKC(NSPECIES,5))"),
+            allocator.index("ALLOCATE (INDXDWKC(NSPECIES,10))"),
+        )
+        self.assertIn("INCONSISTENT SAME-DRIVE TORQUE WORKSPACE", allocator)
+        self.assertLess(
+            allocator.index("RETURN", allocator.index("IF (ALLOCATED(INDXDWKC))")),
+            allocator.index("ALLOCATE (HWKC(MSMAX,MSMAX,25,NH))"),
         )
 
     def test_dwk_surface_workspace_is_serialized_in_production(self) -> None:
