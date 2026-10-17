@@ -6,6 +6,8 @@
       PARAMETER         (C1=1.,CI=(0.,1.))
       REAL*8            PI
       PARAMETER         (PI = 3.1415 92653 58979)
+      REAL*8, PARAMETER :: THERMAL_EV_J=1.602176634D-19,
+     &                    PROFILE_PROTON_KG=1.67261D-27
       REAL*8            B0K
       INTEGER           V2XKEY,NLAMK,NCHI0,NLAMIN,NEPK,NKL0,KNTVELL,
      &                  NKSMOOTHB,NKSMOOTHR,NKSINGULAR,KSMOOTHB,
