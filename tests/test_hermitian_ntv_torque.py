@@ -327,7 +327,17 @@ def run_native(source, build_parent, kernel, eps, kernel0=None, sf0=None):
         (work / 'routines.f').write_text(
             ''.join(extract(text, n) for n in ROUTINES) + observer + stub)
         clear = CLEAR_WITH if 'HWKC' in module else CLEAR_WITHOUT
-        (work / 'clear.f90').write_text(clear)
+        # The direct-check routine refers to KTREST even when its request
+        # file is absent.  This fixture uses the active equilibrium field.
+        feedback = 'module feedbackm\ninteger :: KTREST=0\nend module\n'
+        # CALCDWKCOMP calls this passive observer unconditionally; it is off
+        # here, and enabling its request would require the full input fixture.
+        input_observer = ("subroutine WRITEKINETICINPUTSTATE\n"
+                          "logical requested\n"
+                          "inquire(file='KGHACTION.POINTS',exist=requested)\n"
+                          "if (requested) error stop 'UNEXPECTED INPUT OBSERVER'\n"
+                          "end subroutine\n")
+        (work / 'clear.f90').write_text(feedback + clear + input_observer)
         (work / 'driver.f90').write_text(driver(kernel, eps, kernel0, sf0).replace('\n& ', ' &\n& '))
         names = ['dimensim.f', 'globalm.f', 'rcomdm.f', 'kineticm.f', 'anisotropicm.f',
                  'gijlm.f', 'convolcofm.f', 'torquem.f', 'ToolBox.f90']
@@ -336,7 +346,7 @@ def run_native(source, build_parent, kernel, eps, kernel0=None, sf0=None):
                    '-fallow-argument-mismatch', '-ffunction-sections', '-fdata-sections',
                    '-ffpe-trap=zero,invalid', '-fcheck=bounds', '-w', '-I' + str(src)]
         command += [str(src / n) for n in names]
-        command += ['routines.f', 'clear.f90', 'driver.f90', '-Wl,--gc-sections',
+        command += ['clear.f90', 'routines.f', 'driver.f90', '-Wl,--gc-sections',
                     '-o', 'test']
         compiled = subprocess.run(command, cwd=work, capture_output=True, text=True)
         if compiled.returncode:
