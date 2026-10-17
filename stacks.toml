@@ -23,6 +23,7 @@ branches = [
   "upstream-clean/jt60sa-genout-20261017",           # gafusion #56
   "upstream-clean/jt60sa-global-pivot-20261017",     # gafusion #58
   "upstream-clean/jt60sa-same-drive-torque-20261017",# gafusion #60
+  "upstream-clean/jt60sa-chease-periodic-endpoint-20261017", # native periodic seam overrun
 ]
 pairwise = true
 
