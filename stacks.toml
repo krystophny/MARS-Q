@@ -86,9 +86,12 @@ branches = []
 # Kept as a branch for a standalone PR, but not stacked: the tiled ALDLT
 # rewrite contains the same status and edge-case handling.
 "check/chease-aldlt-status" = "perf/chease-tiled-ldlt"
+# The older proposal changed the accepted mode 1 convention.  The full layer
+# instead carries the independently qualified explicit mode 2 implementation,
+# preserving both accepted modes 0 and 1 byte-for-byte.
+"feat/kproftauth-dimensional" = "fix/jt60sa-full-on-samedrive-20261017 (explicit KPROFTAUTH=2)"
 
 [pending]
 # Branch exists, applies alone to base, not stacked until the condition holds.
 "fix/kinetic-ki-bounce-ndb" = "KFASTRUN=1/0 bounce-harmonic agreement test (changes default output)"
 "fix/chease-final-pivot-scale" = "same own-scale final pivot added to check/chease-aldlt-status and perf/chease-tiled-ldlt (same lines)"
-"feat/kproftauth-dimensional" = "decision on the KPROFTAUTH variant (based on feat/marsk-frozen-field-ntv)"
