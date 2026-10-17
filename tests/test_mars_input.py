@@ -57,6 +57,32 @@ def minimal_input(*, kinetic="", qlin="", outopt=""):
 class ExecutableInputTests(unittest.TestCase):
     """Black-box tests that stop before equilibrium files are needed."""
 
+    def test_dimensional_thermal_authority_accepts_maxwellian_mixture(self):
+        for count in (2, 3):
+            with self.subTest(species=count):
+                deck = minimal_input(kinetic=f"""
+                    KPROFTAUTH=2, NSPECIES={count}, ISPECIES_F0=0,0,0,
+                    ESPECIES_Z=1,-1,6, ESPECIES_M=2,.00054463,11.9133904496565248
+                """).replace("&BASIC", "&BASIC\n NEXPV=1,NPROFIE=4")
+                result = run_with_input(deck)
+                # Missing geometry is deliberate: the namelist echo occurs
+                # only after the complete input validation has succeeded.
+                self.assertIn("&BASIC", result.stdout)
+                self.assertNotIn("KPROFTAUTH=2 REQUIRES", result.stdout)
+
+    def test_dimensional_thermal_authority_rejects_unsupported_species(self):
+        for count, f0, message in (
+            (4, "0,0,0,0", "2 OR 3 SPECIES"),
+            (3, "0,0,1", "MAXWELLIAN SPECIES"),
+        ):
+            with self.subTest(species=count, f0=f0):
+                deck = minimal_input(kinetic=f"""
+                    KPROFTAUTH=2, NSPECIES={count}, ISPECIES_F0={f0}
+                """).replace("&BASIC", "&BASIC\n NEXPV=1,NPROFIE=4")
+                result = run_with_input(deck)
+                self.assertIn("KPROFTAUTH=2 REQUIRES", result.stdout)
+                self.assertIn(message, result.stdout)
+
     def test_unknown_namelist_key_is_actionable_and_nonzero(self):
         result = run_with_input(minimal_input().replace("&BASIC", "&BASIC\n BADKEY=1"))
         self.assertNotEqual(result.returncode, 0)

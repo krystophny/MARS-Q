@@ -3320,7 +3320,7 @@ C=======================================================================
       INTEGER K,JS
 
       INTEGER KCHECK
-      REAL*8 TI0_TMP,TE0_TMP
+      REAL*8 TI0_TMP,TE0_TMP,TUNIT
       KCHECK=0
 
 C     DENSITY FRACTION FOR THERMAL ELECTRONS IS ALWAYS 1
@@ -3345,6 +3345,35 @@ C     CONDITION: SUM(Z*N)=0
       ESPECIES_DEN (:,:,1) = ESPECIES_DEN(:,:,1)/ESPECIES_Z(1)
       ESPECIES_DENF(:,1,1) = ESPECIES_DEN(:,1,1)/RHO
       ESPECIES_DENF(:,2,1) = ESPECIES_DEN(:,2,1)/RHOM
+
+      IF (KPROFTAUTH.EQ.2) THEN
+C        Temperatures are dimensional input authority.  All additional
+C        Maxwellian ions share Ti; their pressure follows their density.
+C        Keep the supplied full-mesh edge values and leave PEQ unchanged.
+         TUNIT=ZNE0*THERMAL_EV_J*(4.D-7*PI)/B0EXP**2
+         IF (MINVAL(ESPECIES_DEN).LE.0.D0.OR.ZTI0.LE.0.D0.OR.
+     &       ZTE0.LE.0.D0) STOP 'KPROFTAUTH: NONPOSITIVE DENSITY OR T'
+         DO K=1,NSPECIES
+            IF (K.EQ.2) THEN
+               ESPECIES_TEM(:,1,K)=TUNIT*ZTE0*TEMPE
+               ESPECIES_TEM(:,2,K)=TUNIT*ZTE0*TEMPEM
+            ELSE
+               ESPECIES_TEM(:,1,K)=TUNIT*ZTI0*TEMPI
+               ESPECIES_TEM(:,2,K)=TUNIT*ZTI0*TEMPIM
+            ENDIF
+            ESPECIES_PRE(:,:,K)=ESPECIES_DEN(:,:,K)
+     &                        *ESPECIES_TEM(:,:,K)
+         ENDDO
+         IF (MINVAL(ESPECIES_TEM).LE.0.D0)
+     &      STOP 'KPROFTAUTH: NONPOSITIVE TEMPERATURE PROFILE'
+         DO K=1,NSPECIES
+            ESPECIES_PREF(:,:,K)=ESPECIES_PRE(:,:,K)
+     &                         /SUM(ESPECIES_PRE,DIM=3)
+         ENDDO
+         ALPHAP=1.D0-ESPECIES_PREF(1,1,2)
+         FRACPTH=SUM(ESPECIES_PRE(1,1,:))/PEQ(1)
+         GOTO 100
+      ENDIF
 
       ESPECIES_DEN(NRP1,:,:) = ESPECIES_DEN(NR,:,:)
 
@@ -3425,12 +3454,106 @@ C     CALCULATE TEMPERATURE FOR EACH SPECIES
       ESPECIES_TEM(NRP1,:,:) = ESPECIES_TEM(NR,:,:)
 
 C     COMPUTE DP/DPSI FOR EACH PARTICLE SPECIES
+ 100  CONTINUE
       DO K=1,NSPECIES
          FFF = ESPECIES_PRE(:,:,K)
          CALL DFFFDPSI(0)
          ESPECIES_PREP(:,:,K) = DFFF
       ENDDO
 
+      IF (KPROFTAUTH.EQ.2) CALL KTHERMREADBACK
+
+      RETURN
+      END
+
+C=======================================================================
+C DIMENSIONAL INITIALIZATION READBACK FOR THE EXPLICIT THERMAL AUTHORITY.
+C DERIVATIVES USE THE SAME NATIVE PSI OPERATOR AS THE KINETIC PRESSURES.
+C HALF-MESH ROWS END AT NR; THE NRP1 HALF SLOT IS A STORAGE SENTINEL.
+C=======================================================================
+      SUBROUTINE KTHERMREADBACK
+
+      USE DIMENSIM
+      USE GLOBALM
+      USE MPIENV
+      IMPLICIT NONE
+
+      INTEGER IU,K,J,IG,NJ
+      REAL*8 PUNIT,TUNIT,EVUNIT,S,R,PE,PT,ZE
+      REAL*8,ALLOCATABLE :: RAD(:),RADM(:),FFSAVE(:,:),DFSAVE(:,:),
+     &                     DN(:,:,:),DT(:,:,:)
+
+      IF (ISMPIRUN.NE.0.AND.RANK.NE.ROOT) RETURN
+      PUNIT=B0EXP**2/(4.D-7*PI)
+      EVUNIT=THERMAL_EV_J
+C     Legacy controls retain their original charge convention.
+      IF (KPROFTAUTH.NE.2) EVUNIT=1.6021917D-19
+      TUNIT=ZNE0*EVUNIT/PUNIT
+      ALLOCATE(RAD(NRP1),RADM(NRP1),
+     &         FFSAVE(SIZE(FFF,1),SIZE(FFF,2)),
+     &         DFSAVE(SIZE(DFFF,1),SIZE(DFFF,2)),
+     &         DN(NRP1,2,NSPECIES),DT(NRP1,2,NSPECIES))
+      FFSAVE=FFF
+      DFSAVE=DFFF
+      CALL RADF2RADP(CS,CSM,Q,RAD,RADM,NRP1)
+      DO K=1,NSPECIES
+         FFF=ESPECIES_DEN(:,:,K)
+         CALL DFFFDPSI(0)
+         DN(:,:,K)=DFFF*ZNE0
+         FFF=ESPECIES_TEM(:,:,K)
+         CALL DFFFDPSI(0)
+         DT(:,:,K)=DFFF/TUNIT
+      ENDDO
+      FFF=FFSAVE
+      DFFF=DFSAVE
+
+      OPEN(NEWUNIT=IU,FILE='THERMAL_AUTHORITY.OUT',STATUS='REPLACE')
+      WRITE(IU,'(A)') '# THERMAL_AUTHORITY 1'
+      WRITE(IU,'(A,I0,A,I0,A,I0,A,I0)') '# KPROFTAUTH ',KPROFTAUTH,
+     &   ' NSPECIES ',NSPECIES,' NR ',NR,' NRP1 ',NRP1
+      WRITE(IU,'(A,ES25.16,A,ES25.16,A,ES25.16,A,ES25.16)')
+     &   '# UNITS NE0 ',ZNE0,' EV_J ',EVUNIT,' PRESSURE_PA ',PUNIT,
+     &   ' PROTON_KG ',PROFILE_PROTON_KG
+      DO K=1,NSPECIES
+         WRITE(IU,'(A,I0,3(1X,ES25.16))') '# SPECIES ',K,
+     &      ESPECIES_Z(K),ESPECIES_M(K),
+     &      ESPECIES_M(K)*PROFILE_PROTON_KG
+      ENDDO
+      WRITE(IU,'(A)') '# mesh index species s rho_tor n_m3 T_eV p_Pa'
+     & //' dp_dpsi_native_Pa dn_dpsi_native_m3 dT_dpsi_native_eV'
+     & //' peq_Pa ptotal_Pa offset_Pa Zeff_density'
+      DO IG=1,2
+         NJ=NRP1
+         IF (IG.EQ.2) NJ=NR
+         DO J=1,NJ
+            IF (IG.EQ.1) THEN
+               S=CS(J)
+               R=RAD(J)
+               PE=PEQ(J)*PUNIT
+            ELSE
+               S=CSM(J)
+               R=RADM(J)
+               PE=PEQM(J)*PUNIT
+            ENDIF
+            PT=SUM(ESPECIES_PRE(J,IG,:))*PUNIT
+            ZE=0.D0
+            DO K=1,NSPECIES
+               IF (ESPECIES_Z(K).GT.0.D0)
+     &            ZE=ZE+ESPECIES_DEN(J,IG,K)*ESPECIES_Z(K)**2
+            ENDDO
+            ZE=ZE/ESPECIES_DEN(J,IG,2)
+            DO K=1,NSPECIES
+               WRITE(IU,'(3(I0,1X),12(ES25.16,1X))') IG,J,K,S,R,
+     &            ESPECIES_DEN(J,IG,K)*ZNE0,
+     &            ESPECIES_TEM(J,IG,K)/TUNIT,
+     &            ESPECIES_PRE(J,IG,K)*PUNIT,
+     &            ESPECIES_PREP(J,IG,K)*PUNIT,DN(J,IG,K),DT(J,IG,K),
+     &            PE,PT,PT-PE,ZE
+            ENDDO
+         ENDDO
+      ENDDO
+      CLOSE(IU)
+      DEALLOCATE(RAD,RADM,FFSAVE,DFSAVE,DN,DT)
       RETURN
       END
 
