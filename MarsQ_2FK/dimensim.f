@@ -3,7 +3,7 @@ C$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
       MODULE DIMENSIM
       IMPLICIT NONE
       INTEGER          NCRAY,NSMAX,MSDIM,MEDIM
-      PARAMETER        (NCRAY=1000,NSMAX=2)
+      PARAMETER        (NCRAY=1800,NSMAX=2)
       INTEGER          NXCOMP,NYCOMP      
       INTEGER          NRSDIM
       PARAMETER        (NRSDIM=2000)
