@@ -14,30 +14,32 @@ branches = [
   "upstream-clean/prescribed-q-current-sign",# gafusion #32 / PR #14
   "upstream-clean/kia-pass-h4",              # gafusion #40 / PR #41
   "upstream-clean/kntv21-crash",             # gafusion #3 + crash fixes
+  "upstream-clean/jt60sa-ki0-20261017",             # gafusion #44
+  "upstream-clean/jt60sa-getxymore-20261017",        # gafusion #46
+  "upstream-clean/jt60sa-klam0-20261017",           # gafusion #48
+  "upstream-clean/jt60sa-m0-divb-20261017",          # gafusion #50
+  "upstream-clean/jt60sa-export-precision-20261017", # gafusion #52
+  "upstream-clean/jt60sa-fmind-20261017",            # gafusion #54
+  "upstream-clean/jt60sa-genout-20261017",           # gafusion #56
+  "upstream-clean/jt60sa-global-pivot-20261017",     # gafusion #58
+  "upstream-clean/jt60sa-same-drive-torque-20261017",# gafusion #60
 ]
 pairwise = true
 
 [stacks.full]
-# stacks.minimal plus the fork fix/check/perf branches, in this order.
+# Full fixed production source: all minimal fixes plus the checked legacy
+# CHEASE/fork/production fixes and the accepted KRADLAYER/Omega_D behavior.
+# The layer is rooted on the independent same-drive branch. Its other minimal
+# commits are already present and build_stack.py drops them by patch id.
 extends = "minimal"
-branches = [
-  "build/tests-harness",
-  "fix/chease-isofun-ffprime-integral",      # was gafusion PR #6
-  "fix/chease-smooth-fourth-slot",           # was PR #7
-  "fix/chease-inner-coarea",                 # was PR #16
-  "fix/chease-restart-derivatives",          # was PR #17
-  "fix/pamera-fmind-exit",                   # was PR #24
-  "fix/torqfac-aspct",                       # was PR #37
-  "check/chease-nrbox-guard",                # was PR #8
-  "check/chease-quadrature-guard",           # was PR #13
-  "perf/chease-tiled-ldlt",                  # was PR #10, includes PR #9
-  "perf/chease-active-band-clear",           # was PR #11
-  "perf/chease-ppspln-radius",               # was PR #12
+branches = []
+layers = [
+  { branch = "fix/jt60sa-full-on-samedrive-20261017", on = "upstream-clean/jt60sa-same-drive-torque-20261017" },
 ]
 
 [stacks.fork]
-# Fork-only defect fixes (not offered upstream): independent, each applies
-# alone and pairwise to base.
+# Legacy fork alias of the full production stack. These branches are
+# already in the full layer and are skipped by patch id; retain pairwise checks.
 extends = "full"
 branches = [
   "fix/kinetic-ruu2-threadprivate",          # was fork PR #5 (diagnostic race)
@@ -52,17 +54,9 @@ branches = [
 pairwise = true
 
 [stacks.production]
-# Opt-in frozen-field NTV layer and the request-file diagnostics used by
-# the TC24 runs.  F1 starts with upstream-clean/kntv21-crash, whose commits
-# are dropped here as already present; the same holds for the
-# dwk-tail-underflow commit at the start of diag/ntv-numerator-efac.
+# Compatibility alias: full now includes every qualified production feature.
 extends = "fork"
-branches = ["feat/marsk-frozen-field-ntv"]
-layers = [
-  { branch = "diag/marsk-dwk-requests",     on = "feat/marsk-frozen-field-ntv" },
-  { branch = "diag/ntv-numerator-efac",     on = "diag/marsk-dwk-requests" },
-  { branch = "diag/marsk-native-observers", on = "diag/ntv-numerator-efac" },
-]
+branches = []
 
 [depends_on]
 # Test commits use tests/CMakeLists.txt and tests/support.py.
