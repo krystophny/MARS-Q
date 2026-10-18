@@ -17482,8 +17482,13 @@ C L.P.         5: ANOTHER ANALYTIC MODEL
          CLOSE(99)
 C        ZTEMP = MAXVAL(ABS(RPRV))
          ZTEMP = RPRV(1)
-         IF (NEXPV.EQ.1) ROTE = ZTEMP*ZTAUA0
-         RPRV = ROTE*RPRV/ZTEMP
+         IF (NEXPV.EQ.1) THEN
+C           DIMENSIONAL INPUT NEEDS NO AXIS NORMALISATION.
+            ROTE = ZTEMP*ZTAUA0
+            RPRV = RPRV*ZTAUA0
+         ELSE
+            RPRV = ROTE*RPRV/ZTEMP
+         ENDIF
          IF (IRAD.EQ.1) THEN
             SR  = CS(1:NRP1)
             SRM = CSM(1:NRP1)
