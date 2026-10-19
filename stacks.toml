@@ -33,6 +33,7 @@ branches = [
   "perf/chease-tiled-ldlt",                  # was PR #10, includes PR #9
   "perf/chease-active-band-clear",           # was PR #11
   "perf/chease-ppspln-radius",               # was PR #12
+  "test/kia-pass-normalization",             # PR #89 (test for upstream-clean/kia-pass-h4)
 ]
 
 [stacks.fork]
@@ -48,6 +49,8 @@ branches = [
   "fix/chease-axis-field-abscissa",          # was PR #35
   "fix/chease-prescribed-q-axis",            # was PR #47/#48
   "perf/biot-savart-omp",                    # was PR #5
+  "fix/harmonic-in-count",                   # PR #96
+  "fix/rotation-zero-axis",                  # 587d84b of PR #95, alone on base
 ]
 pairwise = true
 
@@ -62,6 +65,22 @@ layers = [
   { branch = "diag/marsk-dwk-requests",     on = "feat/marsk-frozen-field-ntv" },
   { branch = "diag/ntv-numerator-efac",     on = "diag/marsk-dwk-requests" },
   { branch = "diag/marsk-native-observers", on = "diag/ntv-numerator-efac" },
+  # TC24 line (PRs #90, #91, #98, #97 and the base of #90), only the commits
+  # that are new against the 15 Oct production stack.  The first layer starts
+  # with copies of upstream-clean/dwk-torque-factor, build/tests-harness and
+  # fix/ntv-periodic-projection, which the later commits need as context on
+  # this chain; they are dropped here as already present.
+  { branch = "layer/tc24-fixed-comparator",   on = "diag/marsk-native-observers" },
+  { branch = "layer/tc24-thermal-collisions", on = "layer/tc24-fixed-comparator" },
+  { branch = "layer/tc24-kinetic-profiles",   on = "layer/tc24-thermal-collisions" },
+  { branch = "layer/tc24-hamada-gauge",       on = "layer/tc24-kinetic-profiles" },
+  { branch = "layer/tc24-passing-drift",      on = "layer/tc24-hamada-gauge" },
+  # CHEASE JT-60SA line (base of #92, #92, #93) on the TC24 line.  c76e3df
+  # (fixture repair) is omitted: the TC24 commit 160ebc7 repairs the same
+  # fixtures and registration.
+  { branch = "layer/chease-jt60sa",           on = "layer/tc24-passing-drift" },
+  { branch = "layer/chease-restart-wall",     on = "layer/chease-jt60sa" },
+  { branch = "layer/chease-vacuum-capacity",  on = "layer/chease-restart-wall" },
 ]
 
 [depends_on]
@@ -86,14 +105,21 @@ layers = [
 "feat/marsk-frozen-field-ntv" = ["build/tests-harness"]
 # The torque-report test assumes the -n Im(dW_K) production factor.
 "diag/marsk-dwk-requests" = ["build/tests-harness", "upstream-clean/dwk-torque-factor"]
+"test/kia-pass-normalization" = ["build/tests-harness"]
+"fix/harmonic-in-count" = ["build/tests-harness"]
+"fix/rotation-zero-axis" = ["build/tests-harness"]
 
 [superseded]
 # Kept as a branch for a standalone PR, but not stacked: the tiled ALDLT
 # rewrite contains the same status and edge-case handling.
 "check/chease-aldlt-status" = "perf/chease-tiled-ldlt"
+# Out-of-tree make targets: the TC24 layer replaces them by the
+# provenance-recording gnu/gnu-debug/ifx/nvhpc targets (same makefile lines).
+"main-build" = "layer/tc24-fixed-comparator"
 
 [pending]
 # Branch exists, applies alone to base, not stacked until the condition holds.
 "fix/kinetic-ki-bounce-ndb" = "KFASTRUN=1/0 bounce-harmonic agreement test (changes default output)"
 "fix/chease-final-pivot-scale" = "same own-scale final pivot added to check/chease-aldlt-status and perf/chease-tiled-ldlt (same lines)"
 "feat/kproftauth-dimensional" = "decision on the KPROFTAUTH variant (based on feat/marsk-frozen-field-ntv)"
+"equilibrium/folded-independent-20261008" = "earlier folded angular CHEASE solve; choose it or 75254cd (folded active factor ordering, layer/chease-jt60sa)"
