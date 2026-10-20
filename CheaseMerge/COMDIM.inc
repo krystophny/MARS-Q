@@ -50,7 +50,7 @@ C
      I             NPS   = 280,
      I             NPT   = 280,
      I             NPCHI =  601,
-     I             NPPSI =  1026,
+     I             NPPSI =  1800,
      I             MFLGERL = 1,
      I             MFLGMAR = 1,
      I             MFLGNVW = 1,
