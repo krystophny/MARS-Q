@@ -1,10 +1,12 @@
-q%function MacMain
+%function MacMain
 %% setup for the circular case
 
 global Mac
 global SDIR FEEDI KFEED
 
 format short e
+
+Mac.TAUA = 3.2E-007;
 
 Mac.SS = 'b-';
 Mac.plot_RZ = 0;
@@ -45,14 +47,14 @@ Mac.RunB = 0;
 Mac.RZmap = 0;
 Mac.plot_BM = 0;
 Mac.plot_Bn = 0;
-Mac.spline_B23 = 0;
+Mac.spline_B23 = 0;  %preferred option is 0
 Mac.plot_B  = 0;
-Mac.plot_B_2D  = 1;
+Mac.plot_B_2D = 0;
 Mac.plot_BR = 0;
 Mac.plot_BW = 0;     %plot 2D B-field at wall
 Mac.plot_BC = 0;     %plot real-space Bwr,Bwz,Bwphi along physical theta
 Mac.plot_Bs = 0;     %plot MARS-F-space B1,B2,B3 along chi at wall
-Mac.plot_BWP = 2;    %plot real-space Bwn,Bwt,Bwphi along physical theta 
+Mac.plot_BWP = 4;    %plot real-space Bwn,Bwt,Bwphi along physical theta 
 Mac.plot_BWM = 0;    %plot harmonics of Bwn, Bwt, Bwphi for physical theta
 Mac.plot_BWC = 0;    
 Mac.plot_BWR = 0;    %plot (BR,BZ) along Mac.rw-surface
@@ -64,7 +66,7 @@ Mac.DivB  = 0;
 Mac.plot_DivB = 0;
 Mac.plot_JW3  = 0;
 Mac.Kratsurf  = 1;
-Mac.Iratsurf  = 100;
+Mac.Iratsurf  = [];
 Mac.FullSol   = 0;
 Mac.FootPrint = 0;
 Mac.plot_Tjxb = 0;
@@ -75,7 +77,7 @@ Mac.RunEF   = 0;  %1: read error field at one surface in vacuum, for generating 
 Mac.plot_EF = 0;
 
 Mac.RunV    = 0;
-Mac.plot_VM = 3;
+Mac.plot_VM = 2;
 Mac.plot_V  = 0;
 Mac.plot_Vn = 4;
 
@@ -114,7 +116,8 @@ Mac.coilN  = [3.23 0.80 3.23 -0.80];
 %Mac.rw     = [1.0523];
 %Mac.rw     = [1.0565];
 %Mac.rw     = [1.5];
-Mac.rw     = [1.0470];
+%Mac.rw     = [2.835];
+Mac.rw     = [1.0];
 %Mac.rw     =  [1.0 1.207];
 %Mac.rw     =  [1.0 1.178];
 %Mac.rw     = [0.9294 1 1.0385 1.1922];
@@ -123,37 +126,54 @@ Mac.cut_RZ = -1;
 Mac.plot_thickness = 0;
 Mac.CHIS   = 0;
 
+Mac.RunRE = 0; %plot RE orbit by reading MARS-Q data from RE_TRACE.OUT
+Mac.plot_RE_1D = 1;
+Mac.plot_RE_2D = 2;
+Mac.plot_RE_3D = 3;
 
 phas = 0.0*pi;
-afac = 2.584e-3;
-afac = 1.0;
 Mac.ALPHA   = 1.0;                     
 Mac.ShellCurrNorm = 1.0;
-Mac.BNORM = afac*exp(phas*i);
-Mac.JNORM = afac*exp(phas*i);
-Mac.PNORM = afac*exp(phas*i); 
-Mac.VNORM = afac*exp(phas*i);
+Mac.BNORM = 1.0*exp(phas*i)/387;
+Mac.JNORM = 1.0*exp(phas*i);
+Mac.PNORM = 1.0*exp(phas*i); 
+Mac.VNORM = 1.0*exp(phas*i)/387;
 
 %SDIR = '/home/liuy/Work/D3D161015/Work/';
 %SDIR = '/home/liuy/Work/D3D166439/Data/';
 %SDIR = '/cscratch/liuy/WorkCFETRc/';
-%SDIR = '/cscratch/liuy/WorkVDE/';
-%SDIR = '/cscratch/liuy/WorkD3D177038/';
-%SDIR = '/home/liuy/Work/RE_KINK/Data_REK/Common/';
-%SDIR = '/home/liuy/Work/COMPASS/Data/Common/';
-%SDIR = '/home/liuy/Work/D3D177038/Data/';
-%SDIR = '/home/liuy/Work/ITER/Data_RE/Common/';
-%SDIR = '/home/liuy/Work/ITER/Data_RE/Common/RMP_PLS_Xmax_CFBAL=0/';
-SDIR = '/cscratch/liuy/WorkTEMP/';
+%SDIR = '/cscratch/liuy/WorkReKink/';
+%SDIR = '/cscratch/liuy/Wiseberg/IBS_n2_IUcoil/';
+%SDIR = '/cscratch/liuy/Wiseberg/SSH_n2_IUcoil/';
+%SDIR = '/cscratch/liuy/RE_ITER/86ms_P100_S+1/';
+%SDIR = '/home/liuy/Work/RE_COMPASS/Data/n1/';
+%SDIR = '/home/liuy/Work/KSTAR/RES_FLT/KSTAR19204.15005_FLT_V/';
+%SDIR = '/home/liuy/Work/RE_ITER/Data_HALO/86ms/'; %NCHIM=400
+%SDIR = '/home/liuy/Work/ITER/Data_EP/15MAQ10/Common/'; %NCHIM=480
+%SDIR = '/home/liuy/Work/ITER/Data_RE/Common/'; %NCHIM=280
+%SDIR = '/home/liuy/Work/RE_transport/177040/Common/'; %NCHIM=360
+%SDIR = '/home/liuy/Work/RE_transport/184602/Common/'; %NCHIM=480
+%SDIR = '/home/liuy/Work/RE_transport/185604/Common/'; %NCHIM=480
+%SDIR = '/home/liuy/Work/RE_transport/68ms/Common/'; %NCHIM=400
+SDIR = '/home/liuy/Work/RE_transport/76ms/Common/'; %NCHIM=400
+%SDIR = '/home/liuy/Work/RE_transport/86ms/Common/'; %NCHIM=400
+%SDIR = '/cscratch/liuy/Temp/';
 
 %eval(['load ' SDIR 'FEEDI']);
 %KFEED = 19;
 
 
 if Mac.checkRZ, Mac.plot=1; end
-Mac.chi = linspace(0,2*pi,Mac.Nchi);
-Mac.phi = linspace(0,2*pi,101)';
+Mac.chi = linspace(-pi,pi,Mac.Nchi);
+Mac.chi = linspace(-pi,pi,Mac.Nchi);
+Mac.phi = linspace(0,2*pi,101); Mac.phi = Mac.phi(:);
 
+if Mac.RunEQ & Mac.plot_BEQ
+   NCHIM = 400;
+   Mac.Nchi = NCHIM+1;
+   Mac.chi = linspace(0,2*pi,Mac.Nchi);
+end
+   
 %Mac.chi = Mac.chi(1:end-1);
 %Mac.Nchi = Mac.Nchi-1;
 
@@ -163,7 +183,8 @@ Mac.phi = linspace(0,2*pi,101)';
 if Mac.checkRZ, MacCheckRZ('../TestCirc/RMZM_R'), end
 
 if Mac.RunEQ
-[QEQ,TEQ,DPSIEQ] = MacReadPROFEQ([SDIR 'PROFEQ.OUT']);
+   if Mac.plot_EQ, [QEQ] = MacReadPROFEQ([SDIR 'PROFEQ.OUT']); end
+   if Mac.plot_BEQ, MacReadBEQ(NCHIM,R,Z,[SDIR 'BEQ_PLS.OUT'],[SDIR 'BEQ_VAC.OUT']); end
 end
 
 if Mac.plot_orbit > 0
@@ -176,9 +197,14 @@ I0EXP = 1.0e+3*fac_c;      %[kA] vacuum shot
 mu0   = 4e-7*pi;
 fac   = mu0/Mac.R0EXP;
 FEEDI = 1.0;
-Mac.BNORM  = Mac.BNORM*Mac.B0EXP*1e+4;  %in Gauss
-Mac.VNORM  = Mac.VNORM*Mac.R0EXP*1e+3; %in mm
-Mac.JNORM  = Mac.JNORM*(Mac.B0EXP/Mac.R0EXP/4.0e-7/pi)/1e+6; %in MA/m^2
+
+%Mac.BNORM  = Mac.BNORM*fac*I0EXP/FEEDI*1e+4;  %in Gauss/kA
+%Mac.VNORM  = Mac.BNORM*Mac.R0EXP/Mac.B0EXP/1e+4; %in meter/kA
+%Mac.JNORM  = Mac.BNORM*(Mac.B0EXP/Mac.R0EXP/4.0e-7/pi)/Mac.B0EXP/1e+4/1e+3; %in kA/kA
+
+Mac.BNORM  = Mac.BNORM*Mac.B0EXP*1e+4;  %in [Gauss]
+Mac.VNORM  = Mac.VNORM*Mac.R0EXP*1e+3; %in [mm]
+
 if Mac.RunEF>0
    %Mac.BNORM   = Mac.B0EXP*1e+4*(4.8881e-04+1.4664e-03i)/1.05;
    %Mac.BNORM   = Mac.B0EXP*1e+4*(9.7775e-04+9.7775e-04i);
@@ -193,11 +219,6 @@ if length(Mac.coil)>0, [Rc,Zc] = MacGetRZcoil(RM,ZM); end
 % unit vectors e_s and e_chi and jacobian
 [dRds,dZds,dRdchi,dZdchi,jacobian] = MacGetUnitVec(R,Z);
 if Mac.checkJACOB, MacCheckJacob([SDIR 'JACOBIAN_fix'],jacobian), end
-
-if Mac.RunEQ & Mac.plot_BEQ
-it
-u   MacPlotBeq(jacobian,DPSIEQ,dRdchi,dZdchi);
-end
 
 %read in error field data
 if Mac.RunEF==1
@@ -316,6 +337,12 @@ end
 if Mac.RunP
 [PM1,PM2,PM3] = MacReadPPLASMA([SDIR 'PPLASMA.OUT']);
 end
+
+% RE orbit
+if Mac.RunRE
+MacREORBIT(R,Z,SDIR,'RE_TRACE0001.OUT',2);
+end
+
 
 if 1==0
 %compare B1 and V1
