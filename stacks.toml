@@ -47,7 +47,6 @@ branches = [
   "fix/kinetic-bpk-after-b-filter",          # was PR #8; changes default kinetic results
   "fix/marsq-omegase-edge-copy",             # was PR #14/#25
   "fix/chease-axis-field-abscissa",          # was PR #35
-  "fix/chease-prescribed-q-axis",            # was PR #47/#48
   "perf/biot-savart-omp",                    # was PR #5
   "fix/harmonic-in-count",                   # PR #96
   "fix/rotation-zero-axis",                  # 587d84b of PR #95, alone on base
