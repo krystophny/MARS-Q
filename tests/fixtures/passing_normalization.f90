@@ -49,6 +49,7 @@ program passing_normalization
     pspecies_fowp(1:2) = 0.d0
     ifowpsi0 = 1
     ntvnumerefac = 1.d0
+    kpassdrift = 0
     rntor = -3.d0
     b0k = 1.d0
     rqk = 0.7d0
