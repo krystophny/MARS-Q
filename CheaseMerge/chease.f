@@ -1121,6 +1121,7 @@ C
      +       CALL SPLINE(FCSM,RPPF,NPPF+1,D2RPPF,ZWORK,ZWORK1)
          IF (NFUNC  .EQ. 4) 
      +       CALL SPLINE(FCSM,RFUN,NPPF+1,D2RFUN,ZWORK,ZWORK1)
+         IF (NSTTP .EQ. 4) CALL IPRQ(1,ZQERR,ZDI)
 C
          IF (NSURF .EQ. 1) THEN
 C
@@ -3456,6 +3457,15 @@ C
 C
          RESMAP = SQRT(ZNM/ZNDM)
 C
+C IF NSTTP = 4 : UPDATE I* TOWARDS THE PRESCRIBED Q. CONVERGENCE ALSO
+C REQUIRES A SMALL CHANGE OF I* AND AN RMS Q MISMATCH BELOW SQRT(CEPS)
+C
+         IF (NSTTP .EQ. 4) THEN
+            CALL IPRQ(2,ZQERR,ZDI)
+            RESMAP = MAX(RESMAP,ZDI)
+            IF (ZQERR .GT. SQRT(CEPS)) RESMAP = MAX(RESMAP,ZQERR)
+         ENDIF
+C
 C IF THE NSTTP = 3 : RESCALE AT'S AT EVERY ITERATION OVER CURRENT 
 C PROFILE IF NO BALLOONING OPTIMIZATION IS USED OR THE OPTIMIZED 
 C BALLOONING PRESSURE PROFILE IS RESCALED BY CPRESS. IF BALLOONING
@@ -3486,6 +3496,146 @@ C
          CALL OUTPUT(14)
 C
     4    CONTINUE
+C
+         RETURN
+         END
+C*DECK C2S06A
+C*CALL PROCESS
+         SUBROUTINE IPRQ(K,PERR,PDI)
+C        ###########################
+C
+***********************************************************************
+*                                                                     *
+* C2S06A PRESCRIBED SAFETY FACTOR (NSTTP=4). THE EQUILIBRIUM IS       *
+*        COMPUTED AS FOR NSTTP=2, WITH I* STORED IN RFUN AND T=1 AT   *
+*        THE EDGE, AND I* IS ADJUSTED TO THE TARGET Q SAVED IN ZQT.   *
+*        K=1: SAVE THE TARGET Q READ INTO RFUN AND SET I* = 2/Q.      *
+*        K=2: AFTER PREMAP(1), THE CURRENT INSIDE EACH SURFACE WHICH  *
+*             GIVES THE TARGET Q IN THE PRESENT GEOMETRY IS           *
+*             CIDI*Q/QTARGET, WITH Q = T*CIDQ/(2*PI). ITS DERIVATIVE  *
+*             WITH RESPECT TO THE AREA (DA/DPSI = CID0*CIDQ) IS THE   *
+*             NEW I*. RFUN IS UNDERRELAXED TOWARDS IT. PERR IS THE    *
+*             RMS OF Q/QTARGET-1 OVER PSI, PDI THE RELATIVE CHANGE    *
+*             OF I* (MAXIMUM NORM).                                   *
+*                                                                     *
+***********************************************************************
+C
+         INCLUDE 'DECLAR.inc'
+         INCLUDE 'COMDIM.inc'
+         INCLUDE 'COMBAL.inc'
+         INCLUDE 'COMBLA.inc'
+         INCLUDE 'COMCON.inc'
+         INCLUDE 'COMESH.inc'
+         INCLUDE 'COMNUM.inc'
+         INCLUDE 'COMPHY.inc'
+         INCLUDE 'COMSOL.inc'
+         INCLUDE 'COMSUR.inc'
+C
+         PARAMETER (ZOMEGA = 0.5)
+C
+         DIMENSION
+     R   ZQT(NPISO),     D2ZQT(NPISO),   ZQ(NPISO),      ZI(NPISO),
+     R   ZD2(NPISO),     ZC(NPISO),      ZPSF(NPISO),    ZCF(NPISO),
+     R   ZWORK(NPISO),   ZWORK1(NPISO)
+         SAVE ZQT, D2ZQT, NINIT
+         DATA NINIT /0/
+C
+C----*----*----*---*----*----*----*----*----*----*----*----*----*----*-
+C
+         PERR = 0.
+         PDI  = 0.
+C
+         IF (K .EQ. 1) THEN
+C
+            IF (NFUNC .NE. 4) THEN
+               PRINT*,'NSTTP=4 REQUIRES NFUNC=4 (Q GIVEN IN EXPEQ)'
+               STOP
+            ENDIF
+C
+            DO 1 J1=1,NPPF+1
+            ZQT(J1)  = ABS(RFUN(J1))
+            RFUN(J1) = 2. / ZQT(J1)
+    1       CONTINUE
+C
+            CALL SPLINE(FCSM,ZQT,NPPF+1,D2ZQT,ZWORK,ZWORK1)
+            CALL SPLINE(FCSM,RFUN,NPPF+1,D2RFUN,ZWORK,ZWORK1)
+            NINIT = 1
+            RETURN
+C
+         ENDIF
+C
+         IF (NINIT .EQ. 0) THEN
+            PRINT*,'NSTTP=4: TARGET Q NOT SET (RESTART NOT SUPPORTED)'
+            STOP
+         ENDIF
+C
+C  SURFACES BELOW IP DO NOT ENCLOSE THE MESH CENTER AND ARE
+C  EXTRAPOLATED IN PROFILE. THEY ARE EXCLUDED FROM PERR, AND PERR IS
+C  SET TO ZERO IF IP > 1 (CHEASE THEN MOVES THE MESH CENTER TO THE
+C  MAGNETIC AXIS AND ITERATES AGAIN).
+C
+         IP = ISRCHFGE(NISO,PSIISO,1,CPSICL(1))
+         IF (IP .LT. 1)    IP = 1
+         IF (IP .GT. NISO) IP = NISO
+C
+         CALL PPSPLN(NISO,PSIISO,NPPF,FCSM,ZQT,D2ZQT,ZQ,0)
+C
+         ZSW  = 0.
+         ZMAX = 0.
+C
+         DO 2 J2=1,NISO
+         ZR     = TMF(J2) * CIDQ(J2) / (2. * CPI * ZQ(J2))
+         ZI(J2) = CIDI(J2) * ZR
+         IF (J2 .GE. IP) THEN
+            ZW   = PSIISO(MIN(J2+1,NISO)) - PSIISO(MAX(J2-1,IP))
+            ZSW  = ZSW + ZW
+            PERR = PERR + ZW * (ZR - 1.)**2
+            ZMAX = MAX(ZMAX,ABS(ZR - 1.))
+         ENDIF
+    2    CONTINUE
+C
+         PERR = SQRT(PERR / ZSW)
+         WRITE(6,'(" NSTTP=4: RMS AND MAX OF Q/QTARGET-1 =",1P,2E12.4)')
+     +     PERR, ZMAX
+         IF (IP .GT. 1) PERR = 0.
+C
+C  NEW I* = D(ZI)/D(PSI) / (CID0*CIDQ), D/DPSI FROM A CUBIC SPLINE
+C
+         CALL SPLINE(PSIISO,ZI,NISO,ZD2,ZWORK,ZWORK1)
+C
+         DO 3 J3=1,NISO
+         IF (J3 .LT. NISO) THEN
+            ZH  = PSIISO(J3+1) - PSIISO(J3)
+            ZDI = (ZI(J3+1) - ZI(J3)) / ZH -
+     +            (ZD2(J3) / 3. + ZD2(J3+1) / 6.) * ZH
+         ELSE
+            ZH  = PSIISO(J3) - PSIISO(J3-1)
+            ZDI = (ZI(J3) - ZI(J3-1)) / ZH +
+     +            (ZD2(J3-1) / 6. + ZD2(J3) / 3.) * ZH
+         ENDIF
+         ZC(J3) = ZDI / (CID0(J3) * CIDQ(J3))
+    3    CONTINUE
+C
+C  INTERPOLATE TO THE S-MESH OF RFUN AND UNDERRELAX
+C
+         DO 4 J4=1,NPPF+1
+         ZPSF(J4) = SPSIM * (1. - FCSM(J4)**2)
+    4    CONTINUE
+C
+         CALL SPLINE(CSIPR,ZC,NISO,ZD2,ZWORK,ZWORK1)
+         CALL PPSPLN(NPPF+1,ZPSF,NISO-1,CSIPR,ZC,ZD2,ZCF,0)
+C
+         ZNRM = 0.
+C
+         DO 5 J5=1,NPPF+1
+         PDI      = MAX(PDI,ABS(ZCF(J5) - RFUN(J5)))
+         ZNRM     = MAX(ZNRM,ABS(RFUN(J5)))
+         RFUN(J5) = RFUN(J5) + ZOMEGA * (ZCF(J5) - RFUN(J5))
+    5    CONTINUE
+C
+         PDI = PDI / ZNRM
+C
+         CALL SPLINE(FCSM,RFUN,NPPF+1,D2RFUN,ZWORK,ZWORK1)
 C
          RETURN
          END
@@ -10938,8 +11088,7 @@ C
  5       ZT2(J5) = CT(IT0(J5)+1)
 C
          CALL PSICEL(IS0,IT0,IGMAP,NPGMAP,ZPCEL,CPSICL)
-CYQL2018
-         IF (NSTTP.LE.2 .OR. NSTTP.EQ.4) THEN
+         IF (NSTTP .LE. 2) THEN
 C
          CALL BASIS4(IGMAP,NPGMAP,ZS1,ZS2,ZT1,ZT2,PSIGMA,PTETA,ZDBDS)
 C
@@ -10977,7 +11126,7 @@ C
 C
  6       CONTINUE
 C
-         ELSE IF (NSTTP .EQ. 3) THEN
+         ELSE IF (NSTTP.EQ.3 .OR. NSTTP.EQ.4) THEN
 C
          CALL BASIS2(IGMAP,NPGMAP,ZS1,ZS2,ZT1,ZT2,PSIGMA,PTETA,
      +               ZDBDS,ZDBDT)
@@ -11047,6 +11196,7 @@ C
          CIDR(K) = CIDR(K) + ZINT1 * PGWGT(J8)
          CIDQ(K) = CIDQ(K) + ZINT2 * PGWGT(J8)
          CID2(K) = CID2(K) + ZINT3 * PGWGT(J8)
+         IF (NSTTP .EQ. 4) CID0(K) = CID0(K) + ZINT1 / ZR * PGWGT(J8)
 C
  8       CONTINUE
 C
@@ -11061,10 +11211,14 @@ C
 C
             CID0(K) = CIDR(K) / CIDQ(K)
             CID2(K) = CID2(K) / CIDQ(K)
-CYQL2018
+C
+C NSTTP = 4 : AS NSTTP = 2, AND CIDI = ENCLOSED CURRENT (AMPERE)
+C
          ELSE IF (NSTTP .EQ. 4) THEN
-            CID2(K) = 1./CIDQ(K)
- 
+C
+            CIDI(K) = CID2(K)
+            CID0(K) = CID0(K) / CIDQ(K)
+            CID2(K) = CIDR(K) / CIDQ(K)
          ENDIF
 C
          RETURN
@@ -11951,11 +12105,7 @@ C
 C
          IF (IP .GT. 1) THEN
 C
-            IF (NSTTP .EQ. 4) THEN
-               CALL QAXISCOAREA(1,IP-1)
-            ELSE
-C
-            IF (NSTTP.LE.2) THEN
+            IF (NSTTP.LE.2 .OR. NSTTP.EQ.4) THEN
 C
                ZCID0 = RMAG
                ZCID2 = RMAG**2
@@ -11981,10 +12131,13 @@ C
             CID2(J2) = FCCCC0(ZCID2,CID2(IP),CID2(IP+1),CID2(IP+2),
      ,                        SPSIM,PSIISO(IP),PSIISO(IP+1),
      ,                        PSIISO(IP+2),PSIISO(J2))
+            IF (NSTTP .EQ. 4)
+     ,      CIDI(J2) = FCCCC0(0.,CIDI(IP),CIDI(IP+1),CIDI(IP+2),
+     ,                        SPSIM,PSIISO(IP),PSIISO(IP+1),
+     ,                        PSIISO(IP+2),PSIISO(J2))
 C
     2       CONTINUE
 C
-            ENDIF
          ENDIF
 C
 C        COMPUTE PROFILES
@@ -16232,7 +16385,7 @@ C
      R   PJIPHI(KN),         PPSI(KN),           PR(KN),
      R   ZCID2(NPT+2*NPISO),
      R   ZCID0(NPT+2*NPISO), ZPPRIM(NPT+2*NPISO),ZFUNC(NPT+2*NPISO), 
-     R   ZTMF(NPT+2*NPISO),  ZFUNCD(NPT+2*NPISO) 
+     R   ZTMF(NPT+2*NPISO)
 C
 C----*----*----*---*----*----*----*----*----*----*----*----*----*----*-
 C
@@ -16242,8 +16395,6 @@ C
 C
             CALL PPRIME(KN,PPSI,ZPPRIM)
             CALL PRFUNC(KN,PPSI,ZFUNC,0)
-CYQL2018
-            IF (NSTTP.EQ.4) CALL PRFUNC(KN,PPSI,ZFUNCD,1)
 C
          ENDIF         
 C 
@@ -16306,7 +16457,7 @@ C
                ZCID2(J3) = ZA * CID2(I1(J3))   + ZB * CID2(I1(J3)+1) +
      +                     ZC * D2CID2(I1(J3)) + ZD * D2CID2(I1(J3)+1)
 C
-               IF (NSTTP .EQ. 2) THEN
+               IF (NSTTP.EQ.2 .OR. NSTTP.EQ.4) THEN
 C
                   PJIPHI(J3) = ZFUNC(J3) * ZCID0(J3) / PR(J3) +
      +                       ZPPRIM(J3) * (ZCID2(J3) / PR(J3) - PR(J3))
@@ -16319,17 +16470,6 @@ C
                   ZX         = 1. + ZCID2(J3) / ZTMF(J3)**2
                   PJIPHI(J3) = ZFUNC(J3)/(ZX*PR(J3))+ZPPRIM(J3) * 
      *                           (ZCID0(J3)/(ZX*PR(J3))-PR(J3))
-CYQL2018
-               ELSE IF (NSTTP .EQ. 4) THEN
-C                 ZX=D(CID2)/D(ZS)
-                  ZX      =-1./ZH*CID2(I1(J3))  + 1./ZH*CID2(I1(J3)+1) +
-     +                     (1./3.-ZA*ZA)*ZH/2.*D2CID2(I1(J3)) +
-     +                     (ZB*ZB-1./3.)*ZH/2.*D2CID2(I1(J3)+1) 
-                  PJIPHI(J3) =-ZPPRIM(J3)*PR(J3)+2.*CPI*CPI*ZFUNC(J3)
-     &                         /SPSIM*ZCID2(J3)/ZS/PR(J3)*(
-     &                         ZFUNCD(J3)*ZCID2(J3) +
-     &                         ZFUNC(J3)*ZX )
-C                 IF (ZS.LT.0.02) WRITE(*,*)   ZS,PJIPHI(J3)
                ENDIF
             ENDIF
 C
@@ -16495,7 +16635,7 @@ C
 C
             CALL PRFUNC(KN,PSIISO,TTP,0)
 C
-         ELSE IF (NSTTP .EQ. 2) THEN
+         ELSE IF (NSTTP.EQ.2 .OR. NSTTP.EQ.4) THEN
 C
             IF (NPROFZ .EQ. 0) THEN
 C
@@ -16538,36 +16678,6 @@ C
 C
     6       CONTINUE
 C
-CYQL2018: ADD NSTTP=4 OPTION, WHERE (P',Q) IS SPECIFIED AS INPUT IN EXPEQ
-         ELSE IF (NSTTP .EQ. 4) THEN   
-
-            CALL PRFUNC(KN,PSIISO,CIPR,0)
- 
-            DO J6=1,KN
-               ZS(J6)  = SQRT(1 - PSIISO(J6) / SPSIM)
-            ENDDO
-            CALL SPLINE(ZS,CID2,KN,D2CID2,ZWORK,ZWORK1)
-            CALL PRFUNC(KN,PSIISO,ZWORK,1)
-
-            DO J6=1,KN
-C              ZX=D(CID2)/D(ZS)
-               IF (J6.LT.KN) THEN
-                  ZH = ZS(J6+1)-ZS(J6)
-                  ZX = (CID2(J6+1)-CID2(J6))/ZH -
-     &                 (D2CID2(J6)/3.+D2CID2(J6+1)/6.)*ZH
-               ELSE 
-                  ZH = ZS(J6)-ZS(J6-1)
-                  ZX = (CID2(J6)-CID2(J6-1))/ZH + 
-     &                 (D2CID2(J6-1)/6.+D2CID2(J6)/3.)*ZH
-               ENDIF
-               TTP(J6)=-2.*CPI*CPI*CIPR(J6)/SPSIM*CID2(J6)/ZS(J6)*(
-     &                 CIPR(J6)*ZX + CID2(J6)*ZWORK(J6) )
-            ENDDO
-
-C           WRITE(*,*) 'YQL2018-4: ZS TTP NSTTP,SPSIM=',NSTTP,SPSIM
-C           DO J6=1,KN
-C              WRITE(*,*) ZS(J6),TTP(J6)
-C           ENDDO 
          ENDIF
 C
          CALL SPLINE(ZS,CID0,KN,D2CID0,ZWORK,ZWORK1)
@@ -16584,7 +16694,6 @@ C
          IF (NTMF0.EQ.0) THEN
 C
             TMF(KN) = 0.5
-            IF (NSTTP.EQ.4) TMF(KN)=2.*(CPI*CIPR(KN)/CIDQ(KN))**2
 C
             DO 7 J7=KN-1,1,-1
 C
@@ -27780,140 +27889,3 @@ C     IMPLICIT NONE
 !     
       RETURN
       END
-
-C*DECK QAXISCOAREA
-         SUBROUTINE QAXISCOAREA(KFIRST,KLAST)
-C        Integrate otherwise untraceable inner q-profile surfaces about
-C        the saved magnetic axis. CID0/R/Q are raw coarea integrals.
-         USE, INTRINSIC :: IEEE_ARITHMETIC, ONLY: IEEE_IS_FINITE
-         INCLUDE 'DECLAR.inc'
-         INCLUDE 'COMDIM.inc'
-         INCLUDE 'COMCON.inc'
-         INCLUDE 'COMESH.inc'
-         INCLUDE 'COMNUM.inc'
-         INCLUDE 'COMPHY.inc'
-         INCLUDE 'COMSOL.inc'
-         INCLUDE 'COMSUR.inc'
-         DIMENSION ZGX(NPMGS+1), ZGW(NPMGS+1)
-
-         IF (KFIRST.LT.1 .OR. KLAST.GT.NISO) STOP 71
-         IF (KLAST.LT.KFIRST) STOP 71
-         IF (.NOT.IEEE_IS_FINITE(SPSIM)) STOP 71
-         IF (.NOT.IEEE_IS_FINITE(RMAG)) STOP 71
-         IF (.NOT.IEEE_IS_FINITE(RZMAG)) STOP 71
-         IF (SPSIM.GE.0. .OR. RMAG.LE.0.) STOP 71
-         IF (NMGAUS.LT.1 .OR. NMGAUS.GT.NPMGS) STOP 71
-         INGAUSS=NMGAUS
-         CALL GAUSS(INGAUSS,ZGX,ZGW)
-         IF (INGAUSS.GT.NPMGS) STOP 71
-         CALL QAXISVALUE(RMAG,RZMAG,ZAX,ZDR,ZDZ,1)
-         ZSCALE=MAX(ABS(SPSIM),ABS(ZAX),TINY(SPSIM))
-         ZTOL=64.*EPSILON(SPSIM)*ZSCALE
-         IF (ABS(ZAX-SPSIM).GT.ZTOL) STOP 72
-
-         DO K=KFIRST,KLAST
-            ZTARGET=PSIISO(K)
-            IF (.NOT.IEEE_IS_FINITE(ZTARGET)) STOP 72
-            IF (ZTARGET.LE.ZAX+ZTOL .OR. ZTARGET.GE.0.) STOP 72
-            CID0(K)=0.
-            CIDR(K)=0.
-            CIDQ(K)=0.
-            DO JT=1,NT
-               ZH=CT(JT+1)-CT(JT)
-               IF (.NOT.IEEE_IS_FINITE(ZH)) STOP 73
-               IF (ZH.LE.0.) STOP 73
-               DO JG=1,INGAUSS
-                  ZANGLE=CT(JT)+.5*ZH*(1.+ZGX(JG))
-                  ZCO=COS(ZANGLE)
-                  ZSI=SIN(ZANGLE)
-                  ZLO=0.
-C                 The initial search distance follows coordinate
-C                 precision and the axis offset, not a source cutoff.
-                  ZHI=MAX(SQRT(EPSILON(RMAG))*ABS(RMAG),
-     &               SQRT((RMAG-R0)**2+(RZMAG-RZ0)**2)/16.)
-                  IFOUND=0
-                  DO JB=1,64
-                     ZR=RMAG+ZHI*ZCO
-                     ZZ=RZMAG+ZHI*ZSI
-                     CALL QAXISVALUE(ZR,ZZ,ZVAL,ZDR,ZDZ,1)
-                     IF (ZVAL.GE.ZTARGET) THEN
-                        IFOUND=1
-                        EXIT
-                     ENDIF
-                     CALL QAXISVALUE(ZR,ZZ,ZVAL,ZDR,ZDZ,2)
-                     ZRAD=ZDR*ZCO+ZDZ*ZSI
-                     IF (ZRAD.LE.0.) STOP 74
-                     ZLO=ZHI
-                     ZHI=2.*ZHI
-                  ENDDO
-                  IF (IFOUND.NE.1) STOP 74
-                  IFOUND=0
-                  DO JB=1,80
-                     ZMID=.5*(ZLO+ZHI)
-                     ZR=RMAG+ZMID*ZCO
-                     ZZ=RZMAG+ZMID*ZSI
-                     CALL QAXISVALUE(ZR,ZZ,ZVAL,ZDR,ZDZ,2)
-                     ZRAD=ZDR*ZCO+ZDZ*ZSI
-                     IF (ZRAD.LE.0.) STOP 74
-C                    A physical coordinate has finite representable
-C                    spacing. Bound its first-order flux roundoff by
-C                    the same evaluated gradient, without changing any
-C                    native convergence tolerance or source denominator.
-                     ZACCUR=ZTOL+2.*EPSILON(ZR)*
-     &                  (ABS(ZR*ZDR)+ABS(ZZ*ZDZ))
-                     IF (ABS(ZVAL-ZTARGET).LE.ZACCUR) THEN
-                        IFOUND=1
-                        EXIT
-                     ENDIF
-                     IF (ZVAL.LT.ZTARGET) THEN
-                        ZLO=ZMID
-                     ELSE
-                        ZHI=ZMID
-                     ENDIF
-                  ENDDO
-                  IF (IFOUND.NE.1) STOP 74
-C                 On a regular level curve, dl/|grad psi| equals
-C                 r/(grad psi dot e_r) dtheta about the magnetic axis.
-                  ZINT=ZH*ZGW(JG)*ZMID/ZRAD
-                  IF (.NOT.IEEE_IS_FINITE(ZINT)) STOP 75
-                  IF (ZINT.LE.0.) STOP 75
-                  CID0(K)=CID0(K)+ZINT
-                  CIDR(K)=CIDR(K)+ZR*ZINT
-                  CIDQ(K)=CIDQ(K)+ZINT/ZR
-               ENDDO
-            ENDDO
-            IF (.NOT.IEEE_IS_FINITE(CIDQ(K))) STOP 75
-            IF (CIDQ(K).LE.0.) STOP 75
-            CID2(K)=1./CIDQ(K)
-         ENDDO
-         END
-
-         SUBROUTINE QAXISVALUE(PR,PZ,PV,PDR,PDZ,KCASE)
-C        Guard the native interpolation domain before evaluating it.
-         USE, INTRINSIC :: IEEE_ARITHMETIC, ONLY: IEEE_IS_FINITE
-         INCLUDE 'DECLAR.inc'
-         INCLUDE 'COMDIM.inc'
-         INCLUDE 'COMCON.inc'
-         INCLUDE 'COMESH.inc'
-         INCLUDE 'COMPHY.inc'
-         INCLUDE 'COMSOL.inc'
-         DIMENSION ZANGLE(1),ZBOUND(1)
-         IF (.NOT.IEEE_IS_FINITE(PR)) STOP 76
-         IF (.NOT.IEEE_IS_FINITE(PZ)) STOP 76
-         IF (PR.LE.0.) STOP 76
-         ZANGLE(1)=ATAN2(PZ-RZ0,PR-R0)
-         IF (ZANGLE(1).LT.CT(1)) ZANGLE(1)=ZANGLE(1)+2.*CPI
-         CALL BOUND(1,ZANGLE,ZBOUND)
-         IF (.NOT.IEEE_IS_FINITE(ZBOUND(1))) STOP 76
-         IF (ZBOUND(1).LE.0.) STOP 76
-         ZRHO=SQRT((PR-R0)**2+(PZ-RZ0)**2)
-         IF (ZRHO.GT.ZBOUND(1)) STOP 76
-         CALL EVLATE(1,PR,PZ,PDR,PDZ,PV)
-         IF (.NOT.IEEE_IS_FINITE(PV)) STOP 77
-         IF (KCASE.EQ.2) THEN
-            IF (ZRHO.EQ.0.) STOP 77
-            CALL EVLATE(2,PR,PZ,PDR,PDZ,PV)
-            IF (.NOT.IEEE_IS_FINITE(PDR)) STOP 77
-            IF (.NOT.IEEE_IS_FINITE(PDZ)) STOP 77
-         ENDIF
-         END
