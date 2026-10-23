@@ -25259,7 +25259,8 @@ C before this pivot's update, including earlier deferred panel terms.
          IF (A(IKD) == 0D0) THEN
          NSING=-1
          ELSE IF (N > 1) THEN
-         IF (ABS(A(IKD)) < ABS(A(IKD-MP))*EPS) NSING=-1
+C AD HOLDS EPS TIMES THE LAST PIVOT BEFORE ITS OWN ELIMINATION.
+         IF (ABS(A(IKD)) < AD) NSING=-1
          ENDIF
          END SUBROUTINE ALDLT
 C*DECK MR02
