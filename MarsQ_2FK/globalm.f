@@ -1,4 +1,7 @@
       MODULE            GLOBALM
+      LOGICAL :: KDRIVE_ACTIVE=.FALSE.
+      REAL*8 KDRIVE_LO,KDRIVE_HI
+      LOGICAL, ALLOCATABLE :: KDRIVE_SEEN(:,:,:)
       COMPLEX*16        CI,C1
       PARAMETER         (C1=1.,CI=(0.,1.))
       REAL*8            PI
