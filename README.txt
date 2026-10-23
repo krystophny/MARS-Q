@@ -4,6 +4,20 @@ EXAMPLE: various test examples
 RZplot: post-processing Matlab scripts
 Manual: MARS-F/K/Q user manual
 
+The maintained source of this fork is the repository's default branch:
+https://github.com/krystophny/MARS-Q
+Use a clean checkout of that branch for released builds. Historical stack
+branches and their measurements retain provenance, while new production
+artifacts must identify the maintained revision and their explicit input
+controls. Commit messages retain the original fork and upstream PR links.
+
+For externally maintained physical kinetic backgrounds, KPROFSPEC=1 reads
+PROFSPECIES.IN with explicit species identities, densities and temperature
+energies. This frozen-background model is distinct from a self-consistent
+equilibrium. KPROFTAUTH=1 remains a two-Maxwellian compatibility path and
+requires NPROFIE=4,NEXPV=1. Passing magnetic drift is selected explicitly with
+KPASSDRIFT=1 when that physical model is required.
+
 Portable builds write executables under build/ and leave the historical
 tracked executable untouched:
 
@@ -29,7 +43,16 @@ record also binds the fortsparse modules, library and solver helper.
 CheaseMerge supports gnu and ifx targets, retaining the legacy source's
 zero-initialization and large-memory-model compiler flags.
 
+Run native regression builds and tests on allocated compute nodes. Configure
+CTest from the repository root so that both native source directories and
+the complete registered test set are covered:
 
+    cmake -S . -B build/tests
+    ctest --test-dir build/tests --output-on-failure
 
+Bind CHEASE_EXECUTABLE and MARS_EXE to freshly built native executables.
+MARS_PAMS_FORTSPARSE_PREFIX supplies the existing certified sparse prefix for
+the real CSC/UMFPACK caller tests; without it that optional dependency suite
+reports a skip, which does not certify a sparse production build.
 
 
