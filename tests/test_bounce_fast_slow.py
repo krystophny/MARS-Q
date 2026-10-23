@@ -57,7 +57,7 @@ pspecies_fowt=0d0
 inckin=1;kntv=21;incdphi=0;islsode=.false.
 epsalpha=1d0;omegaci0=1d0;nueff=.2d0;omegae0=.37d0
 omegasn=0d0;omegast=0d0
-ntvnumerefac=1d0
+ntvnumerefac=1d0;kradlayer=0
 rntor=-3d0;b0k=1d0;omegab=.8d0;drift=.3d0;lam=.2d0
 call set_test_omega()
 largest=0d0
