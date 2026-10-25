@@ -117,6 +117,12 @@ Half-cell 1 (Y rows):
   `3e-5` (Sec. 5). The reconstruction runs before `GETXY`, so it never touches
   an imported field (`KPERTREAD = 1`).
 
+`OUTPUT_RECTRZ` used to overwrite the axis cell after the solve with
+`B3U(1) = B3U(2)` and `B2U(1)` from the divergence (`B2U(1) = B2U(3)` for `m = 0`).
+It changes the global arrays, so with `CTJXB = 0` (no later `GETXY`) the copy
+reached `BPLASMA.OUT` and the kinetic NTV contraction. `B3U(1) = B3U(2)` contradicts
+`B3 ~ s^(|m|+1)`, so this override is now skipped when the grid reaches the axis **[V]**.
+
 An inner boundary (`SLEFT > 0`) keeps the earlier conditions unchanged. The
 `n = 0, m = 0` free-boundary branch for `J2U`/`J3` (`K_BC_N0 = 20..23`) is kept
 as it was. It compares `ARM` (which is 2 for `m = 0`) with zero and is therefore

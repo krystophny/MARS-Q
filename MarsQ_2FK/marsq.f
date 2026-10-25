@@ -19714,6 +19714,10 @@ C     IF (IPDIVB.EQ.0.AND.ABS(RNTOR).GT.0.) THEN
          ENDDO
          ENDDO
 
+C        WHEN THE GRID REACHES THE AXIS, BOUNDC/AXISY ALREADY GIVE A
+C        REGULAR HALF-CELL 1 (docs/axis_regularity.md); COPYING B3U(2)
+C        INTO B3U(1) WOULD BREAK B3 ~ S**(|M|+1) THERE.
+         IF (SLEFT.GE.1.E-10) THEN
          DO MS=1,MSMAX
             IF (ABS(RM(MS,2)).GT.0) THEN
                B3U(1,MS) = B3U(2,MS)
@@ -19724,6 +19728,7 @@ C     IF (IPDIVB.EQ.0.AND.ABS(RNTOR).GT.0.) THEN
                B2U(1,MS) = B2U(3,MS)
             ENDIF
          ENDDO
+         ENDIF
       ENDIF
 C
       
