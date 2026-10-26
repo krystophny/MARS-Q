@@ -4430,6 +4430,7 @@ C=======================================================================
       USE GLOBALM
       USE KINETICM
       USE ANISOTROPICM
+      USE KENERGYSNAPSHOTM, ONLY: KESNAP_ACTIVE
       USE KineticExtendAnalysis
       USE MPIENV
       IMPLICIT NONE
@@ -4453,6 +4454,24 @@ C     SFD DECLARATION
       INTEGER KCHECK
 
       KCHECK = 0
+
+      IF (KESNAP_ACTIVE(JS,KGRID).AND.ISWEEP.EQ.NSWEEP) THEN
+         IF (NSPECIES.NE.3)
+     &      ERROR STOP 'ENERGY SNAPSHOT REQUIRES THREE SPECIES'
+         IF (KNTV.NE.21.OR.INUTYPE.NE.2.OR.
+     &       NUMODEL.NE.1.OR.KFASTRUN.NE.0.OR.
+     &       IFOWP.NE.0.OR.IFOWT.NE.0.OR.INCDPHI.NE.0.OR.
+     &       KRADLAYER.NE.0.OR.ISPECIES_F0(3).NE.0.OR.
+     &       ISPECIES_EK(3).NE.0)
+     &      ERROR STOP 'ENERGY SNAPSHOT UNSUPPORTED MODEL'
+         IF (MSMAX.NE.41.OR.MLMAX.NE.5.OR.NLAMK.NE.401.OR.
+     &       NLAMIN.NE.200.OR.KNTVELL.NE.999.OR.KDWKREAD.NE.0)
+     &      ERROR STOP 'ENERGY SNAPSHOT UNSUPPORTED DISCRETIZATION'
+         IF (ANY(NINT(RLM).NE.[-2,-1,0,1,2]))
+     &      ERROR STOP 'ENERGY SNAPSHOT REQUIRES ELL -2 TO 2'
+         IF (NEPK.NE.801.AND.NEPK.NE.1601)
+     &      ERROR STOP 'ENERGY SNAPSHOT REQUIRES 801 OR 1601'
+      ENDIF
 
       INCSFD = 0
 C     NOTE THAT IF INCSFD=0, SFD WILL NOT BE CALLED
@@ -10235,6 +10254,7 @@ C     COMPUTATION OF PPERP AND PPARA
       USE DIMENSIM
       USE GLOBALM
       USE KINETICM
+      USE KENERGYSNAPSHOTM, ONLY: KESNAP_ACTIVE,KESNAP_USE
       USE GIJLM
       USE CONVOLCOFM
       USE TORQUEM
@@ -10273,7 +10293,9 @@ C     UPPER NODE OF A CELL, THE DRIVES THERE, AND THE CELL WORK
       COMPLEX*16 KHERMQUAD
       REAL*8  PLO,PMID,PHI,ZV2M,ZV2P,ZB3M,ZB3P
       REAL*8  TH(NSPECIES),TD(NSPECIES),TW(NSPECIES),TNORM,TSPEC
-      INTEGER NH,NHB,IH,MS,NSP
+      INTEGER NH,NHB,IH,MS,NSP,SNAPCOMP,SNAPIH,SNAPPLACE,SNAPJS
+      COMPLEX*16 SNAPQ(3)
+      REAL*8 SNAPRADIAL
       LOGICAL OHCOEF
 
       IF (INCKIN.NE.1) RETURN
@@ -10565,6 +10587,39 @@ C     A REUSED COMPONENT CACHE (KDWKREAD=1) MUST CARRY THE BLOCKS TOO
             YHI(MS,4)  = B2U(IS,MS)
             YHI(MS,5)  = B3U(IS,MS)*ZB3P
          ENDDO
+         IF (IS.EQ.38.OR.IS.EQ.39) THEN
+         IF (KESNAP_ACTIVE(IS,2)) THEN
+            DO SNAPPLACE=0,2
+               DO SNAPCOMP=3,5
+                  SNAPIH=INDXHWKC(3,SNAPCOMP)
+                  SNAPQ(SNAPCOMP-2)=0.
+                  IF (SNAPIH.GT.0) THEN
+                     IF (SNAPPLACE.EQ.0)
+     &               SNAPQ(SNAPCOMP-2)=KHERMQUAD(HLO(:,:,:,SNAPIH),YLO)
+                     IF (SNAPPLACE.EQ.1)
+     &               SNAPQ(SNAPCOMP-2)=KHERMQUAD(HMID(:,:,:,SNAPIH),YMID)
+                     IF (SNAPPLACE.EQ.2)
+     &               SNAPQ(SNAPCOMP-2)=KHERMQUAD(HHI(:,:,:,SNAPIH),YHI)
+                  ENDIF
+               ENDDO
+               IF (SNAPPLACE.EQ.0) THEN
+                  SNAPRADIAL=-RNTOR/(4.*PI**2)*PI2*0.25*PTRAPH*PLO
+                  CALL KESNAP_USE(IS,0,IS,1,MSMAX,YLO,ALPHAD,
+     &                            SNAPRADIAL,SNAPQ)
+               ELSEIF (SNAPPLACE.EQ.1) THEN
+                  SNAPRADIAL=-RNTOR/(4.*PI**2)*PI2*
+     &                       (1.-PTRAPH)*0.5*PMID
+                  CALL KESNAP_USE(IS,1,IS,2,MSMAX,YMID,ALPHAD,
+     &                            SNAPRADIAL,SNAPQ)
+               ELSE
+                  SNAPJS=IS+1
+                  SNAPRADIAL=-RNTOR/(4.*PI**2)*PI2*0.25*PTRAPH*PHI
+                  CALL KESNAP_USE(IS,2,SNAPJS,1,MSMAX,YHI,ALPHAD,
+     &                            SNAPRADIAL,SNAPQ)
+               ENDIF
+            ENDDO
+         ENDIF
+         ENDIF
          DO IH=1,NH
             DWHERM(IS,IH) = -PI2*(
      &         0.5*PTRAPH*0.5*PLO*KHERMQUAD(HLO(:,:,:,IH),YLO)+
@@ -11350,11 +11405,12 @@ C=======================================================================
       USE DIMENSIM
       USE GLOBALM
       USE KINETICM
+      USE KENERGYSNAPSHOTM, ONLY: KESNAP_ACTIVE,KESNAP_ORBIT
       IMPLICIT NONE
       INTEGER    JS,KGRID,KPARTICLE,ICASE
       REAL*8     LAMH
       INTEGER    KP,L,ICOMP
-      REAL*8     LAM1,LAM2,H1,H3,H4,FAC
+      REAL*8     LAM1,LAM2,H1,H3,H4,FAC,SNAPOB0,SNAPSLAM
       COMPLEX*16 CTMP
 
       IF (.NOT.ALLOCATED(HWKC)) RETURN
@@ -11364,7 +11420,13 @@ C=======================================================================
       H3   = WFUN (JS,KGRID)
 C     RHO = FAC/OMEGAB
       FAC  = 1.
-      IF (KPARTICLE.EQ.0) FAC = 0.5
+      SNAPOB0=0.
+      SNAPSLAM=-1.
+      IF (KPARTICLE.EQ.0) THEN
+         FAC = 0.5
+         SNAPSLAM=SLAMD0
+         IF (SLAMD0.GT.0.) SNAPOB0=OMEGAB0
+      ENDIF
 
       DO KP=1,NSPECIES
       DO L=1,MLMAX
@@ -11390,6 +11452,10 @@ C        SAME BOUNCE-HARMONIC SELECTION AS KJPFILL
             CTMP = VI(1,L,KP)*LAMH*H3
             CALL KHERMADD(KP,ICOMP,CTMP*FAC/OMEGAB,
      &           VX1(:,L),VX2(:,L),VQ1(:,L),VQ2(:,L),VQ3(:,L))
+            IF (KP.EQ.3.AND.KESNAP_ACTIVE(JS,KGRID))
+     &      CALL KESNAP_ORBIT(JS,KGRID,KPARTICLE,L,1,MSMAX,LAM,LAMH,
+     &         H3,H4,FAC,OMEGAB,SNAPOB0,SNAPSLAM,CTMP*FAC/OMEGAB,
+     &         VX1(:,L),VX2(:,L),VQ1(:,L),VQ2(:,L),VQ3(:,L))
             IF (ABS(RLM(L)).LT.0.1.AND.SLAMD0.GT.0..AND.KPARTICLE.EQ.0)
      &      CALL KHERMADD(KP,ICOMP,-CTMP*FAC/OMEGAB0,
      &           VX10(:,L),VX20(:,L),VQ10(:,L),VQ20(:,L),VQ30(:,L))
@@ -11422,6 +11488,10 @@ C        SAME BOUNCE-HARMONIC SELECTION AS KJPFILL
             CTMP = VI0(1,KP)*H3
             CALL KHERMADD(KP,ICOMP,CTMP*FAC/OMEGAB0,
      &           VX10(:,L),VX20(:,L),VQ10(:,L),VQ20(:,L),VQ30(:,L))
+            IF (KP.EQ.3.AND.KESNAP_ACTIVE(JS,KGRID))
+     &      CALL KESNAP_ORBIT(JS,KGRID,KPARTICLE,L,4,MSMAX,LAM,0.0D0,
+     &         H3,H4,FAC,OMEGAB,OMEGAB0,SLAMD0,CTMP*FAC/OMEGAB0,
+     &         VX10(:,L),VX20(:,L),VQ10(:,L),VQ20(:,L),VQ30(:,L))
             ENDIF
          END SELECT
       ENDDO
