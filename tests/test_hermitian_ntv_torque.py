@@ -329,30 +329,42 @@ def extract(text, name):
     return text[match.start():match.start() + end.end()] + '\n'
 
 
-def run_native(source, build_parent, kernel, eps, kernel0=None, sf0=None):
+def native_flags(src):
+    return ['gfortran', '-O0', '-fdefault-real-8', '-fdefault-double-8',
+            '-ffixed-line-length-none', '-ffree-line-length-none',
+            '-fallow-argument-mismatch', '-ffunction-sections', '-fdata-sections',
+            '-ffpe-trap=zero,invalid', '-fcheck=bounds', '-w', '-I' + str(src)]
+
+
+def compile_native_fixture(source, work):
     src = source.resolve() / 'MarsQ_2FK'
     text = (src / 'kinetic.f').read_text()
     module = (src / 'kineticm.f').read_text()
-    with tempfile.TemporaryDirectory(prefix='ntv-herm-', dir=build_parent) as directory:
+    # DERCHI is reached only by the request-file direct check, never here.
+    stub = "      SUBROUTINE DERCHI(A,B,N,M)\n      STOP 'UNEXPECTED DERCHI'\n      END\n"
+    observer = extract((src / 'anisotropic.f').read_text(), 'KELLTRACESELECT')
+    (work / 'routines.f').write_text(
+        ''.join(extract(text, n) for n in ROUTINES) + observer + stub)
+    clear = CLEAR_WITH if 'HWKC' in module else CLEAR_WITHOUT
+    (work / 'clear.f90').write_text(clear)
+    names = ['dimensim.f', 'globalm.f', 'rcomdm.f', 'kineticm.f', 'anisotropicm.f',
+             'gijlm.f', 'convolcofm.f', 'torquem.f', 'feedbackm.f', 'ToolBox.f90']
+    command = native_flags(src) + ['-c'] + [str(src / n) for n in names]
+    command += ['routines.f', 'clear.f90']
+    compiled = subprocess.run(command, cwd=work, capture_output=True, text=True)
+    if compiled.returncode:
+        raise RuntimeError(compiled.stdout + compiled.stderr)
+
+
+def run_native(source, build_parent, fixture, kernel, eps, kernel0=None, sf0=None):
+    src = source.resolve() / 'MarsQ_2FK'
+    with tempfile.TemporaryDirectory(prefix='ntv-herm-', dir=build_parent.resolve()) as directory:
         work = Path(directory)
-        # DERCHI is reached only by the request-file direct check, never here.
-        stub = '      SUBROUTINE DERCHI(A,B,N,M)\n      STOP \'UNEXPECTED DERCHI\'\n      END\n'
-        observer = extract((src / 'anisotropic.f').read_text(), 'KELLTRACESELECT')
-        (work / 'routines.f').write_text(
-            ''.join(extract(text, n) for n in ROUTINES) + observer + stub)
-        clear = CLEAR_WITH if 'HWKC' in module else CLEAR_WITHOUT
-        (work / 'clear.f90').write_text(clear)
         (work / 'driver.f90').write_text(driver(kernel, eps, kernel0, sf0).replace('\n& ', ' &\n& '))
-        names = ['dimensim.f', 'globalm.f', 'rcomdm.f', 'kineticm.f', 'anisotropicm.f',
-                 'gijlm.f', 'convolcofm.f', 'torquem.f', 'feedbackm.f', 'ToolBox.f90']
-        command = ['gfortran', '-O0', '-fdefault-real-8', '-fdefault-double-8',
-                   '-ffixed-line-length-none', '-ffree-line-length-none',
-                   '-fallow-argument-mismatch', '-ffunction-sections', '-fdata-sections',
-                   '-ffpe-trap=zero,invalid', '-fcheck=bounds', '-w', '-I' + str(src)]
-        command += [str(src / n) for n in names]
+        command = native_flags(fixture) + ['-I' + str(src)]
+        command += [str(obj) for obj in sorted(fixture.glob('*.o'))]
         dead_strip = '-Wl,-dead_strip' if sys.platform == 'darwin' else '-Wl,--gc-sections'
-        command += ['routines.f', 'clear.f90', 'driver.f90', dead_strip,
-                    '-o', 'test']
+        command += ['driver.f90', dead_strip, '-o', 'test']
         compiled = subprocess.run(command, cwd=work, capture_output=True, text=True)
         if compiled.returncode:
             raise RuntimeError(compiled.stdout + compiled.stderr)
@@ -377,9 +389,17 @@ class TestHermitianNTVTorque(unittest.TestCase):
     source = Path(__file__).resolve().parents[1]
     build_parent = Path.cwd()
 
+    @classmethod
+    def setUpClass(cls):
+        # Only the driver varies between cases; compile the production routines once.
+        fixture = tempfile.TemporaryDirectory(prefix='ntv-herm-fixture-', dir=cls.build_parent.resolve())
+        cls.addClassCleanup(fixture.cleanup)
+        cls.fixture = Path(fixture.name)
+        compile_native_fixture(cls.source, cls.fixture)
+
     def run_case(self, kernel, eps, kernel0=None, sf0=None, cs0=CS[0], sleft=0.0):
         GEOM.update(cs0=cs0, sleft=sleft)
-        return run_native(self.source, self.build_parent, kernel, eps, kernel0, sf0)
+        return run_native(self.source, self.build_parent, self.fixture, kernel, eps, kernel0, sf0)
 
     def test_reactive_kernel_gives_zero_torque(self):
         scale_ = max(abs(t) for t in expected_torque(0.7j))
