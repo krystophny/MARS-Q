@@ -50,6 +50,9 @@ CSM = [0.2, 0.7]
 DPSIDS = [0.0, 0.9, 1.3]
 DPSIDSM = [0.6, 1.1]
 OMEGAB = 0.37
+# Grid of the current case: first node CS(1) and SLEFT (0: the grid reaches
+# the magnetic axis and CS(1) is the FIXORI pseudo-axis).
+GEOM = {'cs0': CS[0], 'sleft': 0.0}
 # Trapped precession harmonic with drift reversal: drive and projection at the
 # reversal pitch, and its bounce frequency.
 H0 = [0.2 + 0.6j, -0.4 + 0.1j, 0.3 + 0.3j, 0.5 - 0.2j, -0.1 + 0.4j]
@@ -77,10 +80,17 @@ def points(cell):
     """(weight, psi', block factor, drive) at lower node, centre, upper node."""
     i = cell                      # 0-based cell, nodes i and i+1
     nr = len(CSM)
+    cs = [GEOM['cs0']] + CS[1:]
     y_mid = [0.5 * (X1[i] + X1[i + 1]), X2[i], 0.5 * (B1[i] + B1[i + 1]), B2[i], B3[i]]
-    y_lo = [X1[i], X2[i] * CSM[i] / CS[i], B1[i], B2[i], B3[i] * CS[i] / CSM[i]]
-    y_hi = [X1[i + 1], X2[i] * CSM[i] / CS[i + 1], B1[i + 1], B2[i],
-            B3[i] * CS[i + 1] / CSM[i]]
+    # X2 ~ 1/s and B3 ~ s are carried from the centre to a node with their
+    # own coefficients.  At the axis node the centre coefficients stand in,
+    # and their powers of s cancel those of X2 and B3, so both enter unscaled.
+    zv2m, zb3m = CSM[i] / cs[i], cs[i] / CSM[i]
+    if i == 0 and GEOM['sleft'] < 1e-10:
+        zv2m = zb3m = 1.0
+    y_lo = [X1[i], X2[i] * zv2m, B1[i], B2[i], B3[i] * zb3m]
+    y_hi = [X1[i + 1], X2[i] * CSM[i] / cs[i + 1], B1[i + 1], B2[i],
+            B3[i] * cs[i + 1] / CSM[i]]
     # The axis node and the edge node have no coefficients of their own;
     # the cell centre coefficients stand in for them.
     lo = (DPSIDSM[i], scale(i + 1, 2)) if i == 0 else (DPSIDS[i], scale(i + 1, 1))
@@ -234,7 +244,7 @@ OMEGAB={OMEGAB}d0
 call set_reversal_frequency({OMEGAB0}d0,{OMEGABS}d0)
 allocate(CS(NRP1),CSM(NR),CSH(NR),RM(MSMAX,2),RJAM(NRP1,NCHI))
 allocate(DPSIDS(NRP1),DPSIDSM(NR))
-CS={real_array(CS)}; CSM={real_array(CSM)}; CSH=[.4d0,.6d0]; RM=2; RJAM=1
+CS={real_array([GEOM['cs0']] + CS[1:])}; CSM={real_array(CSM)}; SLEFT={GEOM['sleft']!r}d0; CSH=[.4d0,.6d0]; RM=2; RJAM=1
 DPSIDS={real_array(DPSIDS)}; DPSIDSM={real_array(DPSIDSM)}
 allocate(X1U(NRP1,1),X2U(NRP1,1),B1U(NRP1,1),B2U(NRP1,1),B3U(NRP1,1))
 X1U(:,1)={array(X1)}; B1U(:,1)={array(B1)}
@@ -319,30 +329,42 @@ def extract(text, name):
     return text[match.start():match.start() + end.end()] + '\n'
 
 
-def run_native(source, build_parent, kernel, eps, kernel0=None, sf0=None):
+def native_flags(src):
+    return ['gfortran', '-O0', '-fdefault-real-8', '-fdefault-double-8',
+            '-ffixed-line-length-none', '-ffree-line-length-none',
+            '-fallow-argument-mismatch', '-ffunction-sections', '-fdata-sections',
+            '-ffpe-trap=zero,invalid', '-fcheck=bounds', '-w', '-I' + str(src)]
+
+
+def compile_native_fixture(source, work):
     src = source.resolve() / 'MarsQ_2FK'
     text = (src / 'kinetic.f').read_text()
     module = (src / 'kineticm.f').read_text()
-    with tempfile.TemporaryDirectory(prefix='ntv-herm-', dir=build_parent) as directory:
+    # DERCHI is reached only by the request-file direct check, never here.
+    stub = "      SUBROUTINE DERCHI(A,B,N,M)\n      STOP 'UNEXPECTED DERCHI'\n      END\n"
+    observer = extract((src / 'anisotropic.f').read_text(), 'KELLTRACESELECT')
+    (work / 'routines.f').write_text(
+        ''.join(extract(text, n) for n in ROUTINES) + observer + stub)
+    clear = CLEAR_WITH if 'HWKC' in module else CLEAR_WITHOUT
+    (work / 'clear.f90').write_text(clear)
+    names = ['dimensim.f', 'globalm.f', 'rcomdm.f', 'kineticm.f', 'anisotropicm.f',
+             'gijlm.f', 'convolcofm.f', 'torquem.f', 'feedbackm.f', 'ToolBox.f90']
+    command = native_flags(src) + ['-c'] + [str(src / n) for n in names]
+    command += ['routines.f', 'clear.f90']
+    compiled = subprocess.run(command, cwd=work, capture_output=True, text=True)
+    if compiled.returncode:
+        raise RuntimeError(compiled.stdout + compiled.stderr)
+
+
+def run_native(source, build_parent, fixture, kernel, eps, kernel0=None, sf0=None):
+    src = source.resolve() / 'MarsQ_2FK'
+    with tempfile.TemporaryDirectory(prefix='ntv-herm-', dir=build_parent.resolve()) as directory:
         work = Path(directory)
-        # DERCHI is reached only by the request-file direct check, never here.
-        stub = '      SUBROUTINE DERCHI(A,B,N,M)\n      STOP \'UNEXPECTED DERCHI\'\n      END\n'
-        observer = extract((src / 'anisotropic.f').read_text(), 'KELLTRACESELECT')
-        (work / 'routines.f').write_text(
-            ''.join(extract(text, n) for n in ROUTINES) + observer + stub)
-        clear = CLEAR_WITH if 'HWKC' in module else CLEAR_WITHOUT
-        (work / 'clear.f90').write_text(clear)
         (work / 'driver.f90').write_text(driver(kernel, eps, kernel0, sf0).replace('\n& ', ' &\n& '))
-        names = ['dimensim.f', 'globalm.f', 'rcomdm.f', 'kineticm.f', 'anisotropicm.f',
-                 'gijlm.f', 'convolcofm.f', 'torquem.f', 'feedbackm.f', 'ToolBox.f90']
-        command = ['gfortran', '-O0', '-fdefault-real-8', '-fdefault-double-8',
-                   '-ffixed-line-length-none', '-ffree-line-length-none',
-                   '-fallow-argument-mismatch', '-ffunction-sections', '-fdata-sections',
-                   '-ffpe-trap=zero,invalid', '-fcheck=bounds', '-w', '-I' + str(src)]
-        command += [str(src / n) for n in names]
+        command = native_flags(fixture) + ['-I' + str(src)]
+        command += [str(obj) for obj in sorted(fixture.glob('*.o'))]
         dead_strip = '-Wl,-dead_strip' if sys.platform == 'darwin' else '-Wl,--gc-sections'
-        command += ['routines.f', 'clear.f90', 'driver.f90', dead_strip,
-                    '-o', 'test']
+        command += ['driver.f90', dead_strip, '-o', 'test']
         compiled = subprocess.run(command, cwd=work, capture_output=True, text=True)
         if compiled.returncode:
             raise RuntimeError(compiled.stdout + compiled.stderr)
@@ -367,8 +389,17 @@ class TestHermitianNTVTorque(unittest.TestCase):
     source = Path(__file__).resolve().parents[1]
     build_parent = Path.cwd()
 
-    def run_case(self, kernel, eps, kernel0=None, sf0=None):
-        return run_native(self.source, self.build_parent, kernel, eps, kernel0, sf0)
+    @classmethod
+    def setUpClass(cls):
+        # Only the driver varies between cases; compile the production routines once.
+        fixture = tempfile.TemporaryDirectory(prefix='ntv-herm-fixture-', dir=cls.build_parent.resolve())
+        cls.addClassCleanup(fixture.cleanup)
+        cls.fixture = Path(fixture.name)
+        compile_native_fixture(cls.source, cls.fixture)
+
+    def run_case(self, kernel, eps, kernel0=None, sf0=None, cs0=CS[0], sleft=0.0):
+        GEOM.update(cs0=cs0, sleft=sleft)
+        return run_native(self.source, self.build_parent, self.fixture, kernel, eps, kernel0, sf0)
 
     def test_reactive_kernel_gives_zero_torque(self):
         scale_ = max(abs(t) for t in expected_torque(0.7j))
@@ -404,6 +435,31 @@ class TestHermitianNTVTorque(unittest.TestCase):
         # The dissipative-kernel torque moves linearly with the test field.
         for a, b in zip(shifts[0.04], shifts[0.02]):
             self.assertAlmostEqual(a / b, 2.0, places=9)
+
+    def test_axis_node_drive_does_not_depend_on_pseudo_axis(self):
+        # Grid reaching the axis: the work of the axis cell is regular, i.e.
+        # independent of the FIXORI pseudo-axis CS(1) -> 0.  Scaling X2 by
+        # CSM(1)/CS(1) there gave a term growing like (CSM(1)/CS(1))**2.
+        kernel = 0.7 + 0.2j
+        torque = {}
+        for cs0 in (0.05, 1e-5):
+            torque[cs0], forms = self.run_case(kernel, 0.0, cs0=cs0)
+            for actual, expected in zip(torque[cs0], expected_torque(kernel)):
+                self.assertAlmostEqual(actual / expected, 1.0, places=12)
+            for th, td, tw in forms:
+                self.assertAlmostEqual(td / th, 1.0, places=12)
+                self.assertAlmostEqual(tw / th, 1.0, places=12)
+        for a, b in zip(torque[0.05], torque[1e-5]):
+            self.assertAlmostEqual(a / b, 1.0, places=12)
+
+    def test_inner_boundary_keeps_node_scaling(self):
+        # SLEFT > 0: node 1 is a flux surface, X2 and B3 keep their scaling.
+        kernel = 0.7 + 0.2j
+        torque, forms = self.run_case(kernel, 0.0, sleft=0.05)
+        for actual, expected in zip(torque, expected_torque(kernel)):
+            self.assertAlmostEqual(actual / expected, 1.0, places=12)
+        GEOM.update(sleft=0.0)
+        self.assertNotAlmostEqual(torque[0] / expected_torque(kernel)[0], 1.0, places=3)
 
     def test_trapped_drift_reversal_uses_bounce_frequency_at_each_pitch(self):
         # Reactive regular kernel, dissipative reversal kernel: the torque is

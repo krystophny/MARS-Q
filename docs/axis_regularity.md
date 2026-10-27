@@ -143,9 +143,71 @@ never taken, which is a pre-existing issue not changed here.
   `s >= 0.5` and in the vacuum change by at most `2.7e-5` **[V]**.
 * Whether the TC24 NCHI240 own-solved field and kinetic torque behave as
   expected is the subject of a separate run (see the pull request) **[H]**.
-  The kinetic `IS = 1` contraction interpolates `X2` to the pseudo-axis node with
-  `CSM(1)/CS(1) = 500`, so a regular `1/s` value of `X2(1)` may need attention on
-  the kinetic side **[H]**.
+  The kinetic side of the axis cell is treated in Sec. 6.
+
+## 6. Kinetic drive at the axis node
+
+The kinetic pressures and the same-drive work of a cell (`FILLMATDWKCOMP`,
+`CALCDWKCOMP` in `MarsQ_2FK/kinetic.f`) evaluate the KH drive
+`H = VX1 X1 + VX2 X2 + VQ1 B1 + VQ2 B2 + VQ3 B3` at the lower node, the centre and
+the upper node of the cell (weights `PTRAPH/2`, `1 - PTRAPH`, `PTRAPH/2`). The
+half-mesh unknowns are carried from the centre to a node with their leading
+power, `X2(node) = X2(CSM) (CSM/CS)` (`IEXV2 = -1`) and `B3(node) = B3(CSM) (CS/CSM)`
+(`IEXB3 = 1`), and multiplied by the coefficients of that node.
+
+The coefficients carry the inverse powers **[V, source]**. `RX2 = -dB/dchi J T/(psi' B0)`
+with `dB/dchi ~ s`, `J ~ s` and `psi' ~ s`, so `VX2 ~ s` (at least), and
+`RQ3 = T/(psi' B0) ~ 1/s`. The products `VX2 X2` and `VQ3 B3` are therefore
+finite at the axis, as the drive of a regular field must be.
+
+The axis node has no coefficients of its own. `KJPCOEFF` is not run on node 1 of
+the integer grid, and the cell-centre coefficients stand in for it (the copy
+`VX1PARA(:,:,1) = VX1PARAM(:,:,1)` etc. in `KINETIC`, `READ_SURFACE_QUANTITIES(1,2)`
+for the lower node in `CALCDWKCOMP`, `HLO = HMID` for the same-drive blocks)
+**[V, source]**. Scaling `X2` to the node while keeping the centre coefficient
+evaluates `VX2(CSM) X2(CSM) CSM/CS(1)`: the `1/s` growth of `X2` is applied, but the
+compensating `s` of `VX2` is not. With the `FIXORI` pseudo-axis `CS(1) = 1e-3 CS(2)`
+the factor is `CSM(1)/CS(1) = 500`, and the `X2-X2` part of the quadratic same-drive
+work grows like `(CSM(1)/CS(1))^2`, which diverges as `CS(1) -> 0`. `B3` is
+suppressed by `1/500` for the same reason. Nothing cancels this in the code. The
+term is the only singular one: `X1(1)` and `B1(1)` are node values fixed by
+`BOUNDC`, `B2` is not rescaled, and the centre and upper-node terms use their own
+coefficients.
+
+The consistent node drive with the stand-in coefficients is
+`VX2(CS) X2(CS) = VX2(CSM) (CS/CSM) X2(CSM) (CSM/CS) = VX2(CSM) X2(CSM)` and
+likewise `VQ3 B3`, so at the axis node (`SLEFT = 0`) `X2` and `B3` now enter
+unscaled (`ZV2M = ZB3M = 1` for `IS = 1` in `FILLMATDWKCOMP` and in the same-drive
+loop of `CALCDWKCOMP`). The remaining error of the stand-in coefficients is
+`O(CSM(1))`, the same order as the rest of the three-point rule on the axis cell.
+
+The exact axis limit of the same-drive integrand is zero. The cell work is the
+integral of `psi'(s)/2 Q(s)` with `Q` the quadratic form of the drive, which is
+finite for a regular field, and `psi'(0) = 0` (`DPSIDS(1) = 0`). The code uses
+`DPSIDSM(1)` at the axis node, i.e. it takes the centre value of the integrand
+there. This is a first-order quadrature error, not a singularity; on the TC24
+NCHI240 field it changes the axis-cell ion torque by 3 % (below), and it is kept
+so that the same-drive, weak and dissipative-kernel forms keep agreeing under
+ideal induction.
+
+Checks:
+
+* `tests/test_hermitian_ntv_torque.py` compiles the production routines. On a
+  grid that reaches the axis the torque of every cell, including the axis cell,
+  equals the analytic same-drive work, the weak and dissipative-kernel forms agree
+  with it, and it is independent of the pseudo-axis (`CS(1) = 0.05` and `1e-5`
+  agree to 12 digits). With `SLEFT > 0` the node scaling is kept **[V]**.
+* Offline evaluation of `DWHERM(1)` with the HCOEF blocks of the TC24 NCHI240
+  supplier run and the own-solved axis-fixed fluid field (same grid): the ion
+  work of the axis cell is `12.7` times that of cell 2 before (the lower-node
+  `X2` term is 99.6 % of it), and `0.051` times after; with the exact limit
+  `psi'(0) = 0` it would be `0.050`. The integrand of this field rises like
+  `s^4..s^5` over cells 1 and 2, for which the three-point rule gives `0.04..0.05`,
+  so the axis cell is on trend **[V for the evaluation, H for the kinetic run,
+  whose blocks use NCHI0 = 120]**.
+* The pressure rows of a self-consistent kinetic solve (`IPERTURB = 0`, `FILLMAT`
+  and its variants in `kinetic.f`) use the same stand-in coefficients with the
+  scaled `X2`. They are not changed here and need their own validation **[H]**.
 
 ## References
 

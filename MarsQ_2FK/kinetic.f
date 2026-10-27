@@ -9988,6 +9988,13 @@ C     PERPENDICULAR KINETIC PRESSURE
          ZV2P = (CS(I+1)/CSM(I))**IEXV2
          ZB3M = (CS(I  )/CSM(I))**IEXB3
          ZB3P = (CS(I+1)/CSM(I))**IEXB3
+C        AXIS NODE (SLEFT=0): ITS COEFFICIENTS ARE THE CELL-CENTRE ONES,
+C        WHOSE POWER OF S CANCELS THAT OF X2 AND B3, SO THE NODE DRIVE
+C        TAKES X2 AND B3 UNSCALED (docs/axis_regularity.md, SEC. 6)
+         IF (I.EQ.1.AND.SLEFT.LT.1.E-10) THEN
+            ZV2M = 1.
+            ZB3M = 1.
+         ENDIF
 
          DO MROW=1,MSMAX
             LYROW = (MROW-1)*NYCOMP
@@ -10579,6 +10586,12 @@ C     A REUSED COMPONENT CACHE (KDWKREAD=1) MUST CARRY THE BLOCKS TOO
          ZV2P = CSM(IS)/CS(IS+1)
          ZB3M = CS(IS  )/CSM(IS)
          ZB3P = CS(IS+1)/CSM(IS)
+C        AXIS NODE: CENTRE BLOCKS STAND IN, SO X2 AND B3 ENTER UNSCALED
+C        (SAME RULE AS FILLMATDWKCOMP, docs/axis_regularity.md, SEC. 6)
+         IF (IS.EQ.1.AND.SLEFT.LT.1.E-10) THEN
+            ZV2M = 1.
+            ZB3M = 1.
+         ENDIF
          DO MS=1,MSMAX
             YLO(MS,1)  = X1U(IS,MS)
             YLO(MS,2)  = X2U(IS,MS)*ZV2M
