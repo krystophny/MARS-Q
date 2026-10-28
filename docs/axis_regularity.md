@@ -161,6 +161,17 @@ Half-cell 1 (Y rows):
   `3e-5` (Sec. 5). The reconstruction runs before `GETXY`, so it never touches
   an imported field (`KPERTREAD = 1`).
 
+The coil-inductance solves of `FEEDM` (`INCFEED = 2, 4, 6, 9, 10, 12, 18, 20,
+22`) replace the half-cell `B2` row by `J1 = 0` and the `B3` row by `div b = 0`
+after `BOUNDC`. On the axis half-cell, `BOUNDC` already gives `J1 = 0`, so that
+replacement left two `J1 = 0` rows and one row for `B2` and `B3`: `PAMS` stopped
+on a singular first block (`FMIND`, `IPSI = 1`, `IFAIL = 3`) for the
+`EXAMPLE/RmpLin` vacuum deck and the TC24 force stage **[V]**. Before #103 the
+mixed axis `J1` row happened to keep the block regular. `FEEDM` now leaves
+half-cell 1 to `BOUNDC` when the grid reaches the axis; its rows (`J1 = 0`,
+`div b = 0` with `B3(1) = 0`, all other components 0) are what `FEEDM` imposes
+elsewhere (`tests/test_axis_inductance_rows.py`).
+
 `OUTPUT_RECTRZ` used to overwrite the axis cell after the solve with
 `B3U(1) = B3U(2)` and `B2U(1)` from the divergence (`B2U(1) = B2U(3)` for `m = 0`).
 It changes the global arrays, so with `CTJXB = 0` (no later `GETXY`) the copy
