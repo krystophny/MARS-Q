@@ -39,12 +39,8 @@ Cartesian components. Hence a scalar harmonic behaves as `f_m ~ s^|m|`
 `a_phi ~ s^|m|`. For `|m| = 1` the axis values are related by
 `a_theta = i m a_r`, which is the statement that the field at the axis is a
 constant Cartesian vector. This is the standard analyticity argument for
-Fourier expansions about a polar origin. In a shaped equilibrium the equal-arc
-angle differs from the geometric polar angle at `O(1)`, so harmonics of the same
-parity mix, but the statement that `f_m(0) = 0` for every `m != 0` and the
-leading powers below remain those of the lowest harmonic present. The table
-uses the circular-limit powers, which MARS itself assumes in its
-interpolation exponents (`IEXV2 = -1`, `IEXJ1 = 1`, `IEXB3 = 1`).
+Fourier expansions about a polar origin. The table below is this circular
+limit; Sec. 2a gives the powers that the code uses on a shaped axis.
 
 Multiplying by the metric factors gives the leading power `p` in `f ~ s^p`:
 
@@ -65,6 +61,48 @@ Multiplying by the metric factors gives the leading power `p` in `f ~ s^p`:
 
 Bold entries do not vanish at the axis. `JRE2`, `JRE3`, `JRE2L` follow `J2U`,
 `J3`, `J2L`, and `JRE1` follows `J1`.
+
+### 2a. Shaped axis
+
+Near the axis the flux surfaces are similar ellipses, `x = s g1(chi)`,
+`y = s g2(chi)`. The powers above hold when `(s cos chi, s sin chi)` are smooth
+coordinates, i.e. when `chi` is the elliptic angle and `g1, g2` are pure first
+harmonics. An equal-arc `chi` (CHEASE `NEGP = -1`, `NER = 1`) on an elliptic axis
+is not: the elliptic angle is `u = chi + O(1) sin 2chi + ...`, so `g1, g2` carry
+`|m| = 3, 5, ...` and `J/s = R (g1 g2' - g1' g2)` carries `|m| = 2, 4, ...` at
+`O(1)`, independent of `s`. A smooth field then gives every chi-harmonic `m` the
+power of the lowest harmonic of the same parity, `meff = 1` (odd) or `2` (even),
+and the `m = 0` part of `J b . grad phi` (the toroidal field at the axis) enters
+all even harmonics through `J/s`. Hence
+
+* `p(m) = p_table(meff)` for `|m| >= 3`, with `meff = 2 - mod(|m|, 2)`;
+* `B3`, `J3`: `p = 1` for every even `m`, `2` for odd `m`;
+* consequences that change a condition: `X1, V1, W1, J2U, JRE2` are finite at
+  the axis for every odd `m` (zero slope instead of `X(1) = 0`), and `V2, X2, W2`
+  go like `1/s` for every odd `m`. The `V1` fit rows on nodes `2..NFIT`
+  (`V1 ~ s^p`) use the same `p`.
+
+On a smooth (circular or elliptic-angle) map these powers are lower than the true
+ones for `|m| >= 3`; the error is then `O(h^(|m|-1))` and vanishes with the grid.
+The circular powers on a shaped axis instead force the finite axis value of
+`X1, J2U` (odd `|m| >= 3`) to zero, an `O(1)` error that does not. On the TC24
+field with the circular rule, `X1_(+-3)` followed the imposed `s^2` on the
+fitted nodes 2-4 but went like `s^0` on the first free nodes 4-6, and `X2_(+-3)`
+went like `s^-1.7..s^-2.4`, more singular than any regular field; with the
+shaped rule `X1_(+-3)` is finite (5-10 % of `X1_(+-1)`, the `m = 3` content of the
+map) and `X2_(+-3) ~ 1/s` **[V]**.
+
+`tests/test_axis_regularity.py` (`test_shaped_axis_powers`) checks these powers
+against smooth analytic fields on an elliptic axis with `u = chi + 0.1 sin 2chi`,
+independently of the tables; with `u = chi` the `|m| = 3` harmonics vanish and the
+circular table holds **[V]**. For the TC24 equilibrium (NCHI240 mapping,
+`RMZM_F.OUT`) `(R - R0)/s` and `Z/s` carry an `m = 3` harmonic of 5 % of
+`m = 1` and `J/(R s)` an `m = 2` harmonic of 0.092 and `m = 4` of 0.022 at every
+`s` near the axis. The solved field has `|B3_m/B3_0| = 0.092` (`m = +-2`) and
+`0.021` (`m = +-4`) in every half-cell near the axis, `B3_m ~ s` for even `m`,
+`B2_3` finite and `X3_m ~ s` for `|m| = 3, 5` **[V]**. MARS's own node
+interpolation exponents (`IEXV2 = -1`, `IEXB3 = 1`) are these shaped powers of the
+leading harmonics.
 
 Two exact relations hold on the axis cell. The divergence of `b` in these
 variables is `d_s B1 + i m B2 + i n B3 = 0` for every harmonic, so for `m != 0`
@@ -97,7 +135,8 @@ Keeping the plain Galerkin row on half-cell 1 is not a remedy. With the
 Node 1 (X rows): `X(1) = 0` where `p > 0`, and `X(1) = X(2)` where `p = 0`.
 The latter is the zero-slope condition of a function even in `s`, with an error
 of `O(CS(2)^2)`. Compared with before, this adds `J2U` (and `X1`, `W1`,
-`JRE2`) for `|m| = 1` and the scalar-like node unknowns for `m = 0`.
+`JRE2`) for `|m| = 1` and every odd `|m|` (Sec. 2a), and the scalar-like node
+unknowns for `m = 0`.
 
 Half-cell 1 (Y rows):
 
@@ -105,11 +144,16 @@ Half-cell 1 (Y rows):
   `(B1(2) - B1(1))/CSH(1) + i m B2(1) + i n B3(1) = 0`. It converges at second
   order to `B2(CSM(1))` for a manufactured divergence-free field
   (`tests/test_axis_regularity.py`) **[V]**.
-* every other component: `Y(1) = 0` by `ANNIHY` and a unit diagonal, which is
-  exact at the axis for `p > 0`.
-* components with `p <= 0` (`V2, X2, W2` for `|m| <= 2`, and `V3, X3, W3` and
-  the scalars for `m = 0`) are rebuilt after the solve by `AXISY` as
-  `Y(1) = Y(2) (CSM(1)/CSM(2))^p`. The block-tridiagonal storage gives a Y row
+* every other component: `Y(1) = 0` by `ANNIHY` and a unit diagonal in the
+  solve.
+* after the solve `AXISY` rebuilds every component of half-cell 1 except `B2`
+  (`m != 0`) as `Y(1) = Y(2) (CSM(1)/CSM(2))^p`, since `Y(1)` is the value at
+  `CSM(1) = CS(2)/2`, not at the axis: `Y(1) = 0` would be the axis value and is
+  wrong by `O(1)` relative to the cell for `p > 0` (for `B3` with even `m` it drops
+  a finite part of the kinetic drive `VQ3 B3`, Sec. 6). `B2` (`m != 0`) then takes
+  the rebuilt `B3` in its divergence row, `B2(1) -> B2(1) - n/m B3(1)`, so that the
+  divergence-based `B3` of `OUTPUT_RECTRZ` returns the same `B3(1)`. The
+  block-tridiagonal storage gives a Y row
   access only to `X(I)`, `X(I+1)` and `Y(I)`, so this extrapolation cannot be a
   matrix row. It is consistent because half-cell 1 enters the rest of the
   system only through the node-2 X rows, which are insensitive to it: changing
