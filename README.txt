@@ -15,8 +15,10 @@ For externally maintained physical kinetic backgrounds, KPROFSPEC=1 reads
 PROFSPECIES.IN with explicit species identities, densities and temperature
 energies. This frozen-background model is distinct from a self-consistent
 equilibrium. KPROFTAUTH=1 remains a two-Maxwellian compatibility path and
-requires NPROFIE=4,NEXPV=1. Passing magnetic drift is selected explicitly with
-KPASSDRIFT=1 when that physical model is required.
+requires NPROFIE=4,NEXPV=1. The passing-particle magnetic drift is included by
+default (KPASSDRIFT=1). Kinetic runs with a passing resonance on paths that
+have no drift term (KFASTRUN=1, IFOW>0, finite birth energy) stop unless
+KPASSDRIFT=0 states that the original MARS-K model without it is intended.
 
 Portable builds write executables under build/ and leave the historical
 tracked executable untouched:

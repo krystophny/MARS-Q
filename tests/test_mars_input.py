@@ -7,6 +7,7 @@ ExecutableInputTests (PR #5/#24 lineage) onto the build/tests-harness layout.
 """
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import textwrap
@@ -122,7 +123,7 @@ class ExecutableInputTests(unittest.TestCase):
         common = """
             INCKIN=1, ATAU=(1.0e11,0.0), ALTAU=(0.5,0.0),
             ALPHAP=0.5, ALPHAD=1.0, OMEGACI0=50.0,
-            IPERTURB=1, KFASTRUN=1, KENORM=2, KEFORM=2,
+            IPERTURB=1, KFASTRUN=1, KPASSDRIFT=0, KENORM=2, KEFORM=2,
             NSPECIES=2, IFOWPSI0=1, ISPECIES_F0=0,0,
             ESPECIES_M=2.0,0.00054463, ESPECIES_Z=1.0,-1.0,
             PSPECIES_AP=1.0,1.0, PSPECIES_AT=1.0,1.0,
@@ -210,3 +211,37 @@ class ExecutableInputTests(unittest.TestCase):
         result = run_with_input(run_input)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("KDWKREAD=1 REQUIRES KPERTREAD=1", result.stdout)
+
+    def test_passing_drift_is_on_by_default(self):
+        # The executed namelist echo reports the value the kinetic run uses.
+        result = run_with_input(
+            minimal_input(
+                kinetic="INCKIN=1, IPERTURB=1, KFASTRUN=0, NSPECIES=2, PSPECIES_NP=1.0,1.0",
+                qlin="KNTV=21, KEYTORQ=0",
+                outopt="ODWKCOM=.TRUE.",
+            )
+        )
+        self.assertRegex(result.stdout, re.compile(r"\bKPASSDRIFT\s*=\s*1\b"))
+        self.assertIn("FLUID RESPONSE IS FROZEN", result.stdout)
+
+    def test_driftless_passing_path_needs_explicit_opt_out(self):
+        # KFASTRUN=1 has no passing drift term, so it must not drop it silently.
+        kinetic = "INCKIN=1, IPERTURB=1, KFASTRUN=1, NSPECIES=2, PSPECIES_NP=1.0,1.0"
+        args = dict(qlin="KNTV=21, KEYTORQ=0", outopt="ODWKCOM=.TRUE.")
+        result = run_with_input(minimal_input(kinetic=kinetic, **args))
+        # STOP with a message exits with status 0 under gfortran; the run must end at the guard.
+        self.assertIn("KPASSDRIFT=1 NEEDS KFASTRUN=0, IFOW=0", result.stdout)
+        self.assertNotIn("FLUID RESPONSE IS FROZEN", result.stdout)
+        result = run_with_input(minimal_input(kinetic=kinetic + ", KPASSDRIFT=0", **args))
+        self.assertNotIn("KPASSDRIFT=1 NEEDS", result.stdout)
+        self.assertIn("FLUID RESPONSE IS FROZEN", result.stdout)
+
+    def test_passing_drift_does_not_constrain_runs_without_passing_resonance(self):
+        for kinetic in ("INCKIN=0, KFASTRUN=1, KPASSDRIFT=1, PSPECIES_NP=1.0,1.0",
+                        "INCKIN=1, IPERTURB=1, KFASTRUN=1, KPASSDRIFT=1, PSPECIES_NP=0.0,0.0"):
+            with self.subTest(kinetic=kinetic):
+                result = run_with_input(minimal_input(kinetic=kinetic, qlin="KNTV=21, KEYTORQ=0",
+                                                      outopt="ODWKCOM=.TRUE."))
+                self.assertNotIn("KPASSDRIFT=1 NEEDS", result.stdout)
+                self.assertNotIn("KPASSDRIFT=1 REQUIRES", result.stdout)
+                self.assertIn("&BASIC", result.stdout)
