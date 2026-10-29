@@ -230,7 +230,7 @@ class ExecutableInputTests(unittest.TestCase):
         args = dict(qlin="KNTV=21, KEYTORQ=0", outopt="ODWKCOM=.TRUE.")
         result = run_with_input(minimal_input(kinetic=kinetic, **args))
         # STOP with a message exits with status 0 under gfortran; the run must end at the guard.
-        self.assertIn("KPASSDRIFT=1 NEEDS KFASTRUN=0, IFOW=0", result.stdout)
+        self.assertIn("KPASSDRIFT=1 NEEDS KFASTRUN=0; ELSE SET 0", result.stdout)
         self.assertNotIn("FLUID RESPONSE IS FROZEN", result.stdout)
         result = run_with_input(minimal_input(kinetic=kinetic + ", KPASSDRIFT=0", **args))
         self.assertNotIn("KPASSDRIFT=1 NEEDS", result.stdout)
