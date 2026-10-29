@@ -12,6 +12,8 @@ import subprocess
 import tempfile
 import unittest
 
+import numpy as np
+
 DECKS = ('BOUNDC', 'AXISY', 'IAXPWX', 'IAXPWY', 'ANNIHX', 'ANNIHY')
 
 MODULES = '''module dimensim
@@ -31,13 +33,18 @@ end module
 '''
 
 # Leading power p of s at the axis, Y ~ s**p, from the derivation (note, table 2).
-# Entries are (p for m=0, p(|m|) for |m|>=1).
-PY = {'V2': (0, lambda a: a - 2), 'B2': (1, lambda a: a - 1), 'B3': (1, lambda a: a + 1),
-      'J1': (2, lambda a: a), 'PR': (0, lambda a: a), 'V3': (0, lambda a: a),
-      'X2': (0, lambda a: a - 2), 'X3': (0, lambda a: a)}
-PX = {'V1': (1, lambda a: a - 1), 'B1': (2, lambda a: a), 'J2U': (1, lambda a: a - 1),
-      'J3': (1, lambda a: a + 1), 'J2L': (2, lambda a: a), 'X1': (1, lambda a: a - 1),
-      'PD': (0, lambda a: a)}
+# Entries are (p for m=0, p(|m|) for |m|>=1). On a non-circular axis |m| >= 3 takes
+# the power of meff = 1 (odd) or 2 (even); B3 and J3 also carry m = 0 through J/s.
+def meff(a):
+    return a if a < 3 else 2 - a % 2
+
+
+PY = {'V2': (0, lambda a: meff(a) - 2), 'B2': (1, lambda a: meff(a) - 1),
+      'B3': (1, lambda a: 2 if meff(a) == 1 else 1), 'J1': (2, meff), 'PR': (0, meff),
+      'V3': (0, meff), 'X2': (0, lambda a: meff(a) - 2), 'X3': (0, meff)}
+PX = {'V1': (1, lambda a: meff(a) - 1), 'B1': (2, meff), 'J2U': (1, lambda a: meff(a) - 1),
+      'J3': (1, lambda a: 2 if meff(a) == 1 else 1), 'J2L': (2, meff),
+      'X1': (1, lambda a: meff(a) - 1), 'PD': (0, meff)}
 XNAMES = ['V1', 'B1', 'J2U', 'J3', 'J2L', 'X1', 'PD']
 YNAMES = ['V2', 'B2', 'B3', 'J1', 'PR', 'V3', 'X2', 'X3']
 
@@ -135,6 +142,17 @@ do mode=1,2
    enddo
   enddo
  enddo
+ ! V1 fit rows 2..NFIT: V1 ~ s**p with the axis power (inner boundary: |m|-1)
+ do i=2,NFIT
+  do ms=1,MSMAX
+   lx=(ms-1)*NXCOMP;mabs=abs(nint(RM(ms,2)))
+   ip=pxt(KXV1,ms)
+   if(mode==2)ip=mabs-1
+   if(mabs==0.and.mode==2)ip=1
+   call chk(BM(KXV1+lx,KXV1+lx,i),dcmplx(CS(i)**(-ip),0d0),'V1 fit B')
+   call chk(CM(KXV1+lx,KXV1+lx,i),dcmplx(-CS(i+1)**(-ip),0d0),'V1 fit C')
+  enddo
+ enddo
  ! interior cells are untouched apart from the V1 fit rows 2..NFIT
  do i=2,NR
   do ms=1,MSMAX
@@ -175,8 +193,9 @@ do ms=1,MSMAX
  endif
 enddo
 
-! AXISY: finite and singular components are rebuilt from half-cell 2 with s**p;
-! the others (closed by Y(1)=0) and B2 (own row) stay untouched.
+! AXISY: every component of half-cell 1 (closed by Y(1)=0 in the solve) is rebuilt
+! from half-cell 2 with s**p, since Y(1) is the value at CSM(1). B2 (m/=0) keeps its
+! div-b row and takes the rebuilt B3: B2 -> B2 - n/m (B3(1) - 0).
 do ms=1,MSMAX
  mabs=abs(nint(RM(ms,2)))
  do k=1,NYCOMP
@@ -185,16 +204,19 @@ do ms=1,MSMAX
    hh0=0.04d0/2**(ilev-1)
    call grid(hh0)
    Y=(7d0,7d0)
-   Y(k,ms,1)=(0d0,0d0)
+   Y(:,ms,1)=(0d0,0d0)
    Y(k,ms,2)=fpow(CSM(2),ip)
-   call AXISY(Y)
-   if(ip<=0.and.k/=KYB2)then
-    err(ilev)=abs(Y(k,ms,1)-fpow(CSM(1),ip))/abs(fpow(CSM(1),ip))
-   else
-    if(abs(Y(k,ms,1))/=0d0)then
-     failures=failures+1;print *,'FAIL AXISY touched',k,nint(RM(ms,2))
+   if(k==KYB2.and.mabs>0)then
+    Y(KYB2,ms,1)=(0.3d0,0.2d0)
+    call AXISY(Y)
+    exact=0
+    if(abs(Y(KYB2,ms,1)-((0.3d0,0.2d0)-RNTOR/RM(ms,2)*Y(KYB3,ms,1)))>1d-12)then
+     failures=failures+1;print *,'FAIL AXISY B2 div',nint(RM(ms,2))
     endif
     err(ilev)=0
+   else
+    call AXISY(Y)
+    err(ilev)=abs(Y(k,ms,1)-fpow(CSM(1),ip))/abs(fpow(CSM(1),ip))
    endif
   enddo
   if(err(1)>0)then
@@ -288,9 +310,45 @@ def run_check(source, build_parent):
             raise RuntimeError(result.stdout[-4000:] + result.stderr)
 
 
+def shaped_powers(mmax=3, delta=0.1, kappa=1.5):
+    """Axis powers of chi-harmonics of smooth fields on an elliptic axis whose angle chi
+    is not the elliptic angle u = chi + delta sin(2 chi), as for equal-arc chi.
+    Independent of the tables: smooth Cartesian fields, exact map, FFT in chi."""
+    chi = np.linspace(0, 2 * np.pi, 256, endpoint=False)
+    u, du = chi + delta * np.sin(2 * chi), 1 + 2 * delta * np.cos(2 * chi)
+
+    def fields(s):
+        x, y = s * np.cos(u), kappa * s * np.sin(u)
+        xs, ys = np.cos(u), kappa * np.sin(u)
+        xc, yc = -s * np.sin(u) * du, kappa * s * np.cos(u) * du
+        d = xs * yc - xc * ys
+        rr = 3 + x
+        xi = (0.7 + 0.2 * x, -0.4 + 0.1 * y)
+        return {'X1': (xi[0] * yc - xi[1] * xc) / d,                 # xi . grad s
+                'B3': rr * d * (1 + 0.3 * x + 0.2 * y) / rr,         # J b.grad(phi)
+                'PR': 1 + 0.3 * x + 0.2 * y + 0.5 * x * y + 0.1 * x * x}
+
+    s1, s2 = 1e-4, 2e-4
+    f1, f2 = fields(s1), fields(s2)
+    out = {}
+    for name in f1:
+        c1, c2 = np.fft.fft(f1[name]) / chi.size, np.fft.fft(f2[name]) / chi.size
+        a1 = [max(abs(c1[m]), abs(c1[-m])) for m in range(mmax + 1)]
+        a2 = [max(abs(c2[m]), abs(c2[-m])) for m in range(mmax + 1)]
+        # a harmonic absent from the field has no power
+        out[name] = [int(round(np.log2(y / x))) if x > 1e-12 * max(a1) else None
+                     for x, y in zip(a1, a2)]
+    return out
+
+
 class TestAxisRegularity(unittest.TestCase):
     def test_axis_rows_and_reconstruction(self):
         run_check(Path(__file__).resolve().parents[1], Path.cwd())
+
+    def test_shaped_axis_powers(self):
+        got = shaped_powers()
+        for name, table in (('X1', PX), ('B3', PY), ('PR', PY)):
+            self.assertEqual(got[name], [power(table, name, m) for m in range(4)], name)
 
 
 def main():
