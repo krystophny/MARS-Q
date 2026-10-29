@@ -33,8 +33,8 @@ end module
 '''
 
 # Leading power p of s at the axis, Y ~ s**p, from the derivation (note, table 2).
-# Entries are (p for m=0, p(|m|) for |m|>=1). On a non-circular axis every harmonic
-# takes the power of the lowest harmonic of the same parity, meff(|m|).
+# Entries are (p for m=0, p(|m|) for |m|>=1). On a non-circular axis |m| >= 3 takes
+# the power of meff = 1 (odd) or 2 (even); B3 and J3 also carry m = 0 through J/s.
 def meff(a):
     return a if a < 3 else 2 - a % 2
 

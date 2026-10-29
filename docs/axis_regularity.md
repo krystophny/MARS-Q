@@ -70,9 +70,9 @@ coordinates, i.e. when `chi` is the elliptic angle and `g1, g2` are pure first
 harmonics. An equal-arc `chi` (CHEASE `NEGP = -1`, `NER = 1`) on an elliptic axis
 is not: the elliptic angle is `u = chi + O(1) sin 2chi + ...`, so `g1, g2` carry
 `|m| = 3, 5, ...` and `J/s = R (g1 g2' - g1' g2)` carries `|m| = 2, 4, ...` at
-`O(1)`, independent of `s`. A smooth field then gives every chi-harmonic `m` the
-power of the lowest harmonic of the same parity, `meff = 1` (odd) or `2` (even),
-and the `m = 0` part of `J b . grad phi` (the toroidal field at the axis) enters
+`O(1)`, independent of `s`. A smooth field then gives every chi-harmonic
+`|m| >= 3` the power of `meff = 1` (odd) or `meff = 2` (even), the harmonics the map
+mixes into it (a constant does not mix), and the `m = 0` part of `J b . grad phi` (the toroidal field at the axis) enters
 all even harmonics through `J/s`. Hence
 
 * `p(m) = p_table(meff)` for `|m| >= 3`, with `meff = 2 - mod(|m|, 2)`;
