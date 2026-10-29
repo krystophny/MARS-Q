@@ -14,11 +14,12 @@ import re
 from support import ROOT, NativeTest
 
 SRC = ROOT / "MarsQ_2FK" / "ntv_pre.f"
+LIB = ROOT / "MarsQ_2FK" / "ntv_lib.f"
 
 
-def routine(name):
+def routine(name, source=SRC):
     match = re.search(r"^ +subroutine +%s\b.*?^ +end subroutine +%s\b" % (name, name),
-                      SRC.read_text(), re.M | re.S | re.I)
+                      source.read_text(), re.M | re.S | re.I)
     if match is None:
         raise ValueError("Native routine not found: " + name)
     return match.group(0) + "\n"
@@ -26,7 +27,7 @@ def routine(name):
 
 PROGRAM = """      program omega_e
       implicit none
-      integer, parameter :: nr = 4, np = 14
+      integer, parameter :: nr = 4, np = 15
       real :: r(nr), drdpsi(nr), rp(nr,np), out0(nr,np), out4(nr,np)
       integer :: i
       r = [0.2, 0.4, 0.6, 0.8]
@@ -56,7 +57,8 @@ PROGRAM = """      program omega_e
 
 class NtvOmegaE(NativeTest):
     def test_profwe_branch_equals_force_balance_frequency(self):
-        exe = self.compile({"cal_nu.f": routine("cal_nu"), "main.f90": PROGRAM})
+        exe = self.compile({"cal_nu.f": routine("cal_nu"),
+                            "cald_1d.f": routine("cald_1d", LIB), "main.f90": PROGRAM})
         rows = [list(map(float, line.split()))
                 for line in self.execute(exe).stdout.split("\n") if line.strip()]
         self.assertEqual(len(rows), 4)
