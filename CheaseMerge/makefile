@@ -49,14 +49,14 @@ gnu:
 	mkdir -p $(BUILD_DIR)
 	mpif90 -O2 -fdefault-real-8 -fdefault-double-8 \
 		-ffixed-line-length-none -fallow-argument-mismatch \
-		-finit-local-zero -mcmodel=medium -o $(BUILD_DIR)/chease-gnu.x $(SRCS)
+		-finit-local-zero -mcmodel=medium -J$(BUILD_DIR) -o $(BUILD_DIR)/chease-gnu.x $(SRCS)
 
 # CHEASE depends on zero-initialized legacy local storage during startup.
 # Without -init=zero the current ifx build segfaults before reading EQDATA.
 ifx:
 	mkdir -p $(BUILD_DIR)
 	mpiifx -O3 -real-size 64 -xHost -init=zero -mcmodel=medium \
-		-extend-source 132 -o $(BUILD_DIR)/chease-ifx.x $(SRCS)
+		-extend-source 132 -module $(BUILD_DIR) -o $(BUILD_DIR)/chease-ifx.x $(SRCS)
 
 $(PROG): $(OBJS)
 	$(F95) $(F95FLAGS) -o $@ $(OBJS) $(LIBS)
