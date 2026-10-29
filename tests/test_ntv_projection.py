@@ -2,7 +2,7 @@
 
 The unmodified production routine is compiled with stubbed displacement
 input (a flux-constant m = 0 X1 whose stubbed transform is exp(i*k0*theta_j))
-and a metric with xi_perp.grad B = -X1 and div xi_perp = 0, so that
+a zero perturbed field and a metric with xi_perp.grad B = X1, so that
 dB(theta_j) = exp(i*k0*theta_j) on the periodic midpoint grid
 theta_j = (j-1/2)*2*pi/n_chi that xgrid() supplies.  An exact periodic
 projection returns bmn(k0) = 1 and bmn(k) = 0 for every other |k| <= m_max.
@@ -59,6 +59,12 @@ FIXTURE = """      module NTV_pre
       M = 0
       X1R = 1; X1I = 0; X2R = 0; X2I = 0; X3R = 0; X3I = 0
       end subroutine get_disp
+      subroutine get_field(M10,NP1,B1R,B1I,B2R,B2I,B3R,B3I)
+      integer M10,NP1
+      real B1R(NP1,M10),B1I(NP1,M10),B2R(NP1,M10),B2I(NP1,M10)
+      real B3R(NP1,M10),B3I(NP1,M10)
+      B1R = 0; B1I = 0; B2R = 0; B2I = 0; B3R = 0; B3I = 0
+      end subroutine get_field
 %s
       end module NTV_pre
 """
@@ -73,7 +79,7 @@ real :: dBds(np, n_chi), dBdc(np, n_chi), omega(np), dwds(np), err
 real :: s(np), q(np), B(np, n_chi), dm(np, n_chi, 7), bth(np), cp(np)
 complex :: bmn(2*m_max+1, n_max, np)
 integer :: k, failures, modes(4)
-chiH = 0; dphiH = 0; gg = 0; dBdc = 0; dBds = -1; omega = 0; dwds = 0
+chiH = 0; dphiH = 0; gg = 0; gg(:, :, 3) = 1; dBdc = 0; dBds = 1; omega = 0; dwds = 0
 s = [0d0, 0.5d0, 1d0]; q = 0; B = 1; dm = 0; dm(:, :, 7) = 1; bth = 1; cp = 0
 modes = [0, 1, 25, -80]
 failures = 0
@@ -84,7 +90,7 @@ do k = 1, size(modes)
    bmn(k0+m_max+1, 1, :) = bmn(k0+m_max+1, 1, :) - 1
    err = maxval(abs(bmn(:, 1, 2:np)))
    print *, k0, err
-   if (err > 1d-12) failures = failures + 1
+   if (.not. err <= 1d-12) failures = failures + 1
 end do
 if (failures /= 0) error stop 1
 end program
