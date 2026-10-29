@@ -3800,6 +3800,9 @@ C=========================================================
       INTEGER    PRECK,PRECN
       PARAMETER  (REPS=1.0E-10)
       REAL*8     ZEPKS,FNUM0R,FNUM0I
+      REAL*8     RCOL
+      COMPLEX*16 ZCOR
+      LOGICAL    OPOLE
 
       ZVIF  = 0.0
       RL    = RLM(L)
@@ -4187,6 +4190,11 @@ C        NOTE THAT THIS OPTION HOLDS ONLY FOR ENERGY-INDEPENDENT COLLISIONALITY
          IF (INUTYPE.EQ.1) FTMP = H3*(1.-ZEPK**(-1.5)*H4
      &                            *(1.+RL**2/4.))/RTMP
          IF (INUTYPE.EQ.2) FTMP = H3*(1.-ZEPK**(-1.5)*H4)/RTMP
+C        X-DEPENDENT RATE: NO ANALYTIC SUBTRACTION, SEE KEPOLECORR
+         OPOLE = INUTYPE.GE.1.AND.ISPECIES_F0(KP).NE.5.AND.
+     &           ISPECIES_F0(KP).NE.6
+         RCOL  = H4
+         IF (INUTYPE.EQ.1) RCOL = H4*(1.+RL**2/4.)
 
          IF (ISPECIES_EK(KP).EQ.0) FNUM = FNUM*EFAC
          IF (ISPECIES_EK(KP).EQ.0.AND.ORADA) FSLP = FSLP*EFAC
@@ -4213,6 +4221,12 @@ C        NOTE THAT THIS OPTION HOLDS ONLY FOR ENERGY-INDEPENDENT COLLISIONALITY
      &               WEL-WEC,WER-WEC,HL,HR,RTMP)
                ENDDO
             ELSE
+            IF (OPOLE) THEN
+               CALL KEPOLECORR(FNUM,0.0D0,1.0D0,OMEGAN,H3/RTMP,RCOL,
+     &                         ISPECIES_EK(KP),NEPK,EPK,ZEPKO,
+     &                         ZEPKN,ZCOR)
+               ZVIF = ZVIF+ZCOR
+            ENDIF
             FNUM = FNUM/(ZEPK*RFAC2+OMEGAN+CI*FTMP)
             ENDIF
          ENDIF
@@ -4230,6 +4244,12 @@ C        NOTE THAT THIS OPTION HOLDS ONLY FOR ENERGY-INDEPENDENT COLLISIONALITY
      &               CI*FTMP(K),D1L,D1R,WEL-WEC,WER-WEC,HL,HR,RTMP)
                ENDDO
             ELSE
+            IF (OPOLE) THEN
+               CALL KEPOLECORR(FNUM,1.0D0,RTMP3,OMEGAN,H3/RTMP,RCOL,
+     &                         ISPECIES_EK(KP),NEPK,EPK,ZEPKO,
+     &                         ZEPKN,ZCOR)
+               ZVIF = ZVIF+ZCOR
+            ENDIF
             FNUM = FNUM/(SQRT(ZEPK)+ZEPK*RTMP3*RFAC2+
      &                    OMEGAN+CI*FTMP)
             ENDIF
@@ -4658,6 +4678,8 @@ C=========================================================
       REAL*8     H1,H2,H3,H4,H5,H6,H7,FAC0,OMEGAEDPSI,ZZT,
      &           PSI0L,PSI0DPSIL,PSI0DLAML,OMEGAN1RE,ZEPKS,OMEGAN3RE
       COMPLEX*16 ZVIF,OMEGAN0,OMEGAN,FNUM10,FNUM30,ZTMP0,OMEGAN1,OMEGAN3
+      REAL*8     RCOL
+      COMPLEX*16 ZCOR
       COMPLEX*16,DIMENSION(:),ALLOCATABLE::FNUM1,FNUM3
       REAL*8,    DIMENSION(:),ALLOCATABLE::FTMP1,FTMP3,EFAC,RFAC
       PARAMETER  (REPS=1.0E-10)
@@ -4826,6 +4848,9 @@ C     RTMP3 IS ITS COEFFICIENT AFTER DIVISION BY RTMP
       IF (KPASSDRIFT.EQ.1.AND.ABS(RTMP).GE.REPS)
      &   RTMP3 = DRIFT*RTMP1/RTMP
 
+      RCOL = H4
+      IF (INUTYPE.EQ.1) RCOL = H4*(1.+RL**2/4.)
+
       IF (ABS(RTMP).LT.REPS) THEN
          IF (ABS(OMEGAN).LT.REPS) OMEGAN=REPS
  
@@ -4838,6 +4863,16 @@ C     RTMP3 IS ITS COEFFICIENT AFTER DIVISION BY RTMP
             FNUM3 = FNUM3*EFAC
          ENDIF
          IF (KPASSDRIFT.EQ.1) THEN
+            IF (INUTYPE.GE.1) THEN
+               CALL KEPOLECORR(FNUM1,0.0D0,DRIFT*RTMP1,OMEGAN,H3,RCOL,
+     &                         ISPECIES_EK(KP),NEPK,EPK,ZEPKO,
+     &                         ZEPKN,ZCOR)
+               ZVIF = ZVIF+ZCOR
+               CALL KEPOLECORR(FNUM3,0.0D0,DRIFT*RTMP1,OMEGAN,H3,RCOL,
+     &                         ISPECIES_EK(KP),NEPK,EPK,ZEPKO,
+     &                         ZEPKN,ZCOR)
+               ZVIF = ZVIF+ZCOR
+            ENDIF
             FNUM1 = FNUM1/(OMEGAN+CI*FTMP1+ZEPK*DRIFT*RTMP1)
             FNUM3 = FNUM3/(OMEGAN+CI*FTMP1+ZEPK*DRIFT*RTMP1)
          ELSE
@@ -4905,6 +4940,14 @@ C        NOTE THAT THIS OPTION HOLDS ONLY FOR ENERGY-INDEPENDENT COLLISIONALITY
          IF (INUTYPE.EQ.2) FTMP1 = H3*(1.-ZEPK**(-1.5)*H4)/RTMP
    
          IF (ISPECIES_EK(KP).EQ.0) FNUM1 = FNUM1*EFAC
+C        RFAC=1 HERE, SO SQRT(ZEPK/RFAC) = SQRT(ZEPK); RTMP3=0 UNLESS
+C        KPASSDRIFT=1
+         IF (INUTYPE.GE.1) THEN
+            CALL KEPOLECORR(FNUM1,1.0D0,RTMP3,OMEGAN1,H3/RTMP,RCOL,
+     &                      ISPECIES_EK(KP),NEPK,EPK,ZEPKO,
+     &                      ZEPKN,ZCOR)
+            ZVIF = ZVIF+ZCOR
+         ENDIF
          IF (KPASSDRIFT.EQ.1) THEN
          FNUM1 = FNUM1/(SQRT(ZEPK/RFAC)+OMEGAN1+CI*FTMP1+ZEPK*RTMP3)
          ELSE
@@ -4964,6 +5007,12 @@ C        NOTE THAT THIS OPTION HOLDS ONLY FOR ENERGY-INDEPENDENT COLLISIONALITY
          IF (INUTYPE.EQ.2) FTMP3 = H3*(1.-ZEPK**(-1.5)*H4)/(-RTMP)
    
          IF (ISPECIES_EK(KP).EQ.0) FNUM3 = FNUM3*EFAC
+         IF (INUTYPE.GE.1) THEN
+            CALL KEPOLECORR(FNUM3,1.0D0,-RTMP3,OMEGAN3,H3/(-RTMP),RCOL,
+     &                      ISPECIES_EK(KP),NEPK,EPK,ZEPKO,
+     &                      ZEPKN,ZCOR)
+            ZVIF = ZVIF+ZCOR
+         ENDIF
          IF (KPASSDRIFT.EQ.1) THEN
          FNUM3 = FNUM3/(SQRT(ZEPK/RFAC)+OMEGAN3+CI*FTMP3-ZEPK*RTMP3)
          ELSE
