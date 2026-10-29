@@ -2636,6 +2636,9 @@ C     ASSIGN ONLY AFTER BOTH FILES HAVE PASSED ALL CONTRACT CHECKS.
       X2U(1:NRP1,1:MSMAX)=TX2
       X3U(1:NRP1,1:MSMAX)=TX3
       DEALLOCATE(TB1,TB2,TB3,TX1,TX2,TX3)
+C     THE SUPPLIER'S AXIS SLOTS NEED NOT FOLLOW THE BOUNDC/AXISY RULES
+C     THAT THE KINETIC AXIS-CELL DRIVE ASSUMES
+      IF (SLEFT.LT.1.E-10) CALL AXISIMPORT
       WRITE(*,*) 'MARS-K NTV: IMPORTED BPLASMA_INPUT AND XPLASMA_INPUT'
       WRITE(*,*) 'EXTERNAL XPLASMA PROFILE RELATIVE L2:',
      & SQRT(PERR1/MAX(PDEN1,TINY(1.0D0))),
@@ -2677,6 +2680,46 @@ C     ASSIGN ONLY AFTER BOTH FILES HAVE PASSED ALL CONTRACT CHECKS.
  997  WRITE(*,*) ' XPLASMA_INPUT HAS MALFORMED TRAILING DATA'
  999  WRITE(*,*) ' EXTERNAL PERTURBATION IMPORT ABORTED'
       STOP 1
+      END
+*DECK AXISIMPORT
+C$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+C-------AXIS SLOTS OF AN IMPORTED PERTURBATION--------------------------
+C$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+C     NODE 1 AND HALF-CELL 1 OF B1U..B3U, X1U..X3U REBUILT FROM NODE 2
+C     AND HALF-CELL 2 AS BOUNDC AND AXISY DO FOR A SOLVED FIELD
+C     (docs/axis_regularity.md).  X1 HAS THE POWERS OF V1, X2 OF V2,
+C     X3 OF V3 AND PR (KYV3 MAY BE ABSENT); B2 (M.NE.0) FROM DIV B = 0.
+C
+      SUBROUTINE AXISIMPORT
+C     =====================
+      USE DIMENSIM
+      USE GLOBALM
+      USE RCOMDM
+      IMPLICIT NONE
+      INTEGER MS,MABS
+      REAL*8  R
+      INTEGER IAXPWX,IAXPWY
+      EXTERNAL IAXPWX,IAXPWY
+C
+      IF (NR.LT.2) RETURN
+      R = CSM(1)/CSM(2)
+      DO MS = 1,MSMAX
+         MABS = NINT(ABS(RM(MS,2)))
+         X1U(1,MS) = (0.,0.)
+         IF (IAXPWX(KXV1,MABS).EQ.0) X1U(1,MS) = X1U(2,MS)
+         B1U(1,MS) = (0.,0.)
+         IF (IAXPWX(KXB1,MABS).EQ.0) B1U(1,MS) = B1U(2,MS)
+         X2U(1,MS) = X2U(2,MS)*R**IAXPWY(KYV2,MABS)
+         X3U(1,MS) = X3U(2,MS)*R**IAXPWY(KYPR,MABS)
+         B3U(1,MS) = B3U(2,MS)*R**IAXPWY(KYB3,MABS)
+         IF (MABS.GT.0) THEN
+            B2U(1,MS) = -((B1U(2,MS)-B1U(1,MS))/CSH(1)
+     &                + (0.,1.)*RNTOR*B3U(1,MS))/((0.,1.)*RM(MS,2))
+         ELSE
+            B2U(1,MS) = B2U(2,MS)*R**IAXPWY(KYB2,MABS)
+         ENDIF
+      ENDDO
+      RETURN
       END
 *DECK INITXY
 C$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
